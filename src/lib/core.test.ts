@@ -91,3 +91,33 @@ test("ngrams sin stopwords en bordes", () => {
   assert.ok(g.includes("guia de zapatillas"));
   assert.ok(!g.some((x) => x.startsWith("de ")));
 });
+
+test("urlKey: variantes de la misma URL cuentan como una", async () => {
+  const { urlKey } = await import("./util");
+  const variants = [
+    "https://www.Ejemplo.cl/zapatillas/trail/",
+    "http://ejemplo.cl/zapatillas/trail",
+    "https://EJEMPLO.CL/zapatillas/trail#reviews",
+    "https://www.ejemplo.cl:443/zapatillas/trail/?utm_source=google&utm_medium=cpc",
+    "https://ejemplo.cl/zapatillas/trail?gclid=abc123",
+    "https://ejemplo.cl/zapatillas/trail/?fbclid=xyz&utm_campaign=x#top",
+    "http://www.ejemplo.cl:80/zapatillas/trail//",
+  ];
+  assert.equal(new Set(variants.map(urlKey)).size, 1);
+  // Distintas de verdad: otro path, parámetro real, otro subdominio
+  assert.notEqual(urlKey("https://ejemplo.cl/zapatillas/trail?talla=42"), urlKey("https://ejemplo.cl/zapatillas/trail"));
+  assert.equal(urlKey("https://ejemplo.cl/a?b=2&a=1"), urlKey("https://ejemplo.cl/a?a=1&b=2"));
+  assert.notEqual(urlKey("https://tienda.ejemplo.cl/x"), urlKey("https://ejemplo.cl/x"));
+});
+
+test("overlap usa URLs normalizadas: variantes cuentan como coincidencia", () => {
+  const a = ["https://www.a.cl/x/", "http://b.cl/y?utm_source=g", "https://c.cl/z#f", "https://d.cl/"];
+  const b = ["https://a.cl/x", "https://www.b.cl/y/", "http://C.cl/z/?gclid=1", "https://e.cl/"];
+  const c = overlapClusters([
+    { term: "k1", volume: 10, intent: "i", urls: a },
+    { term: "k2", volume: 5, intent: "i", urls: b },
+  ]);
+  assert.deepEqual(c.map((x) => x.members.map((m) => m.term)), [["k1", "k2"]]);
+  // urls originales se conservan para mostrar
+  assert.deepEqual(c[0].primary.urls, a);
+});

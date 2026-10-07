@@ -1,5 +1,5 @@
 import type { OrganicResult } from "../providers";
-import { cosine } from "../util";
+import { cosine, urlKey } from "../util";
 
 export type KwSerp = { term: string; volume: number; intent: string; urls: string[] };
 
@@ -9,7 +9,11 @@ export type KwSerp = { term: string; volume: number; intent: string; urls: strin
  * comparten ≥ minShared URLs con ella y tienen el mismo intent.
  */
 export function overlapClusters(items: KwSerp[], minShared = 3) {
-  const sorted = [...items].sort((a, b) => b.volume - a.volume);
+  // URLs normalizadas (y deduplicadas por keyword) antes de construir el índice
+  const sorted = [...items]
+    .map((k) => ({ ...k, urls: [...new Set(k.urls.map(urlKey))] }))
+    .sort((a, b) => b.volume - a.volume);
+  const original = new Map(items.map((k) => [k.term, k]));
   const index = new Map<string, number[]>();
   sorted.forEach((k, i) => k.urls.forEach((u) => { const l = index.get(u) ?? []; l.push(i); index.set(u, l); }));
   const assigned = new Int32Array(sorted.length).fill(-1);
@@ -18,13 +22,13 @@ export function overlapClusters(items: KwSerp[], minShared = 3) {
     if (assigned[i] >= 0) continue;
     const cid = clusters.length;
     assigned[i] = cid;
-    const cl = { primary: sorted[i], members: [sorted[i]] };
+    const cl = { primary: original.get(sorted[i].term)!, members: [original.get(sorted[i].term)!] };
     const shared = new Map<number, number>();
     for (const u of sorted[i].urls) for (const j of index.get(u) ?? []) if (j !== i) shared.set(j, (shared.get(j) ?? 0) + 1);
     for (const [j, c] of shared) {
       if (c >= minShared && assigned[j] < 0 && sorted[j].intent === sorted[i].intent) {
         assigned[j] = cid;
-        cl.members.push(sorted[j]);
+        cl.members.push(original.get(sorted[j].term)!);
       }
     }
     clusters.push(cl);

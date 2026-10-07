@@ -60,3 +60,24 @@ export function cosine(a: number[], b: number[]) {
 }
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const TRACKING_PARAMS = /^(utm_.*|gclid|gclsrc|dclid|fbclid|msclkid|yclid|mc_cid|mc_eid|_ga|_gl)$/i;
+
+/**
+ * Clave canónica para comparar URLs de SERP: host en minúsculas sin `www.`, sin esquema
+ * (http ≡ https), sin puerto por defecto, sin fragment, sin trailing slash y sin parámetros
+ * de tracking; el resto de parámetros queda ordenado.
+ */
+export function urlKey(raw: string): string {
+  try {
+    const u = new URL(raw.trim());
+    const host = u.hostname.toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
+    const port = u.port && !["80", "443"].includes(u.port) ? `:${u.port}` : "";
+    const params = [...u.searchParams.entries()].filter(([k]) => !TRACKING_PARAMS.test(k)).sort(([a, x], [b, y]) => a.localeCompare(b) || x.localeCompare(y));
+    const qs = params.length ? `?${new URLSearchParams(params).toString()}` : "";
+    const path = u.pathname.replace(/\/+$/, "");
+    return `${host}${port}${path}${qs}`;
+  } catch {
+    return raw.trim().toLowerCase();
+  }
+}
