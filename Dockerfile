@@ -1,5 +1,5 @@
-# syntax=docker/dockerfile:1.7
-FROM node:22-slim AS base
+ARG NODE_IMAGE=node:22-slim
+FROM ${NODE_IMAGE} AS base
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 

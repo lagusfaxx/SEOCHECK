@@ -43,6 +43,7 @@ services:
       DATAFORSEO_LOGIN: ${DATAFORSEO_LOGIN:-}
       DATAFORSEO_PASSWORD: ${DATAFORSEO_PASSWORD:-}
       EMBEDDINGS_URL: ${EMBEDDINGS_URL:-http://embeddings:80}
+      EMBEDDINGS_MODEL: paraphrase-multilingual-MiniLM-L12-v2
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-claude-sonnet-5-5}
@@ -74,11 +75,23 @@ services:
     environment: *env
 
   embeddings:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    # Imagen propia con el modelo horneado en el build (ver docker/embeddings/Dockerfile).
+    # Memoria medida: pico ~1,6 GiB al cargar el modelo ONNX fp32; límite con ~40% de margen.
+    build: ./docker/embeddings
+    image: seocheck-embeddings
     restart: unless-stopped
-    command: ["--model-id", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", "--max-client-batch-size", "64"]
-    volumes:
-      - hfcache:/data
+    mem_limit: ${EMBEDDINGS_MEM_LIMIT:-2304m}
+    deploy:
+      resources:
+        limits:
+          memory: ${EMBEDDINGS_MEM_LIMIT:-2304m}
+    healthcheck:
+      # la imagen no trae curl/wget: GET /health con bash + /dev/tcp
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/80 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
 
   # Render JS opcional: levanta con `--profile render` y define BROWSER_WS_ENDPOINT=ws://browser:3000?token=${BROWSER_TOKEN}
   browser:
@@ -91,4 +104,3 @@ services:
 
 volumes:
   pgdata:
-  hfcache:

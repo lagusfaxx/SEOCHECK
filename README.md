@@ -8,7 +8,7 @@ Next.js 14 + Prisma + Postgres + worker con pg-boss (sin Redis).
 2. Variables: ver `.env.example`. Mínimo `POSTGRES_PASSWORD`, `SERPENT_API_KEY`, `DATAFORSEO_LOGIN/PASSWORD`.
 3. Dominio al servicio `web` (puerto 3000). `BASIC_AUTH=usuario:clave` protege todo.
 
-Servicios: `db` (Postgres 16), `migrate` (one-shot: `prisma migrate deploy`), `web` (UI + API), `worker` (crawls, SERPs, clustering, sync GSC, rank tracking, briefs), `embeddings` (text-embeddings-inference con `paraphrase-multilingual-MiniLM-L12-v2`), `browser` opcional (`--profile render`, Chromium para sitios con render JS).
+Servicios: `db` (Postgres 16), `migrate` (one-shot: `prisma migrate deploy`), `web` (UI + API), `worker` (crawls, SERPs, clustering, sync GSC, rank tracking, briefs), `embeddings` (text-embeddings-inference con `paraphrase-multilingual-MiniLM-L12-v2` horneado en la imagen; límite de memoria `EMBEDDINGS_MEM_LIMIT`, def. 2304m, pico medido ~1,6 GiB), `browser` opcional (`--profile render`, Chromium para sitios con render JS).
 
 Crons (zona `TZ`): `RANK_CRON` rank tracking diario/semanal, `GSC_CRON` sync de Search Console.
 
