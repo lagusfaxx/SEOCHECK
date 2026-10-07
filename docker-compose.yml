@@ -14,12 +14,26 @@ services:
       timeout: 5s
       retries: 20
 
+  migrate:
+    build: .
+    image: seocheck-app
+    command: ["npx", "prisma", "migrate", "deploy"]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://seo:${POSTGRES_PASSWORD:-seo}@db:5432/seo
+
   web:
     build: .
+    image: seocheck-app
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment: &env
       SERVICE_FQDN_WEB_3000: ${SERVICE_FQDN_WEB_3000:-}
       DATABASE_URL: postgresql://seo:${POSTGRES_PASSWORD:-seo}@db:5432/seo
@@ -49,11 +63,14 @@ services:
 
   worker:
     build: .
+    image: seocheck-app
     restart: unless-stopped
     command: ["npx", "tsx", "src/worker/index.ts"]
     depends_on:
-      web:
+      db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment: *env
 
   embeddings:

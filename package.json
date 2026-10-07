@@ -7,9 +7,10 @@
     "build": "prisma generate && next build",
     "start": "next start -p ${PORT:-3000}",
     "worker": "tsx src/worker/index.ts",
-    "db:push": "prisma db push",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/lib/*.test.ts"
+    "test": "tsx --test src/lib/*.test.ts",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
