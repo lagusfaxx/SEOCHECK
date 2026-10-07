@@ -6,7 +6,7 @@ import { ISSUE_LABELS } from "@/lib/audit/issues";
 import { indexNow, normalizeGscProperty } from "@/lib/providers/google";
 import { makeBrief, type ContentResult } from "@/lib/content/analyze";
 import { parseKeywordPlannerCsv } from "@/lib/volume/csv";
-import { backfillVolumes, volumeProviderStatus, writeCache } from "@/lib/volume/broker";
+import { backfillVolumes, volumeChainStatus, writeCache } from "@/lib/volume/broker";
 import { env } from "@/lib/env";
 import { normTerm, normUrl } from "@/lib/util";
 
@@ -21,11 +21,13 @@ const bad = (msg: string, status = 400) => Response.json({ error: msg }, { statu
 const GETS: Record<string, H> = {
   "": async ({ id }) => {
     const p = await db.project.findUniqueOrThrow({ where: { id } });
+    const chain = await volumeChainStatus();
     return {
       ...p,
+      volumeChain: chain,
       providers: {
-        serp: Boolean(env.serpentKey), volume: volumeProviderStatus().available ? env.volumeProvider : false, embeddings: env.embeddingsUrl ? "local" : env.openaiKey ? "openai" : "hash",
-        llm: Boolean(env.anthropicKey || env.openaiKey), volumeProvider: volumeProviderStatus(), gsc: Boolean(env.gscCredentials), psi: Boolean(env.psiKey), render: Boolean(env.browserWs), indexnow: Boolean(env.indexNowKey),
+        serp: Boolean(env.serpentKey), volume: chain.find((c) => c.available)?.provider ?? false, embeddings: env.embeddingsUrl ? "local" : env.openaiKey ? "openai" : "hash",
+        llm: Boolean(env.anthropicKey || env.openaiKey), gsc: Boolean(env.gscCredentials), psi: Boolean(env.psiKey), render: Boolean(env.browserWs), indexnow: Boolean(env.indexNowKey),
       },
     };
   },

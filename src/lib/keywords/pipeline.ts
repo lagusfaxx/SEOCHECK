@@ -135,7 +135,7 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   const runOpts = (run.options ?? {}) as { volumeLive?: boolean };
   const vol = await resolveVolumes(
     kept.map((k) => k.term),
-    { country: p.country, language: p.language, locationCode: p.locationCode, projectId: p.id, seeds: run.seeds, live: Boolean(runOpts.volumeLive) }
+    { country: p.country, language: p.language, locationCode: p.locationCode, projectId: p.id, seeds: run.seeds, live: runOpts.volumeLive ? true : undefined }
   );
   const volMap = vol.data;
   stats.volCache = Number(vol.stats.cache ?? 0);
@@ -305,7 +305,7 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   stats.topics = await db.topic.count({ where: { runId } });
   stats.locked = lockedTerms.size;
 
-  const runSources = { serp: serps.size > 0 || seedSerpOk ? "real" : "none", embeddings: emb.name, volumes: [...volMap.values()].some((v) => v.source !== "gsc") ? "real" : volMap.size ? "gsc" : "none", volumeProvider: env.volumeProvider, gsc: gscState };
+  const runSources = { serp: serps.size > 0 || seedSerpOk ? "real" : "none", embeddings: emb.name, volumes: [...volMap.values()].some((v) => v.source !== "gsc") ? "real" : volMap.size ? "gsc" : "none", volumeProvider: vol.stats.provider ?? null, volumeSkipped: vol.stats.skipped ?? [], gsc: gscState };
   await db.keywordRun.update({ where: { id: runId }, data: { status: "done", stats, sources: runSources } });
   return stats;
 }

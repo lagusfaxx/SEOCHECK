@@ -4,15 +4,21 @@ export const env = {
   serpentBase: process.env.SERPENT_BASE_URL ?? "https://apiserpent.com",
   dfsLogin: process.env.DATAFORSEO_LOGIN ?? "",
   dfsPassword: process.env.DATAFORSEO_PASSWORD ?? "",
-  /** sandbox (gratis, datos ficticios) | live */
-  dfsEnv: (process.env.DATAFORSEO_ENV === "live" ? "live" : "sandbox") as "live" | "sandbox",
+  /** live (default) | sandbox (gratis, datos ficticios) */
+  dfsEnv: (process.env.DATAFORSEO_ENV === "sandbox" ? "sandbox" : "live") as "live" | "sandbox",
+  /** live (default): endpoint Live | queue: standard queue multi-proyecto */
+  dfsMode: (process.env.DATAFORSEO_MODE === "queue" ? "queue" : "live") as "live" | "queue",
   dfsBaseOverride: process.env.DATAFORSEO_BASE_URL ?? "",
   /** Segundos que el research espera la standard queue de DataForSEO antes de seguir (lo pendiente se completa después) */
   dfsQueueWait: Number(process.env.DATAFORSEO_QUEUE_WAIT_SECONDS ?? 300),
-  /** dataforseo | apify | csv */
-  volumeProvider: (process.env.VOLUME_PROVIDER ?? "dataforseo") as "dataforseo" | "apify" | "csv",
+  /** Cadena de proveedores de volumen en orden (GSC siempre va primero cuando hay impresiones) */
+  volumeProviders: (process.env.VOLUME_PROVIDERS ?? process.env.VOLUME_PROVIDER ?? "dataforseo,apify,csv")
+    .split(",").map((s) => s.trim()).filter((s): s is "dataforseo" | "apify" | "csv" => ["dataforseo", "apify", "csv"].includes(s)),
   apifyToken: process.env.APIFY_TOKEN ?? "",
   apifyActor: (process.env.APIFY_ACTOR_ID || "s-r~google-keywords").replace("/", "~"),
+  /** s-r~google-keywords: exact (un run por keyword, limit=1) | seed (un run por seed, variantes) */
+  apifyMode: (process.env.APIFY_MODE === "seed" ? "seed" : "exact") as "exact" | "seed",
+  apifyConcurrency: Math.max(1, Number(process.env.APIFY_CONCURRENCY ?? 3)),
   apifyBase: process.env.APIFY_BASE_URL ?? "https://api.apify.com",
   embeddingsUrl: process.env.EMBEDDINGS_URL ?? "",
   openaiKey: process.env.OPENAI_API_KEY ?? "",

@@ -386,3 +386,14 @@ model VolumeRequest {
   @@index([status, locationCode, language])
   @@index([taskId])
 }
+
+/// Estado de proveedores externos (sin saldo, credenciales inválidas) para fallback automático y aviso en la UI.
+model ProviderState {
+  provider  String   @id
+  status    String   // ok | no_balance | auth_error
+  message   String?
+  since     DateTime @default(now())
+  /// Hasta cuándo se salta este proveedor antes de reintentar
+  until     DateTime?
+  updatedAt DateTime @updatedAt
+}

@@ -56,17 +56,18 @@ after(async () => {
   await db.$disconnect();
 });
 
-test("sandbox por defecto", async () => {
+test("live por defecto (endpoint y entorno); sandbox opcional", async () => {
   const saved = process.env.DATAFORSEO_BASE_URL;
   const { env } = await import("./env");
   const { dfsBase } = await import("./volume/dataforseo");
   const prev = env.dfsBaseOverride;
   (env as any).dfsBaseOverride = "";
-  assert.equal(env.dfsEnv, "sandbox");
-  assert.equal(dfsBase(), "https://sandbox.dataforseo.com");
-  (env as any).dfsEnv = "live";
+  assert.equal(env.dfsEnv, "live");
+  assert.equal(env.dfsMode, "live");
   assert.equal(dfsBase(), "https://api.dataforseo.com");
   (env as any).dfsEnv = "sandbox";
+  assert.equal(dfsBase(), "https://sandbox.dataforseo.com");
+  (env as any).dfsEnv = "live";
   (env as any).dfsBaseOverride = prev;
   process.env.DATAFORSEO_BASE_URL = saved;
 });

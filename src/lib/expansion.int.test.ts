@@ -43,5 +43,9 @@ test("2ª ronda: PAA y related de los términos descubiertos, con límite", { sk
   assert.ok(terms.includes("¿qué es botas barato?"), "PAA de 2ª ronda");
   assert.equal(stats.expanded, 1 + 4 + 3 * 4);
   const r = await db.keywordRun.findUniqueOrThrow({ where: { id: run.id } });
-  assert.deepEqual(r.sources, { serp: "real", embeddings: "trigram-hash", volumes: "none", volumeProvider: "dataforseo", gsc: "none" });
+  const src = r.sources as any;
+  assert.deepEqual([src.serp, src.embeddings, src.volumes, src.gsc], ["real", "trigram-hash", "none", "none"]);
+  // sin credenciales la cadena de volumen termina en el CSV y lo registra
+  assert.equal(src.volumeProvider, "csv");
+  assert.deepEqual(src.volumeSkipped.map((x: string) => x.split(":")[0]), ["dataforseo", "apify"]);
 });

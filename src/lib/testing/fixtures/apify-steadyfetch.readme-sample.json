@@ -1,0 +1,129 @@
+{
+  "_meta": {
+    "origin": "readme",
+    "note": "items[0] es la fila completa de una ejecución real publicada en el README del actor steadyfetch/keyword-search-volume-scraper (build 1.0.95, run del 2026-09-12). items[1] (sin dato) e items[2] (fila resumen) siguen la descripción de campos del README; sus valores son supuestos. Reemplazar con `npm run apify-fixture -- --actor steadyfetch~keyword-search-volume-scraper` (requiere APIFY_TOKEN)."
+  },
+  "items": [
+    {
+      "schemaVersion": 1,
+      "seed": null,
+      "seededFrom": null,
+      "keyword": "quartz countertop sealer",
+      "providerKeyword": "quartz countertop sealer",
+      "avgMonthlySearches": 1600,
+      "cpcUsd": 0.88,
+      "competition": "HIGH",
+      "competitionIndex": 95,
+      "lowTopOfPageBidUsd": 0.23,
+      "highTopOfPageBidUsd": 1.58,
+      "monthlySearchVolumes": [
+        {
+          "year": 2025,
+          "month": 9,
+          "searches": 2900
+        },
+        {
+          "year": 2025,
+          "month": 10,
+          "searches": 1600
+        },
+        {
+          "year": 2025,
+          "month": 11,
+          "searches": 1600
+        },
+        {
+          "year": 2025,
+          "month": 12,
+          "searches": 1600
+        },
+        {
+          "year": 2026,
+          "month": 1,
+          "searches": 1600
+        },
+        {
+          "year": 2026,
+          "month": 2,
+          "searches": 1600
+        },
+        {
+          "year": 2026,
+          "month": 3,
+          "searches": 1600
+        },
+        {
+          "year": 2026,
+          "month": 4,
+          "searches": 1300
+        },
+        {
+          "year": 2026,
+          "month": 5,
+          "searches": 1300
+        },
+        {
+          "year": 2026,
+          "month": 6,
+          "searches": 1000
+        },
+        {
+          "year": 2026,
+          "month": 7,
+          "searches": 1300
+        },
+        {
+          "year": 2026,
+          "month": 8,
+          "searches": 1300
+        }
+      ],
+      "trendDirection": "falling",
+      "dataAsOf": "2026-08",
+      "cpcMissReason": null,
+      "emptyFields": {},
+      "country": "US",
+      "language": "en",
+      "network": "google",
+      "source": "google_ads",
+      "isEstimated": false,
+      "servedFromCache": false,
+      "charged": true,
+      "repeat": false,
+      "firstSeenAt": null,
+      "firstSeenRunId": null,
+      "repeatCheck": null,
+      "missReason": null,
+      "retryable": false,
+      "statusReason": "Google Ads search-volume data.",
+      "sourceIndex": 0,
+      "fetchedAt": "2026-09-12T12:21:42.697Z",
+      "_demo": false,
+      "#k": "kw:quartz countertop sealer",
+      "#ce": {
+        "keyword-result": 1
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "keyword": "sellador cuarzo inexistente xyz",
+      "providerKeyword": "sellador cuarzo inexistente xyz",
+      "avgMonthlySearches": null,
+      "cpcUsd": null,
+      "competition": null,
+      "competitionIndex": null,
+      "charged": false,
+      "missReason": "no-data",
+      "statusReason": "Google Ads has no search-volume data for this keyword."
+    },
+    {
+      "delivered": 1,
+      "stoppedBy": "completed",
+      "resumeCursor": null,
+      "chargedEvents": {
+        "keyword-result": 1,
+        "keyword-lookup": 1
+      }
+    }
+  ]
+}

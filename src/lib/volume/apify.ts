@@ -4,12 +4,23 @@ import { jobLog } from "../jobctx";
 import { fetchT, normTerm, sleep } from "../util";
 import type { VolumeCtx, VolumeData, VolumeProvider } from "./types";
 import { cleanKeyword } from "../providers/sanitize";
+import pLimit from "p-limit";
+import { NoBalanceError } from "./state";
 
 /**
- * Actor s-r~google-keywords (configurable con APIFY_ACTOR_ID). Input real del actor:
- *   { keyword: string (seed, requerido), country, language, limit (1–500), max_suggestions, min_volume (def. 10), concurrency }
- * Salida (dataset): { keyword, country, language, volume, cpc, cpc_usd, sd, pd, competition, intent }.
- * El actor expande UN seed en variantes con volumen; no acepta una lista de keywords.
+ * Dos actores soportados (APIFY_ACTOR_ID):
+ *
+ * s-r~google-keywords (default). Input: { keyword (un seed), country, language, limit (1–500),
+ *   max_suggestions, min_volume (def. 10), concurrency }. Salida: { keyword, volume, cpc, cpc_usd, sd, pd,
+ *   competition, intent }. Con limit=1 y max_suggestions=0 devuelve la keyword exacta (verificado a mano:
+ *   $0.003 y ~28 s por run) → APIFY_MODE=exact (un run por keyword). APIFY_MODE=seed: un run por seed del
+ *   research que trae variantes.
+ *
+ * steadyfetch~keyword-search-volume-scraper (listas). Input: { keywords: [...], country, language,
+ *   mode: "metrics-only", maxItems, maxRunSeconds }. Salida por fila: { keyword, avgMonthlySearches
+ *   (null = sin dato, no se cobra), cpcUsd, competition (LOW/MEDIUM/HIGH), competitionIndex (0–100),
+ *   monthlySearchVolumes[], missReason, ... } + una fila resumen { delivered, stoppedBy, resumeCursor }.
+ *   Cobra $0.19 por run con datos frescos + por keyword con dato; exige maxTotalChargeUsd ≥ 0.25.
  */
 
 type Any = Record<string, any>;
@@ -71,6 +82,28 @@ export function mapApifyItem(it: Any): VolumeData | null {
   };
 }
 
+export const isListActor = (actor: string) => /steadyfetch|keyword-search-volume-scraper/.test(actor);
+
+/** Fila de steadyfetch → modelo. Fila resumen, errores o sin dato (avgMonthlySearches null) → null. */
+export function mapSteadyfetchItem(it: Any): VolumeData | null {
+  if (!it || typeof it.keyword !== "string" || it.delivered != null || it.avgMonthlySearches == null) return null;
+  const kw = normTerm(it.keyword);
+  if (!kw) return null;
+  return {
+    keyword: kw,
+    volume: Math.round(Number(it.avgMonthlySearches)),
+    cpc: num(it.cpcUsd),
+    competition: it.competitionIndex != null ? competition01(Number(it.competitionIndex) / 100) : competition01(it.competition),
+    intent: null,
+  };
+}
+
+function accountError(status: number, body: string): Error | null {
+  if (status === 402) return new NoBalanceError("apify", `Apify 402: ${body.slice(0, 200)}`);
+  if (status === 401) return new NoBalanceError("apify", `Apify 401: ${body.slice(0, 200)}`, "auth_error");
+  return null;
+}
+
 export class ApifyClient {
   constructor(
     private token = env.apifyToken,
@@ -84,16 +117,20 @@ export class ApifyClient {
   }
 
   /** Batches chicos: run-sync-get-dataset-items (máx. 300 s; 408 si se pasa). */
-  async runSync(input: Any): Promise<{ items: Any[]; run: ApifyRun | null }> {
+  async runSync(input: Any, maxTotalChargeUsd?: number): Promise<{ items: Any[]; run: ApifyRun | null }> {
     const started = Date.now();
-    const res = await fetchT(`${this.base}/v2/acts/${this.actor}/run-sync-get-dataset-items?timeout=300&format=json&clean=1`, {
+    const charge = maxTotalChargeUsd != null ? `&maxTotalChargeUsd=${maxTotalChargeUsd.toFixed(2)}` : "";
+    const res = await fetchT(`${this.base}/v2/acts/${this.actor}/run-sync-get-dataset-items?timeout=300&format=json&clean=1${charge}`, {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify(input),
       timeoutMs: 320_000,
     });
     if (res.status === 408) throw new Error("Apify: el run superó 300 s (run-sync)");
-    if (!res.ok) throw new Error(`Apify ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    if (!res.ok) {
+      const body = await res.text();
+      throw accountError(res.status, body) ?? new Error(`Apify ${res.status}: ${body.slice(0, 300)}`);
+    }
     const items = (await res.json()) as Any[];
     // run-sync no devuelve el run: se busca por ventana de tiempo para leer usageTotalUsd (best effort)
     const run = await this.findRunBetween(started - 2000, Date.now() + 2000).catch(() => null);
@@ -110,9 +147,13 @@ export class ApifyClient {
     return this.getRun(hits[0].id);
   }
 
-  async start(input: Any): Promise<ApifyRun> {
-    const res = await fetchT(`${this.base}/v2/acts/${this.actor}/runs?timeout=300`, { method: "POST", headers: this.headers(), body: JSON.stringify(input) });
-    if (!res.ok) throw new Error(`Apify ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  async start(input: Any, maxTotalChargeUsd?: number): Promise<ApifyRun> {
+    const charge = maxTotalChargeUsd != null ? `&maxTotalChargeUsd=${maxTotalChargeUsd.toFixed(2)}` : "";
+    const res = await fetchT(`${this.base}/v2/acts/${this.actor}/runs?timeout=${isListActor(this.actor) ? 1800 : 300}${charge}`, { method: "POST", headers: this.headers(), body: JSON.stringify(input) });
+    if (!res.ok) {
+      const body = await res.text();
+      throw accountError(res.status, body) ?? new Error(`Apify ${res.status}: ${body.slice(0, 300)}`);
+    }
     return ((await res.json()) as Any).data;
   }
 
@@ -150,51 +191,105 @@ export class ApifyClient {
   }
 
   /** Batches grandes: POST /runs + polling + dataset. */
-  async runAsync(input: Any): Promise<{ items: Any[]; run: ApifyRun }> {
-    const started = await this.start(input);
+  async runAsync(input: Any, maxTotalChargeUsd?: number): Promise<{ items: Any[]; run: ApifyRun }> {
+    const started = await this.start(input, maxTotalChargeUsd);
     const run = await this.waitFor(started.id);
     return { items: await this.datasetItems(run.defaultDatasetId), run };
   }
 }
 
+export type ApifyOpts = { syncMax: number; limit: number; mode?: "exact" | "seed"; concurrency?: number; actor?: string };
+
 export class ApifyFetcher implements VolumeProvider {
   readonly source = "apify" as const;
-  constructor(private client = new ApifyClient(), private opts = { syncMax: 200, limit: 500 }) {}
+  private o: Required<ApifyOpts>;
+  constructor(private client = new ApifyClient(), opts: Partial<ApifyOpts> = {}) {
+    this.o = { syncMax: 200, limit: 500, mode: env.apifyMode, concurrency: env.apifyConcurrency, actor: env.apifyActor, ...opts };
+  }
 
   unavailable() {
     return env.apifyToken ? null : "falta APIFY_TOKEN";
   }
 
+  /** Costo máximo estimado en USD (para el presupuesto, antes de llamar). */
+  estimateUsd(keywords: number, seeds = 1) {
+    if (isListActor(this.o.actor)) return 0.19 * Math.ceil(keywords / 1000) + keywords * 0.012;
+    return this.o.mode === "exact" ? keywords * 0.003 : seeds * this.o.limit * 0.003;
+  }
+
+  private async logRun(label: string, items: number, run: ApifyRun | null, ctx: VolumeCtx, sync: boolean) {
+    const usd = run?.usageTotalUsd ?? null;
+    await jobLog("info", `Apify ${sync ? "run-sync" : "run"} ${label}: ${items} items, costo ${usd != null ? `$${usd.toFixed(4)}` : "no disponible (run-sync sin run identificable)"}`, { runId: run?.id ?? null, usageTotalUsd: usd });
+    await logCost("apify", sync ? "run-sync" : "run", 1, { projectId: ctx.projectId, ref: label }, usd);
+    return usd ?? 0;
+  }
+
   async fetch(keywords: string[], ctx: VolumeCtx): Promise<VolumeData[]> {
-    // Un run por seed; sin seeds, cada keyword es su propio seed.
-    // Seeds y cruce por keyword limpia (sin ¿?¡! ni símbolos), mapeada de vuelta a los términos originales
-    const seeds = [...new Set((ctx.seeds?.length ? ctx.seeds : keywords).map(cleanKeyword).filter(Boolean))];
+    // Cruce por keyword limpia (sin ¿?¡! ni símbolos), mapeada de vuelta a los términos originales
     const wanted = new Map<string, string[]>();
     for (const k of keywords) {
       const c = cleanKeyword(k);
       if (c) wanted.set(c, [...(wanted.get(c) ?? []), normTerm(k)]);
     }
-    const sync = keywords.length <= this.opts.syncMax;
     const found = new Map<string, VolumeData>();
+    const take = (m: VolumeData | null) => {
+      for (const original of (m && wanted.get(cleanKeyword(m.keyword))) || []) found.set(original, { ...m!, keyword: original });
+    };
     let total = 0;
-    for (const seed of seeds) {
-      const input = { keyword: seed, country: ctx.country.toLowerCase(), language: ctx.language.toLowerCase(), limit: this.opts.limit, min_volume: 0 };
-      try {
-        const { items, run } = sync ? await this.client.runSync(input) : await this.client.runAsync(input);
-        const usd = run?.usageTotalUsd ?? null;
-        if (usd != null) total += usd;
-        await jobLog("info", `Apify ${sync ? "run-sync" : "run"} seed="${seed}": ${items.length} items, costo ${usd != null ? `$${usd.toFixed(4)}` : "no disponible (run-sync sin run identificable)"}`, { runId: run?.id ?? null, usageTotalUsd: usd });
-        await logCost("apify", sync ? "run-sync" : "run", 1, { projectId: ctx.projectId, ref: seed }, usd);
-        for (const it of items) {
-          const m = mapApifyItem(it);
-          for (const original of (m && wanted.get(cleanKeyword(m.keyword))) || []) found.set(original, { ...m!, keyword: original });
+    const country = ctx.country.toLowerCase(), language = ctx.language.toLowerCase();
+
+    if (isListActor(this.o.actor)) {
+      // steadyfetch: la lista completa en runs de hasta 1.000 keywords
+      for (let i = 0; i < wanted.size; i += 1000) {
+        const batch = [...wanted.keys()].slice(i, i + 1000);
+        const input = { keywords: batch, country: country.toUpperCase(), language, mode: "metrics-only", maxItems: batch.length, maxRunSeconds: 900 };
+        const maxUsd = Math.max(0.25, 0.19 + batch.length * 0.012 + 0.05);
+        const sync = batch.length <= this.o.syncMax;
+        const { items, run } = sync ? await this.client.runSync(input, maxUsd) : await this.client.runAsync(input, maxUsd);
+        total += await this.logRun(`${batch.length} keywords`, items.length, run, ctx, sync);
+        for (const it of items) take(mapSteadyfetchItem(it));
+      }
+    } else if (this.o.mode === "exact") {
+      // s-r~google-keywords exacto: un run por keyword (limit=1, max_suggestions=0), en paralelo acotado
+      const limit = pLimit(this.o.concurrency);
+      let noBalance: unknown = null;
+      await Promise.all(
+        [...wanted.keys()].map((kw) =>
+          limit(async () => {
+            if (noBalance) return;
+            try {
+              const { items, run } = await this.client.runSync({ keyword: kw, country, language, limit: 1, max_suggestions: 0, min_volume: 0 });
+              total += await this.logRun(`"${kw}"`, items.length, run, ctx, true);
+              for (const it of items) {
+                const m = mapApifyItem(it);
+                if (m && cleanKeyword(m.keyword) === kw) take(m); // solo la keyword exacta
+              }
+            } catch (e: any) {
+              if (e instanceof NoBalanceError) noBalance = e;
+              else await jobLog("error", `Apify "${kw}" falló: ${e.message}`);
+            }
+          })
+        )
+      );
+      if (noBalance && !found.size) throw noBalance;
+    } else {
+      // s-r~google-keywords por seed: un run por seed, variantes cruzadas con nuestras keywords
+      const seeds = [...new Set((ctx.seeds?.length ? ctx.seeds : keywords).map(cleanKeyword).filter(Boolean))];
+      const sync = keywords.length <= this.o.syncMax;
+      for (const seed of seeds) {
+        const input = { keyword: seed, country, language, limit: this.o.limit, min_volume: 0 };
+        try {
+          const { items, run } = sync ? await this.client.runSync(input) : await this.client.runAsync(input);
+          total += await this.logRun(`seed="${seed}"`, items.length, run, ctx, sync);
+          for (const it of items) take(mapApifyItem(it));
+        } catch (e: any) {
+          if (e instanceof NoBalanceError) throw e;
+          await jobLog("error", `Apify seed="${seed}" falló: ${e.message}`, { usageTotalUsd: e.run?.usageTotalUsd ?? null });
+          if (e.run?.usageTotalUsd != null) await logCost("apify", "run", 1, { projectId: ctx.projectId, ref: seed }, e.run.usageTotalUsd);
         }
-      } catch (e: any) {
-        await jobLog("error", `Apify seed="${seed}" falló: ${e.message}`, { usageTotalUsd: e.run?.usageTotalUsd ?? null });
-        if (e.run?.usageTotalUsd != null) await logCost("apify", "run", 1, { projectId: ctx.projectId, ref: seed }, e.run.usageTotalUsd);
       }
     }
-    await jobLog("info", `Apify: ${found.size}/${keywords.length} keywords con volumen; costo total $${total.toFixed(4)}`);
+    await jobLog("info", `Apify (${this.o.actor}, ${isListActor(this.o.actor) ? "lista" : this.o.mode}): ${found.size}/${keywords.length} keywords con volumen; costo total $${total.toFixed(4)}`);
     return [...found.values()];
   }
 }

@@ -9,7 +9,10 @@ import { api, cx, Empty, fmt, Icon, Tabs, useLocal } from "@/components/ui";
 import { useApi } from "@/components/ui";
 
 export default function KeywordsPage() {
-  const { id, refreshJobs, jobs } = useProject();
+  const { id, refreshJobs, jobs, project } = useProject();
+  const chain: { provider: string; available: boolean; reason: string | null }[] = (project as any)?.volumeChain ?? [];
+  const firstUsable = chain.find((c) => c.available)?.provider;
+  const degraded = chain.filter((c) => !c.available && c.reason && !/^falta/.test(c.reason) && chain.indexOf(c) < chain.findIndex((x) => x.available));
   const [run, setRun] = useState<string>("");
   const key = `/api/p/${id}/keywords${run ? `?run=${run}` : ""}`;
   const { data, mutate } = useApi<KwData>(key);
@@ -67,6 +70,13 @@ export default function KeywordsPage() {
         </button>
       </div>
 
+      {degraded.length > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          <Icon name="bell" />
+          {degraded.map((c) => `${PROVIDER_NAME[c.provider] ?? c.provider}: ${c.reason}`).join(" · ")} — volumen desde {PROVIDER_NAME[firstUsable ?? ""] ?? "ningún proveedor"}
+        </div>
+      )}
+
       {data && data.runs.length > 0 && (
         <div className="flex flex-wrap items-center gap-3">
           <Tabs value={view} onChange={setView} items={[{ id: "table", label: "Tabla", icon: "table" }, { id: "board", label: "Clusters", icon: "board" }, { id: "map", label: "Mapa", icon: "map" }]} />
@@ -110,11 +120,13 @@ export default function KeywordsPage() {
   );
 }
 
+const PROVIDER_NAME: Record<string, string> = { dataforseo: "DataForSEO", apify: "Apify", csv: "CSV Keyword Planner" };
+
 function SourceBadges({ s }: { s: RunSources }) {
   const items: [string, string, boolean][] = [
     ["SERP", s.serp === "real" ? "real" : "sin SERP", s.serp === "real"],
     ["Embeddings", s.embeddings === "trigram-hash" ? "trigram-hash" : s.embeddings ?? "?", s.embeddings !== "trigram-hash"],
-    ["Volumen", s.volumes === "real" ? s.volumeProvider ?? "real" : s.volumes === "gsc" ? "solo GSC" : "sin volumen", s.volumes === "real" || s.volumes === "gsc"],
+    ["Volumen", (s.volumes === "real" ? PROVIDER_NAME[s.volumeProvider ?? ""] ?? s.volumeProvider ?? "real" : s.volumes === "gsc" ? "solo GSC" : "sin volumen") + (s.volumeSkipped?.length ? ` (saltado: ${s.volumeSkipped.join("; ")})` : ""), (s.volumes === "real" || s.volumes === "gsc") && !s.volumeSkipped?.length],
     ...(s.gsc && s.gsc !== "none" ? [["GSC", s.gsc === "real" ? "real" : "error", s.gsc === "real"] as [string, string, boolean]] : []),
   ];
   return (

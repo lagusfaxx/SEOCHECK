@@ -1,10 +1,11 @@
 /**
  * Compara volúmenes de DataForSEO y Apify para una lista de keywords (máx. 100).
  *
- *   npm run compare-volume -- --file keywords.txt [--out compare-volume.csv] [--country cl --language es --location 2152] [--apify-limit 20]
+ *   npm run compare-volume -- --file keywords.txt [--out compare-volume.csv] [--country cl --language es --location 2152] [--apify-mode exact|seed] [--apify-limit 20]
  *
  * DataForSEO usa el endpoint Live del entorno configurado (DATAFORSEO_ENV=sandbox|live; sandbox = datos ficticios).
- * Apify corre el actor una vez por keyword (cada keyword es su propio seed) con `limit` acotado por costo.
+ * Apify usa APIFY_ACTOR_ID: s-r~google-keywords en modo exact (un run por keyword, limit=1) por defecto
+ * (--apify-mode seed para variantes), o steadyfetch~keyword-search-volume-scraper con la lista en un run.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { ApifyFetcher } from "../src/lib/volume/apify";
@@ -33,7 +34,7 @@ async function main() {
   } else console.log("DataForSEO: sin credenciales, se omite");
 
   const apify = new Map<string, number | null>();
-  const apifyFetcher = new ApifyFetcher(undefined, { syncMax: 200, limit: Number(arg("apify-limit", "20")) });
+  const apifyFetcher = new ApifyFetcher(undefined, { syncMax: 200, limit: Number(arg("apify-limit", "20")), mode: (arg("apify-mode", "exact") as "exact" | "seed") });
   if (!apifyFetcher.unavailable()) {
     console.log(`Apify (${env.apifyActor}), ${kws.length} runs…`);
     for (const r of await apifyFetcher.fetch(kws, ctx)) apify.set(volKey(r.keyword), r.volume);

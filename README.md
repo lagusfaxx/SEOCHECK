@@ -74,15 +74,32 @@ Seguridad: todo fetch hacia URLs de usuario o crawleadas pasa por `safeFetch` (b
 
 ## Volumen de búsqueda
 
-Prioridad por keyword: **impresiones de GSC** (28 días, si el proyecto tiene datos) > **`VOLUME_PROVIDER`** > `null`. Cada keyword guarda `volumeSource` (`gsc`/`dataforseo`/`apify`/`csv`) y `volumeAt`; la tabla muestra la fuente.
+Prioridad por keyword:
 
-**Caché global:** `VolumeCache` por país + idioma + keyword normalizada, sin importar el proyecto. No se vuelve a pedir un dato de menos de 30 días. Lo que el proveedor no devuelve queda en `null` (nunca 0) y no se cachea.
+1. **Impresiones de GSC** (28 días) cuando el proyecto las tiene: mandan sobre todo lo demás.
+2. **Cadena `VOLUME_PROVIDERS`** (def. `dataforseo,apify,csv`): se usa el primer proveedor disponible. Uno sin credenciales, o que responde **sin saldo** (DataForSEO: HTTP 402 o `status_code` 40200/40210; Apify: 402), se salta y se pasa al siguiente. Queda marcado `PROVIDER_RETRY_HOURS` (def. 6) y la vista Keywords lo avisa.
+3. `null`: lo que el proveedor elegido no devuelve queda sin dato (nunca 0) y no se pregunta a los demás.
+
+Cada keyword guarda `volumeSource` y `volumeAt`; la tabla muestra la fuente. **Caché global** `VolumeCache` por país + idioma + keyword normalizada, sin importar el proyecto: no se vuelve a pedir un dato de menos de 30 días.
 
 | Proveedor | Cómo funciona |
 |---|---|
-| `dataforseo` | `DATAFORSEO_ENV=sandbox` por defecto (gratis, datos ficticios). Standard queue por defecto: las keywords pendientes de todos los proyectos se juntan en tasks de hasta 1.000 (`task_post` → `task_get`). El research espera hasta `DATAFORSEO_QUEUE_WAIT_SECONDS`; lo que llega después se aplica solo (backfill de volumen y score). Endpoint Live solo si el run lo pide: `POST /api/p/:id/keywords/run` con `"volumeLive": true`. |
-| `apify` | Actor `APIFY_ACTOR_ID` (def. `s-r~google-keywords`), token en `Authorization: Bearer`. El actor expande **un seed** en variantes con volumen (no acepta listas): se corre un run por seed del research (`limit` 500, `min_volume` 0) y se cruzan las variantes con nuestras keywords. Hasta 200 keywords pedidas usa `run-sync-get-dataset-items`; más, runs asíncronos con polling dentro del job del worker. El costo (`usageTotalUsd`) queda en el log del job y en `ApiCall`. Sin `APIFY_TOKEN` el proveedor queda no disponible y la app sigue. |
+| `dataforseo` (default) | `DATAFORSEO_ENV=live` y `DATAFORSEO_MODE=live`: endpoint Live, hasta 1.000 keywords por task. `DATAFORSEO_ENV=sandbox` para pruebas gratis (datos ficticios). `DATAFORSEO_MODE=queue`: standard queue que junta keywords de varios proyectos por task y completa lo pendiente después. |
+| `apify` (opcional) | Ver abajo. |
 | `csv` | Solo lo importado desde Keyword Planner. |
+
+### Apify (opcional)
+
+Token en `APIFY_TOKEN` (header `Authorization: Bearer`). Con `APIFY_MONTHLY_USD=0` (default) queda bloqueado por presupuesto aunque haya token.
+
+- **`s-r~google-keywords`** (`APIFY_ACTOR_ID` por defecto). El actor recibe **un** `keyword` y devuelve variantes de autocomplete con volumen.
+  - `APIFY_MODE=exact` (default): un run por keyword con `limit=1` y `max_suggestions=0`, que devuelve la keyword exacta (verificado a mano: **$0,003 y ~28 s por run**). Corre `APIFY_CONCURRENCY` runs en paralelo (def. 3).
+  - `APIFY_MODE=seed`: un run por seed del research (`limit` 500, `min_volume` 0) y se cruzan las variantes con nuestras keywords. Hasta 200 keywords usa `run-sync-get-dataset-items`; más, runs asíncronos con polling dentro del job.
+- **`steadyfetch~keyword-search-volume-scraper`** (`APIFY_ACTOR_ID=steadyfetch~keyword-search-volume-scraper`): acepta la **lista** completa en un run (`keywords: [...]`, `country: "CL"`, `mode: "metrics-only"`). Según su ficha: $0,19 por run con datos frescos + $0,012 por keyword con dato en el plan free (menos en planes pagos); las keywords sin dato no se cobran. Exige `maxTotalChargeUsd ≥ 0,25`, que se envía calculado.
+
+El costo de cada run (`usageTotalUsd`) queda en el log del job y en el registro de uso (en `run-sync` se busca el run por ventana de tiempo, best effort).
+
+**Keywords Everywhere:** no está integrado (el plan mínimo es anual). Si se retoma: la API exige clave hasta para `/countries`, y el ejemplo de su doc no incluye Chile, así que hay que confirmar que CL esté soportado antes de usarla.
 
 **Importar CSV de Keyword Planner** (UTF-16, tabs, inglés o español; rangos como `100 – 1K` → `volumeMin`/`volumeMax`, con volumen representativo = media geométrica del rango):
 
@@ -99,4 +116,4 @@ npm run compare-volume -- --file keywords.txt [--out compare-volume.csv] [--apif
 
 Genera `keyword, vol_dataforseo, vol_apify, diferencia_pct` y un resumen con Spearman, mediana de la diferencia % y cuántas devolvió cada uno. Con `DATAFORSEO_ENV=sandbox` los datos de DataForSEO son ficticios.
 
-Fixture real de Apify para tests: `APIFY_TOKEN=... npm run apify-fixture` (el test usa la salida real si existe; si no, un ejemplo construido con el schema del dataset).
+Fixtures reales de Apify para tests: `APIFY_TOKEN=... npm run apify-fixture` (s-r) y `npm run apify-fixture -- --actor steadyfetch~keyword-search-volume-scraper`. Los tests usan la salida real si existe; si no, el ejemplo del schema (s-r) o la fila real publicada en el README del actor (steadyfetch).

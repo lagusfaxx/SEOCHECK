@@ -32,7 +32,7 @@ before(async () => {
     });
   });
   await new Promise<void>((r) => srv.listen(0, "127.0.0.1", () => r()));
-  Object.assign(process.env, { VOLUME_PROVIDER: "apify", APIFY_TOKEN: "tok", APIFY_BASE_URL: `http://127.0.0.1:${(srv.address() as any).port}` });
+  Object.assign(process.env, { VOLUME_PROVIDERS: "apify,csv", APIFY_MODE: "seed", APIFY_TOKEN: "tok", APIFY_BASE_URL: `http://127.0.0.1:${(srv.address() as any).port}` });
   const { db } = await import("./db");
   const ws = await db.workspace.create({ data: { name: "test-vol" } });
   for (const n of ["a", "b"]) ids.push((await db.project.create({ data: { workspaceId: ws.id, name: n, domain: `${n}.cl`, country: "zz", language: "es" } })).id);
@@ -101,14 +101,15 @@ test("prioridad: impresiones GSC > proveedor", { skip: !hasDb }, async () => {
 
 test("sin APIFY_TOKEN el proveedor queda no disponible y no rompe", { skip: !hasDb }, async () => {
   const { env } = await import("./env");
-  const { resolveVolumes, volumeProviderStatus } = await import("./volume/broker");
+  const { resolveVolumes, volumeChainStatus } = await import("./volume/broker");
   const saved = env.apifyToken;
   (env as any).apifyToken = "";
   try {
-    assert.deepEqual(volumeProviderStatus(), { provider: "apify", available: false, reason: "falta APIFY_TOKEN" });
+    assert.deepEqual(await volumeChainStatus(), [{ provider: "apify", available: false, reason: "falta APIFY_TOKEN" }, { provider: "csv", available: true, reason: null }]);
     const r = await resolveVolumes(["algo nuevo sin caché"], ctx(ids[1]));
     assert.equal(r.data.size, 0);
-    assert.equal(r.stats.skipped, 1);
+    assert.deepEqual(r.stats.skipped, ["apify: falta APIFY_TOKEN"]);
+    assert.equal(r.stats.provider, "csv");
   } finally {
     (env as any).apifyToken = saved;
   }

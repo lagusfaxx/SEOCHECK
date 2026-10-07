@@ -147,7 +147,79 @@ test("ApifyFetcher: seeds limpios y cruce con preguntas/símbolos", async () => 
       return { items: [{ keyword: "qué es trail running", volume: 140 }, { keyword: "Trail Running Chile", volume: 50 }], run: null };
     },
   } as any;
-  const r = await new ApifyFetcher(fake, { syncMax: 200, limit: 10 }).fetch(["¿Qué es trail running?", "trail running chile", "no existe"], { country: "cl", language: "es", locationCode: 2152, seeds: ["¿qué es trail running?"] });
+  const r = await new ApifyFetcher(fake, { syncMax: 200, limit: 10, mode: "seed", actor: "s-r~google-keywords" }).fetch(["¿Qué es trail running?", "trail running chile", "no existe"], { country: "cl", language: "es", locationCode: 2152, seeds: ["¿qué es trail running?"] });
   assert.deepEqual(seen, ["qué es trail running"]);
   assert.deepEqual(r.map((x) => [x.keyword, x.volume]).sort(), [["trail running chile", 50], ["¿qué es trail running?", 140]]);
+});
+
+test("steadyfetch: mapeo de la fila real del README, fila sin dato y fila resumen", async (t) => {
+  const { mapSteadyfetchItem } = await import("./volume/apify");
+  const real = existsSync("src/lib/testing/fixtures/apify-steadyfetch.json");
+  const fx = JSON.parse(readFileSync(real ? "src/lib/testing/fixtures/apify-steadyfetch.json" : "src/lib/testing/fixtures/apify-steadyfetch.readme-sample.json", "utf8"));
+  t.diagnostic(`fixture: ${fx._meta.origin}`);
+  const mapped = fx.items.map(mapSteadyfetchItem);
+  if (real) {
+    for (const [i, m] of mapped.entries()) if (m) assert.ok(Number.isInteger(m.volume) && fx.items[i].keyword);
+    assert.ok(mapped.some(Boolean));
+    return;
+  }
+  assert.deepEqual(mapped[0], { keyword: "quartz countertop sealer", volume: 1600, cpc: 0.88, competition: 0.95, intent: null });
+  assert.equal(mapped[1], null, "avgMonthlySearches null → sin dato (queda null)");
+  assert.equal(mapped[2], null, "fila resumen se ignora");
+});
+
+test("Apify exact: un run por keyword con limit=1/max_suggestions=0 y concurrencia acotada", async () => {
+  const { ApifyFetcher } = await import("./volume/apify");
+  const { env } = await import("./env");
+  (env as any).apifyToken = "t";
+  let active = 0, peak = 0;
+  const inputs: any[] = [];
+  const fake = {
+    runSync: async (input: any) => {
+      inputs.push(input);
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((r) => setTimeout(r, 20));
+      active--;
+      // el actor devuelve la keyword exacta; si devolviera otra variante, no se usa
+      return { items: input.keyword === "botas raras" ? [{ keyword: "botas raras baratas", volume: 50 }] : [{ keyword: input.keyword, volume: 100 }], run: null };
+    },
+  } as any;
+  const kws = ["botas trekking", "botas raras", "¿qué es trekking?", "mochila 30l", "carpa", "saco dormir"];
+  const r = await new ApifyFetcher(fake, { mode: "exact", concurrency: 2, actor: "s-r~google-keywords" }).fetch(kws, { country: "CL", language: "es", locationCode: 2152 });
+  assert.equal(inputs.length, kws.length, "un run por keyword");
+  assert.ok(inputs.every((i) => i.limit === 1 && i.max_suggestions === 0 && i.min_volume === 0 && i.country === "cl"));
+  assert.equal(peak, 2, "respeta APIFY_CONCURRENCY");
+  assert.equal(r.find((x) => x.keyword === "botas raras"), undefined, "variante distinta no cuenta: queda null");
+  assert.equal(r.find((x) => x.keyword === "¿qué es trekking?")?.volume, 100);
+});
+
+test("steadyfetch: la lista va en un run con maxTotalChargeUsd y sin _demo", async () => {
+  const { ApifyFetcher } = await import("./volume/apify");
+  const { env } = await import("./env");
+  (env as any).apifyToken = "t";
+  const calls: any[] = [];
+  const fake = {
+    runSync: async (input: any, maxUsd: number) => {
+      calls.push({ input, maxUsd });
+      return { items: [{ keyword: "Botas Trekking", avgMonthlySearches: 1300, cpcUsd: 0.3, competitionIndex: 40 }, { keyword: "botas raras", avgMonthlySearches: null, missReason: "no-data" }, { delivered: 1, stoppedBy: "completed" }], run: { id: "r", status: "SUCCEEDED", defaultDatasetId: "d", usageTotalUsd: 0.202 } };
+    },
+  } as any;
+  const f = new ApifyFetcher(fake, { actor: "steadyfetch~keyword-search-volume-scraper" });
+  const r = await f.fetch(["botas trekking", "botas raras"], { country: "cl", language: "es", locationCode: 2152 });
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].input, { keywords: ["botas trekking", "botas raras"], country: "CL", language: "es", mode: "metrics-only", maxItems: 2, maxRunSeconds: 900 });
+  assert.ok(calls[0].maxUsd >= 0.25);
+  assert.deepEqual(r, [{ keyword: "botas trekking", volume: 1300, cpc: 0.3, competition: 0.4, intent: null }]);
+  assert.ok(Math.abs(f.estimateUsd(2) - (0.19 + 0.024)) < 1e-9);
+});
+
+test("DataForSEO: detección de sin saldo y credenciales", async () => {
+  const { dfsAccountError } = await import("./volume/dataforseo");
+  assert.equal(dfsAccountError(402, null)?.status, "no_balance");
+  assert.equal(dfsAccountError(200, { status_code: 20000, tasks: [{ status_code: 40210, status_message: "Insufficient Funds." }] })?.status, "no_balance");
+  assert.equal(dfsAccountError(200, { status_code: 40200 })?.status, "no_balance");
+  assert.equal(dfsAccountError(401, null)?.status, "auth_error");
+  assert.equal(dfsAccountError(200, { status_code: 20000, tasks: [{ status_code: 20000 }] }), null);
+  assert.equal(dfsAccountError(200, { status_code: 20000, tasks: [{ status_code: 40501 }] }), null, "keyword inválida no es falta de saldo");
 });

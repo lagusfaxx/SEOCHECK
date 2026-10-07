@@ -5,13 +5,14 @@ import { jobLog } from "../jobctx";
 import { chunk, fetchT, sleep } from "../util";
 import { cleanKeyword, sanitizeKeywords } from "../providers/sanitize";
 import type { VolumeCtx, VolumeData, VolumeProvider } from "./types";
+import { markProvider, NoBalanceError, providerBlocked } from "./state";
 
 /**
  * DataForSEO Google Ads search_volume.
- * - DATAFORSEO_ENV=sandbox (default): sandbox.dataforseo.com, gratis, datos ficticios.
- * - live: api.dataforseo.com.
- * Modo por defecto: standard queue (task_post → task_get), tasks de hasta 1.000 keywords que
- * juntan pedidos de varios proyectos (tabla VolumeRequest). Endpoint Live solo si el run lo pide.
+ * - DATAFORSEO_ENV=live (default): api.dataforseo.com. sandbox: gratis, datos ficticios.
+ * - DATAFORSEO_MODE=live (default): endpoint Live. queue: standard queue (task_post → task_get) con
+ *   tasks de hasta 1.000 keywords que juntan pedidos de varios proyectos (tabla VolumeRequest).
+ * Sin saldo (402 / 40200 / 40210) lanza NoBalanceError y la cadena pasa al siguiente proveedor.
  */
 const PATH = "/v3/keywords_data/google_ads/search_volume";
 export const dfsBase = () => env.dfsBaseOverride || (env.dfsEnv === "live" ? "https://api.dataforseo.com" : "https://sandbox.dataforseo.com");
@@ -28,10 +29,22 @@ function toData(r: Row, originals: string[]): VolumeData[] {
   }));
 }
 
+/** Sin saldo: HTTP 402 o status_code 40200/40210; credenciales: HTTP 401 o 40100 (tabla de errores de DataForSEO). */
+export function dfsAccountError(httpStatus: number, json: any): NoBalanceError | null {
+  const codes = [json?.status_code, json?.tasks?.[0]?.status_code];
+  const msg = json?.tasks?.[0]?.status_message ?? json?.status_message ?? `HTTP ${httpStatus}`;
+  if (httpStatus === 402 || codes.includes(40200) || codes.includes(40210)) return new NoBalanceError("dataforseo", msg);
+  if (httpStatus === 401 || codes.includes(40100)) return new NoBalanceError("dataforseo", msg, "auth_error");
+  return null;
+}
+
 async function post(path: string, body: unknown) {
   const res = await fetchT(`${dfsBase()}${PATH}${path}`, { method: "POST", headers: { Authorization: auth(), "Content-Type": "application/json" }, body: JSON.stringify(body), timeoutMs: 120000 });
+  const json: any = await res.json().catch(() => null);
+  const acct = dfsAccountError(res.status, json);
+  if (acct) throw acct;
   if (!res.ok) throw new Error(`DataForSEO ${res.status}`);
-  return (await res.json()) as any;
+  return json;
 }
 
 /** Live: un task; si DataForSEO rechaza el task completo, se parte en mitades para aislar keywords inválidas. */
@@ -86,7 +99,18 @@ export async function flushDfsQueue(): Promise<number> {
     const byClean = new Map<string, typeof rows>();
     for (const r of rows) byClean.set(cleanKeyword(r.keyword), [...(byClean.get(cleanKeyword(r.keyword)) ?? []), r]);
     for (const batch of chunk([...byClean.keys()], 1000)) {
-      const json = await post("/task_post", [{ keywords: batch, location_code: locationCode, language_code: language }]);
+      let json: any;
+      try {
+        json = await post("/task_post", [{ keywords: batch, location_code: locationCode, language_code: language }]);
+      } catch (e) {
+        if (e instanceof NoBalanceError) {
+          // sin saldo: los pedidos quedan en error y el research que espera cae al siguiente proveedor
+          await markProvider("dataforseo", e.status, e.message);
+          await db.volumeRequest.updateMany({ where: { id: { in: rows.map((r) => r.id) }, status: "pending" }, data: { status: "error" } });
+          return tasks;
+        }
+        throw e;
+      }
       const projects = [...new Set(batch.flatMap((k) => byClean.get(k)!.map((r) => r.projectId)).filter(Boolean))];
       await logCost("dataforseo", `search_volume/task_post (${env.dfsEnv})`, 1, { ref: `${batch.length} keywords, ${projects.length} proyecto(s)` });
       const task = json.tasks?.[0];
@@ -142,12 +166,14 @@ export class DataForSeoFetcher implements VolumeProvider {
   }
 
   async fetch(keywords: string[], ctx: VolumeCtx): Promise<VolumeData[]> {
-    if (ctx.live) return dfsLive(keywords, ctx);
+    if (ctx.live ?? env.dfsMode === "live") return dfsLive(keywords, ctx);
     const queued = await enqueueDfs(keywords, ctx);
     await this.hooks.kick?.();
     // Espera acotada a la standard queue; lo que llegue después se aplica con el backfill.
     const deadline = Date.now() + env.dfsQueueWait * 1000;
     while (Date.now() < deadline) {
+      const blocked = await providerBlocked("dataforseo");
+      if (blocked) throw new NoBalanceError("dataforseo", blocked);
       const open = await db.volumeRequest.count({ where: { keyword: { in: queued }, locationCode: ctx.locationCode, language: ctx.language, status: { in: ["pending", "sent"] } } });
       if (!open) break;
       await sleep(3000);
