@@ -1,0 +1,314 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Workspace {
+  id        String    @id @default(cuid())
+  name      String
+  createdAt DateTime  @default(now())
+  projects  Project[]
+}
+
+model Project {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name         String
+  domain       String
+  country      String   @default("cl")
+  language     String   @default("es")
+  locationCode Int      @default(2152)
+  gscProperty  String?
+  settings     Json     @default("{}")
+  createdAt    DateTime @default(now())
+
+  runs        KeywordRun[]
+  keywords    Keyword[]
+  clusters    Cluster[]
+  topics      Topic[]
+  serps       SerpSnapshot[]
+  crawls      Crawl[]
+  psi         PsiResult[]
+  inspections UrlInspection[]
+  tracked     TrackedKeyword[]
+  gscRows     GscRow[]
+  alerts      Alert[]
+  contents    ContentAnalysis[]
+  jobs        JobRun[]
+}
+
+model JobRun {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind      String
+  refId     String?
+  status    String   @default("queued") // queued | running | done | error
+  progress  Int      @default(0)
+  message   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId, kind, createdAt])
+}
+
+model KeywordRun {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  seeds     String[]
+  threshold Float    @default(0.45)
+  status    String   @default("queued")
+  stats     Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  keywords Keyword[]
+  clusters Cluster[]
+  topics   Topic[]
+}
+
+model Keyword {
+  id          String    @id @default(cuid())
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runId       String?
+  run         KeywordRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+  term        String
+  sources     String[]
+  relevance   Float?
+  volume      Int?
+  cpc         Float?
+  competition Float?
+  intent      String?
+  difficulty  Float?
+  score       Float?
+  excluded    Boolean   @default(false)
+  clusterId   String?
+  cluster     Cluster?  @relation(fields: [clusterId], references: [id], onDelete: SetNull)
+  embedding   Float[]
+  createdAt   DateTime  @default(now())
+
+  @@unique([projectId, term])
+  @@index([runId])
+}
+
+model Cluster {
+  id        String    @id @default(cuid())
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runId     String?
+  run       KeywordRun? @relation(fields: [runId], references: [id], onDelete: Cascade)
+  name      String
+  primary   String
+  intent    String?
+  volume    Int       @default(0)
+  score     Float     @default(0)
+  urls      String[]
+  topicId   String?
+  topic     Topic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  isPillar  Boolean   @default(false)
+  pos       Json?
+  keywords  Keyword[]
+}
+
+model Topic {
+  id        String    @id @default(cuid())
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runId     String?
+  run       KeywordRun? @relation(fields: [runId], references: [id], onDelete: Cascade)
+  name      String
+  pos       Json?
+  clusters  Cluster[]
+}
+
+model SerpSnapshot {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  keyword   String
+  depth     Int      @default(10)
+  organic   Json
+  paa       String[]
+  related   String[]
+  features  String[]
+  aiOverview Json?
+  fetchedAt DateTime @default(now())
+
+  @@index([projectId, keyword, fetchedAt])
+}
+
+model Crawl {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status     String   @default("queued")
+  options    Json     @default("{}")
+  stats      Json     @default("{}")
+  robots     String?
+  sitemapUrls Int     @default(0)
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+  pages      Page[]
+  issues     Issue[]
+}
+
+model Page {
+  id            String   @id @default(cuid())
+  crawlId       String
+  crawl         Crawl    @relation(fields: [crawlId], references: [id], onDelete: Cascade)
+  url           String
+  finalUrl      String?
+  status        Int
+  redirects     Json     @default("[]")
+  contentType   String?
+  title         String?
+  titleLen      Int      @default(0)
+  metaDesc      String?
+  metaLen       Int      @default(0)
+  h1            String[]
+  canonical     String?
+  canonicalType String?  // self | other | none
+  noindex       Boolean  @default(false)
+  hreflang      Json     @default("[]")
+  jsonldTypes   String[]
+  jsonldErrors  Int      @default(0)
+  wordCount     Int      @default(0)
+  imgNoAlt      Int      @default(0)
+  inlinks       Int      @default(0)
+  outlinks      Int      @default(0)
+  links         String[]
+  responseMs    Int      @default(0)
+  depth         Int      @default(0)
+  contentHash   String?
+  inSitemap     Boolean  @default(false)
+  orphan        Boolean  @default(false)
+  blocked       Boolean  @default(false)
+
+  @@unique([crawlId, url])
+}
+
+model Issue {
+  id       String @id @default(cuid())
+  crawlId  String
+  crawl    Crawl  @relation(fields: [crawlId], references: [id], onDelete: Cascade)
+  url      String
+  code     String
+  severity String // critical | warning | info
+  detail   String?
+
+  @@index([crawlId, severity])
+}
+
+model PsiResult {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  url       String
+  strategy  String
+  score     Int?
+  lab       Json
+  field     Json
+  createdAt DateTime @default(now())
+}
+
+model UrlInspection {
+  id              String   @id @default(cuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  url             String
+  verdict         String?
+  coverageState   String?
+  googleCanonical String?
+  userCanonical   String?
+  lastCrawl       DateTime?
+  raw             Json
+  createdAt       DateTime @default(now())
+}
+
+model TrackedKeyword {
+  id        String      @id @default(cuid())
+  projectId String
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  keyword   String
+  frequency String      @default("daily") // daily | weekly
+  depth     Int         @default(10)
+  active    Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  checks    RankCheck[]
+
+  @@unique([projectId, keyword])
+}
+
+model RankCheck {
+  id          String         @id @default(cuid())
+  trackedId   String
+  tracked     TrackedKeyword @relation(fields: [trackedId], references: [id], onDelete: Cascade)
+  date        DateTime       @default(now())
+  position    Int?
+  url         String?
+  features    String[]
+  competitors Json           @default("[]")
+
+  @@index([trackedId, date])
+}
+
+model GscRow {
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  date        DateTime @db.Date
+  query       String
+  page        String
+  clicks      Int
+  impressions Int
+  ctr         Float
+  position    Float
+
+  @@id([projectId, date, query, page])
+  @@index([projectId, query])
+}
+
+model Alert {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type      String   // drop | cannibal | lowctr
+  key       String
+  data      Json
+  seen      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([projectId, seen])
+}
+
+model ContentAnalysis {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  url       String
+  keyword   String
+  status    String   @default("queued")
+  score     Int?
+  result    Json     @default("{}")
+  brief     Json     @default("{}")
+  createdAt DateTime @default(now())
+}
+
+model CorpusTerm {
+  lang String
+  term String
+  df   Int
+
+  @@id([lang, term])
+}
+
+model CorpusMeta {
+  lang String @id
+  docs Int
+}

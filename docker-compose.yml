@@ -1,0 +1,77 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: seo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-seo}
+      POSTGRES_DB: seo
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seo -d seo"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: &env
+      SERVICE_FQDN_WEB_3000: ${SERVICE_FQDN_WEB_3000:-}
+      DATABASE_URL: postgresql://seo:${POSTGRES_PASSWORD:-seo}@db:5432/seo
+      TZ: ${TZ:-America/Santiago}
+      BASIC_AUTH: ${BASIC_AUTH:-}
+      SERPENT_API_KEY: ${SERPENT_API_KEY:-}
+      DATAFORSEO_LOGIN: ${DATAFORSEO_LOGIN:-}
+      DATAFORSEO_PASSWORD: ${DATAFORSEO_PASSWORD:-}
+      EMBEDDINGS_URL: ${EMBEDDINGS_URL:-http://embeddings:80}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-claude-opus-5-5}
+      PAGESPEED_API_KEY: ${PAGESPEED_API_KEY:-}
+      GSC_SERVICE_ACCOUNT_JSON: ${GSC_SERVICE_ACCOUNT_JSON:-}
+      INDEXNOW_KEY: ${INDEXNOW_KEY:-}
+      BROWSER_WS_ENDPOINT: ${BROWSER_WS_ENDPOINT:-}
+      RANK_CRON: ${RANK_CRON:-0 6 * * *}
+      GSC_CRON: ${GSC_CRON:-0 7 * * *}
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["npx", "tsx", "src/worker/index.ts"]
+    depends_on:
+      web:
+        condition: service_healthy
+    environment: *env
+
+  embeddings:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    restart: unless-stopped
+    command: ["--model-id", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", "--max-client-batch-size", "64"]
+    volumes:
+      - hfcache:/data
+
+  # Render JS opcional: levanta con `--profile render` y define BROWSER_WS_ENDPOINT=ws://browser:3000?token=${BROWSER_TOKEN}
+  browser:
+    image: ghcr.io/browserless/chromium:latest
+    profiles: ["render"]
+    restart: unless-stopped
+    environment:
+      TOKEN: ${BROWSER_TOKEN:-seo}
+      CONCURRENT: 4
+
+volumes:
+  pgdata:
+  hfcache:

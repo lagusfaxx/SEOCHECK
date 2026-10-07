@@ -1,0 +1,105 @@
+"use client";
+import { useState } from "react";
+import Board from "@/components/kw/Board";
+import MindMap from "@/components/kw/MindMap";
+import KwTable from "@/components/kw/Table";
+import type { KwData } from "@/components/kw/types";
+import { useProject } from "@/components/Shell";
+import { api, Empty, fmt, Icon, Tabs, useLocal } from "@/components/ui";
+import { useApi } from "@/components/ui";
+
+export default function KeywordsPage() {
+  const { id, refreshJobs, jobs } = useProject();
+  const [run, setRun] = useState<string>("");
+  const key = `/api/p/${id}/keywords${run ? `?run=${run}` : ""}`;
+  const { data, mutate } = useApi<KwData>(key);
+  const [view, setView] = useLocal<"table" | "board" | "map">(`kwview:${id}`, "table");
+  const [seeds, setSeeds] = useState<string[]>([]);
+  const [draft, setDraft] = useState("");
+  const [th, setTh] = useState(0.45);
+  const running = jobs.some((j) => j.kind === "keywords.run" && (j.status === "running" || j.status === "queued"));
+
+  const addSeed = (v: string) => {
+    const parts = v.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+    if (parts.length) setSeeds([...new Set([...seeds, ...parts])]);
+    setDraft("");
+  };
+  const start = async () => {
+    const all = draft.trim() ? [...seeds, draft.trim()] : seeds;
+    if (!all.length) return;
+    await api(`/api/p/${id}/keywords/run`, "POST", { seeds: all, threshold: th });
+    setSeeds([]);
+    setDraft("");
+    setRun("");
+    refreshJobs();
+    mutate();
+  };
+  const current = data?.runs.find((r) => r.id === data.runId);
+
+  return (
+    <div className="space-y-4 p-4 md:p-6">
+      <div className="card flex flex-wrap items-center gap-2 p-3">
+        <div className="flex min-w-[280px] flex-1 flex-wrap items-center gap-1.5 rounded-lg border border-ink-200 px-2 py-1 focus-within:border-acc dark:border-ink-700">
+          {seeds.map((s) => (
+            <span key={s} className="chip">
+              {s}
+              <button onClick={() => setSeeds(seeds.filter((x) => x !== s))}><Icon name="x" className="h-3 w-3" /></button>
+            </span>
+          ))}
+          <input
+            className="min-w-[160px] flex-1 bg-transparent py-1 text-sm outline-none"
+            placeholder={seeds.length ? "" : "seeds, separados por coma"}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addSeed(draft); }
+              if (e.key === "Backspace" && !draft && seeds.length) setSeeds(seeds.slice(0, -1));
+            }}
+          />
+        </div>
+        <label className="flex items-center gap-2 text-xs text-ink-500" title="umbral de relevancia">
+          <input type="range" min={0.2} max={0.8} step={0.05} value={th} onChange={(e) => setTh(Number(e.target.value))} />
+          <span className="w-8 tabular-nums">{th.toFixed(2)}</span>
+        </label>
+        <button className="btn-p" onClick={start} disabled={running || (!seeds.length && !draft.trim())}>
+          <Icon name="play" />
+          {running ? "…" : "Investigar"}
+        </button>
+      </div>
+
+      {data && data.runs.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Tabs value={view} onChange={setView} items={[{ id: "table", label: "Tabla", icon: "table" }, { id: "board", label: "Clusters", icon: "board" }, { id: "map", label: "Mapa", icon: "map" }]} />
+          <select className="input w-auto" value={data.runId ?? ""} onChange={(e) => setRun(e.target.value)}>
+            {data.runs.map((r) => (
+              <option key={r.id} value={r.id}>{r.seeds.join(", ")} · {new Date(r.createdAt).toLocaleDateString("es-CL")}</option>
+            ))}
+          </select>
+          {current && (
+            <div className="flex gap-3 text-xs text-ink-500">
+              {current.status !== "done" && <span className="chip">{current.status}</span>}
+              {Object.entries(current.stats ?? {}).map(([k, v]) => (
+                <span key={k}>{k} <b className="text-ink-800 dark:text-ink-200">{fmt(v)}</b></span>
+              ))}
+            </div>
+          )}
+          {current && (
+            <button className="btn-g ml-auto" onClick={async () => { if (confirm("¿Borrar esta investigación?")) { await api(`/api/p/${id}/keywords/run`, "DELETE", { runId: current.id }); setRun(""); mutate(); } }}>
+              <Icon name="trash" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {!data ? null : !data.runs.length ? (
+        <Empty>agrega seeds y presiona investigar</Empty>
+      ) : view === "table" ? (
+        <KwTable data={data} reload={() => mutate()} />
+      ) : view === "board" ? (
+        <Board data={data} reload={() => mutate()} setData={(d) => mutate(d, { revalidate: false })} />
+      ) : (
+        <MindMap data={data} reload={() => mutate()} />
+      )}
+    </div>
+  );
+}
