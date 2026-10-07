@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { env } from "../env";
 import { serpProvider } from "../providers";
 import { hostOf } from "../util";
 
@@ -16,10 +17,11 @@ export async function checkRank(trackedId: string) {
   });
 }
 
-/** Keywords que tocan hoy (daily siempre; weekly los lunes). */
-export async function dueTracked(projectId?: string) {
-  const monday = new Date().getDay() === 1;
+/** Keywords que tocan hoy: daily siempre; weekly el día RANK_WEEKDAY (0=domingo … 1=lunes, def. lunes) en TZ. */
+export async function dueTracked(projectId?: string, now = new Date()) {
+  const weekday = Number(process.env.RANK_WEEKDAY ?? 1);
+  const today = new Date(now.toLocaleString("en-US", { timeZone: env.tz })).getDay();
   return db.trackedKeyword.findMany({
-    where: { active: true, ...(projectId ? { projectId } : {}), ...(monday ? {} : { frequency: "daily" }) },
+    where: { active: true, ...(projectId ? { projectId } : {}), ...(today === weekday ? {} : { frequency: "daily" }) },
   });
 }

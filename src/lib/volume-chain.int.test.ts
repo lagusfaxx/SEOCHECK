@@ -37,7 +37,7 @@ before(async () => {
   });
   Object.assign(process.env, {
     VOLUME_PROVIDERS: "dataforseo,apify,csv", DATAFORSEO_LOGIN: "l", DATAFORSEO_PASSWORD: "p", DATAFORSEO_BASE_URL: dfs,
-    APIFY_TOKEN: "t", APIFY_BASE_URL: apify, APIFY_MODE: "exact",
+    APIFY_TOKEN: "t", APIFY_BASE_URL: apify, APIFY_MODE: "exact", APIFY_MONTHLY_USD: "-1", DATAFORSEO_MONTHLY_USD: "-1",
   });
   const { db } = await import("./db");
   await db.providerState.deleteMany({});
@@ -109,5 +109,22 @@ test("sin proveedores disponibles queda el CSV (solo lo importado)", { skip: !ha
     assert.deepEqual(r.stats.skipped.map((s: string) => s.split(":")[0]), ["dataforseo", "apify"]);
   } finally {
     (env as any).apifyToken = saved;
+  }
+});
+
+test("proveedor sin presupuesto se salta antes de llamarlo (sin fallar el research)", { skip: !hasDb }, async () => {
+  const { db } = await import("./db");
+  const { resolveVolumes } = await import("./volume/broker");
+  await db.providerState.deleteMany({});
+  dfsReply = (b) => ({ status: 200, json: { status_code: 20000, tasks: [{ status_code: 20000, result: b[0].keywords.map((k: string) => ({ keyword: k, search_volume: 1 })) }] } });
+  process.env.DATAFORSEO_MONTHLY_USD = "0";
+  const before = hits.filter((h) => h.host === "dfs").length;
+  try {
+    const r = await resolveVolumes(["botas presupuesto"], ctx());
+    assert.equal(hits.filter((h) => h.host === "dfs").length, before, "no se llamó a DataForSEO");
+    assert.match(r.stats.skipped[0], /^dataforseo: presupuesto mensual agotado/);
+    assert.equal(r.stats.provider, "apify");
+  } finally {
+    process.env.DATAFORSEO_MONTHLY_USD = "-1";
   }
 });

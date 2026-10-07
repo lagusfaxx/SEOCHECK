@@ -10,7 +10,22 @@ Next.js 14 + Prisma + Postgres + worker con pg-boss (sin Redis).
 
 Servicios: `db` (Postgres 16), `migrate` (one-shot: `prisma migrate deploy`), `web` (UI + API), `worker` (crawls, SERPs, clustering, sync GSC, rank tracking, briefs), `embeddings` (text-embeddings-inference con `paraphrase-multilingual-MiniLM-L12-v2` horneado en la imagen; límite de memoria `EMBEDDINGS_MEM_LIMIT`, def. 2304m, pico medido ~1,6 GiB), `browser` opcional (`--profile render`, Chromium para sitios con render JS).
 
-Crons (zona `TZ`): `RANK_CRON` rank tracking diario/semanal, `GSC_CRON` sync de Search Console.
+Crons (zona `TZ`): `RANK_CRON` revisa cada día qué keywords tocan (las **semanales**, default por proyecto, corren el `RANK_WEEKDAY`, def. lunes; las diarias, todos los días) y `GSC_CRON` sincroniza Search Console.
+
+## Presupuesto
+
+Límites mensuales en USD por proveedor (mes calendario en `TZ`): `SERPENT_MONTHLY_USD=3`, `LLM_MONTHLY_USD=2`, `DATAFORSEO_MONTHLY_USD=1`, `APIFY_MONTHLY_USD=0` (bloqueado). `-1` = sin límite. Keywords Everywhere no está integrado, así que no hay límite de créditos KE.
+
+- **El gasto sale de `ProviderUsage`**: DataForSEO con el `cost` real de cada respuesta; Apify con `usageTotalUsd`; LLM con tokens × tarifa (`src/lib/pricing.ts`); Serpent con `SERPENT_USD_PER_CALL` ($0,60 / 1K llamadas según su doc; Quick cobra 1 por llamada, Deep 1 por página).
+- **Antes de llamar a cualquier API**, cada job calcula una cota superior de lo que puede gastar:
+  - research: seeds + 2ª ronda + SERPs del top, más los lotes de intent con LLM;
+  - rank: 1 llamada Quick por keyword;
+  - contenido: 1 SERP + 1 brief.
+  Si no cabe en lo que queda del mes, el job falla con un error que dice cuánto se gastó, cuánto necesita y qué variable subir. No se reintenta, porque no se gastó nada. La API devuelve el mismo error (HTTP 402) al encolar, y la UI lo muestra al instante.
+- **Volumen:** un proveedor cuyo gasto no cabe se trata como sin saldo y la cadena pasa al siguiente (el CSV es gratis), así el research no falla por eso.
+- **Dashboard:** el bloque "Gasto del mes" del resumen muestra gasto vs. límite por proveedor, llamadas y tokens del LLM. Endpoint: `GET /api/usage`.
+
+Las cotas son estimaciones conservadoras: la caché de SERP y de volumen hace que el gasto real suela ser menor. Dos jobs simultáneos se validan por separado.
 
 ## Local
 

@@ -261,7 +261,7 @@ model TrackedKeyword {
   projectId String
   project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   keyword   String
-  frequency String      @default("daily") // daily | weekly
+  frequency String      @default("weekly") // daily | weekly
   depth     Int         @default(10)
   active    Boolean     @default(true)
   createdAt DateTime    @default(now())

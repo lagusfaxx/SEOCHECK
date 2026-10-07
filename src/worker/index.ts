@@ -1,7 +1,7 @@
 import type PgBoss from "pg-boss";
 import { db } from "../lib/db";
 import { env } from "../lib/env";
-import { getBoss, jobDone, jobError, jobProgress, QUEUES, type QueueName } from "../lib/queue";
+import { enqueue, getBoss, jobDone, jobError, jobProgress, QUEUES, type QueueName } from "../lib/queue";
 import { runKeywordPipeline } from "../lib/keywords/pipeline";
 import { runCrawl } from "../lib/audit/crawler";
 import { runInspection, runPsi } from "../lib/audit/extras";
@@ -10,6 +10,7 @@ import { syncGsc } from "../lib/rank/gsc";
 import { computeAlerts } from "../lib/rank/alerts";
 import { analyzeContent } from "../lib/content/analyze";
 import { runWithJob } from "../lib/jobctx";
+import { assertBudget, BudgetError, est } from "../lib/budget";
 import { collectDfsQueue, flushDfsQueue } from "../lib/volume/dataforseo";
 import { backfillVolumes, writeCache } from "../lib/volume/broker";
 
@@ -30,6 +31,7 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
       return runInspection(d.projectId, d.urls);
     case QUEUES.rankOne: {
       const ids: string[] = d.trackedIds ?? [d.trackedId];
+      await assertBudget({ serpent: est.serpCalls(ids.length) }, `Rank tracking (${ids.length} keywords)`);
       for (let i = 0; i < ids.length; i++) {
         try {
           await checkRank(ids[i]);
@@ -45,7 +47,8 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
       const due = await dueTracked();
       const byProject = new Map<string, string[]>();
       for (const t of due) byProject.set(t.projectId, [...(byProject.get(t.projectId) ?? []), t.id]);
-      for (const [projectId, trackedIds] of byProject) await boss.send(QUEUES.rankOne, { projectId, trackedIds });
+      // con JobRun: si el presupuesto no alcanza, el error queda visible en la UI del proyecto
+      for (const [projectId, trackedIds] of byProject) await enqueue(projectId, QUEUES.rankOne, { trackedIds });
       return;
     }
     case QUEUES.gscSync:
@@ -73,6 +76,7 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
       return { done: r.done, waiting: r.waiting, updated };
     }
     case QUEUES.content:
+      await assertBudget({ serpent: est.serpCalls(1), llm: est.llmBrief() }, "Optimización de contenido");
       return analyzeContent(d.contentId, d.jobRunId).catch(async (e) => {
         await db.contentAnalysis.update({ where: { id: d.contentId }, data: { status: "error" } });
         throw e;
@@ -104,6 +108,7 @@ async function main() {
           } catch (e) {
             console.error(`[${name}] error ${job.id}`, e);
             await jobError(d.jobRunId, e);
+            if (e instanceof BudgetError) continue; // no reintentar: no se gastó nada y fallaría igual
             throw e;
           }
         }

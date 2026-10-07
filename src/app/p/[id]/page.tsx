@@ -17,7 +17,41 @@ const DEFAULT: W[] = [
   { id: "alerts", w: 1 },
   { id: "actions", w: 1 },
   { id: "content", w: 1 },
+  { id: "spend", w: 1 },
 ];
+
+const PROV: Record<string, string> = { serpent: "Serpent", dataforseo: "DataForSEO", apify: "Apify", llm: "LLM" };
+
+function Spend() {
+  const { data } = useApi<any>("/api/usage", { refreshInterval: 30000 });
+  if (!data) return null;
+  return (
+    <div className="space-y-2.5 text-sm">
+      {data.providers.map((p: any) => {
+        const pct = p.limitUsd > 0 ? (p.spentUsd / p.limitUsd) * 100 : p.limitUsd === 0 ? 100 : 0;
+        const state = data.states.find((s: any) => s.provider === p.provider);
+        return (
+          <div key={p.provider}>
+            <div className="flex items-baseline gap-2">
+              <span>{PROV[p.provider] ?? p.provider}</span>
+              {state && <span className="chip !bg-amber-100 !text-amber-800">{state.status === "no_balance" ? "sin saldo" : "credenciales"}</span>}
+              <span className="ml-auto tabular-nums">
+                ${p.spentUsd.toFixed(p.spentUsd < 1 ? 3 : 2)}
+                <span className="text-ink-400"> / {p.limitUsd < 0 ? "∞" : p.limitUsd === 0 ? "bloqueado" : `$${p.limitUsd.toFixed(2)}`}</span>
+              </span>
+            </div>
+            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-ink-100 dark:bg-ink-800">
+              <div className={cx("h-full rounded-full", pct >= 100 ? "bg-rose-500" : pct >= 80 ? "bg-amber-400" : "bg-acc")} style={{ width: `${Math.min(100, pct)}%` }} />
+            </div>
+            <div className="mt-0.5 text-[11px] text-ink-400">
+              {fmt(p.calls)} llamadas{p.provider === "llm" && p.inputTokens ? ` · ${fmt(p.inputTokens)} in / ${fmt(p.outputTokens)} out tokens` : ""}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function Block({ w, onResize, children, title }: { w: W; onResize: () => void; children: ReactNode; title: string }) {
   const s = useSortable({ id: w.id });
@@ -156,6 +190,8 @@ export default function Overview() {
             <button className="btn justify-center" onClick={() => run("alerts")}><Icon name="bell" />Alertas</button>
           </div>,
         ];
+      case "spend":
+        return ["Gasto del mes", <Spend key="sp" />];
       case "content":
         return [
           "Contenido",

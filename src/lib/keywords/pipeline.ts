@@ -13,6 +13,7 @@ import { classifyIntents } from "./intent";
 import { difficultyProxy, embeddingClusters, kwScore, overlapClusters } from "./cluster";
 import { topicLabels } from "./hdbscan";
 import { matchGroups } from "./reconcile";
+import { assertBudget, est } from "../budget";
 
 type Opts = {
   maxKeywords?: number;
@@ -30,6 +31,14 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   const settings = (p.settings ?? {}) as Record<string, any>;
   const opts: Opts = { maxKeywords: 400, serpTop: 150, useGsc: true, minShared: 3, serpExpansion: 20, ...(settings.keywords ?? {}) };
   const brands: string[] = settings.brands ?? [p.domain.split(".")[0]];
+  // Presupuesto: cota superior de lo que este research puede gastar, antes de cualquier llamada
+  await assertBudget(
+    {
+      serpent: est.serpCalls(run.seeds.length + (opts.serpExpansion ?? 0) + (opts.serpTop ?? 0)),
+      llm: est.llmIntent(opts.maxKeywords ?? 400),
+    },
+    "Research de keywords"
+  );
   const stats: Record<string, number> = {};
   const step = async (pct: number, msg: string) => {
     await jobProgress(jobRunId, pct, msg);

@@ -8,6 +8,7 @@ import { ApifyFetcher } from "./apify";
 import { DataForSeoFetcher } from "./dataforseo";
 import type { VolumeCtx, VolumeData, VolumeProvider, VolumeSource } from "./types";
 import { markProvider, markProviderOk, NoBalanceError, providerBlocked } from "./state";
+import { DFS_USD_PER_TASK, fitsBudget, type BudgetProvider } from "../budget";
 
 export const CACHE_DAYS = 30;
 export const volKey = (k: string) => normTerm(k.normalize("NFC"));
@@ -98,7 +99,9 @@ export async function resolveVolumes(keywords: string[], ctx: VolumeCtx): Promis
         break; // solo volúmenes importados (ya leídos desde la caché)
       }
       const fetcher = fetcherFor(name)!;
-      const why = fetcher.unavailable() ?? (await providerBlocked(name));
+      // presupuesto: si la cota del gasto no cabe en el mes, se trata como sin saldo y se pasa al siguiente
+      const need = name === "dataforseo" ? Math.ceil(misses.length / 1000) * DFS_USD_PER_TASK : (fetcher as ApifyFetcher).estimateUsd(misses.length, ctx.seeds?.length || misses.length);
+      const why = fetcher.unavailable() ?? (await providerBlocked(name)) ?? ((await fitsBudget(name as BudgetProvider, need)) ? null : `presupuesto mensual agotado (necesita hasta $${need.toFixed(3)})`);
       if (why) {
         stats.skipped.push(`${name}: ${why}`);
         continue;

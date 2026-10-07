@@ -32,7 +32,7 @@ before(async () => {
     });
   });
   await new Promise<void>((r) => srv.listen(0, "127.0.0.1", () => r()));
-  Object.assign(process.env, { VOLUME_PROVIDERS: "apify,csv", APIFY_MODE: "seed", APIFY_TOKEN: "tok", APIFY_BASE_URL: `http://127.0.0.1:${(srv.address() as any).port}` });
+  Object.assign(process.env, { VOLUME_PROVIDERS: "apify,csv", APIFY_MODE: "seed", APIFY_MONTHLY_USD: "-1", APIFY_TOKEN: "tok", APIFY_BASE_URL: `http://127.0.0.1:${(srv.address() as any).port}` });
   const { db } = await import("./db");
   const ws = await db.workspace.create({ data: { name: "test-vol" } });
   for (const n of ["a", "b"]) ids.push((await db.project.create({ data: { workspaceId: ws.id, name: n, domain: `${n}.cl`, country: "zz", language: "es" } })).id);

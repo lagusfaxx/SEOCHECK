@@ -9,6 +9,7 @@ import { parseKeywordPlannerCsv } from "@/lib/volume/csv";
 import { backfillVolumes, volumeChainStatus, writeCache } from "@/lib/volume/broker";
 import { env } from "@/lib/env";
 import { llmStatus } from "@/lib/providers/llm";
+import { assertBudget, BudgetError, budgetLimits, est, monthStart, spentThisMonth } from "@/lib/budget";
 import { normTerm, normUrl } from "@/lib/util";
 
 export const dynamic = "force-dynamic";
@@ -198,6 +199,8 @@ const POSTS: Record<string, H> = {
   "keywords/run": async ({ id, body }) => {
     const seeds: string[] = (body.seeds ?? []).map((s: string) => normTerm(s)).filter(Boolean);
     if (!seeds.length) throw new Error("seeds");
+    const kwOpts = { serpTop: 150, serpExpansion: 20, maxKeywords: 400, ...((((await db.project.findUniqueOrThrow({ where: { id } })).settings ?? {}) as any).keywords ?? {}) };
+    await assertBudget({ serpent: est.serpCalls(seeds.length + kwOpts.serpExpansion + kwOpts.serpTop), llm: est.llmIntent(kwOpts.maxKeywords) }, "Research de keywords");
     // volumeLive: DataForSEO endpoint Live (solo si se pide explícitamente); por defecto standard queue
     const run = await db.keywordRun.create({ data: { projectId: id, seeds, threshold: Number(body.threshold ?? 0.45), options: { volumeLive: body.volumeLive === true } } });
     await enqueue(id, QUEUES.keywords, { runId: run.id }, run.id);
@@ -245,12 +248,14 @@ const POSTS: Record<string, H> = {
 
   rank: async ({ id, body }) => {
     const kws: string[] = [...new Set<string>((body.keywords ?? []).map((k: string) => normTerm(k)).filter(Boolean))];
+    // frecuencia: la del body, si no la del proyecto (settings.rank.frequency), si no semanal
+    const projFreq = ((((await db.project.findUniqueOrThrow({ where: { id } })).settings ?? {}) as any).rank?.frequency as string) ?? "weekly";
     const created = [];
     for (const keyword of kws) {
       created.push(
         await db.trackedKeyword.upsert({
           where: { projectId_keyword: { projectId: id, keyword } },
-          create: { projectId: id, keyword, depth: Number(body.depth ?? 10), frequency: body.frequency ?? "daily" },
+          create: { projectId: id, keyword, depth: 100, frequency: body.frequency ?? projFreq },
           update: { active: true },
         })
       );
@@ -261,6 +266,7 @@ const POSTS: Record<string, H> = {
 
   "rank/check": async ({ id, body }) => {
     const ids: string[] = body.ids?.length ? body.ids : (await db.trackedKeyword.findMany({ where: { projectId: id, active: true }, select: { id: true } })).map((t) => t.id);
+    await assertBudget({ serpent: est.serpCalls(ids.length) }, `Rank tracking (${ids.length} keywords)`);
     return enqueue(id, QUEUES.rankOne, { trackedIds: ids });
   },
 
@@ -271,6 +277,7 @@ const POSTS: Record<string, H> = {
   content: async ({ id, body }) => {
     const u = normUrl(body.url ?? "");
     if (!u || !body.keyword) throw new Error("url y keyword");
+    await assertBudget({ serpent: est.serpCalls(1), llm: est.llmBrief() }, "Optimización de contenido");
     const a = await db.contentAnalysis.create({ data: { projectId: id, url: u, keyword: normTerm(body.keyword) } });
     await enqueue(id, QUEUES.content, { contentId: a.id }, a.id);
     return a;
@@ -278,6 +285,7 @@ const POSTS: Record<string, H> = {
 
   "content/rebrief": async ({ id, body }) => {
     const a = await db.contentAnalysis.findUniqueOrThrow({ where: { id: body.cid }, include: { project: true } });
+    await assertBudget({ llm: est.llmBrief() }, "Regenerar brief");
     const brief = await makeBrief(a.result as unknown as ContentResult, a.project.language, a.project.country);
     return db.contentAnalysis.update({ where: { id: a.id }, data: { brief: brief as any } });
   },
@@ -296,6 +304,9 @@ const PATCHS: Record<string, H> = {
       const next: Record<string, any> = { ...cur };
       for (const [k, v] of Object.entries(body.settings as Record<string, any>)) next[k] = v && typeof v === "object" && !Array.isArray(v) && cur[k] && typeof cur[k] === "object" ? { ...cur[k], ...v } : v;
       data.settings = next;
+      // cambiar la frecuencia del proyecto la aplica a todas sus keywords trackeadas
+      const freq = (body.settings as any).rank?.frequency;
+      if (freq === "daily" || freq === "weekly") await db.trackedKeyword.updateMany({ where: { projectId: id }, data: { frequency: freq } });
     }
     return db.project.update({ where: { id }, data });
   },
@@ -378,6 +389,7 @@ function make(table: Record<string, H>) {
       console.error(`[api] ${req.method} ${key}`, e);
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") return bad("no existe", 404);
       if (e instanceof Error && e.message.startsWith("Propiedad GSC inválida")) return bad(e.message, 400);
+      if (e instanceof BudgetError) return bad(e.message, 402);
       return bad(e instanceof Error ? e.message : "error", 500);
     }
   };

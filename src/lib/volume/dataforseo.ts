@@ -6,6 +6,7 @@ import { chunk, fetchT, sleep } from "../util";
 import { cleanKeyword, sanitizeKeywords } from "../providers/sanitize";
 import type { VolumeCtx, VolumeData, VolumeProvider } from "./types";
 import { markProvider, NoBalanceError, providerBlocked } from "./state";
+import { DFS_USD_PER_TASK, fitsBudget } from "../budget";
 
 /**
  * DataForSEO Google Ads search_volume.
@@ -92,6 +93,13 @@ export async function enqueueDfs(keywords: string[], ctx: VolumeCtx) {
 /** Junta pedidos pendientes de todos los proyectos y publica tasks de hasta 1.000 keywords. */
 export async function flushDfsQueue(): Promise<number> {
   const pending = await db.volumeRequest.findMany({ where: { status: "pending" }, orderBy: { createdAt: "asc" }, take: 50_000 });
+  const tasksNeeded = Math.ceil(new Set(pending.map((r) => `${r.locationCode}|${r.language}|${cleanKeyword(r.keyword)}`)).size / 1000);
+  if (pending.length && !(await fitsBudget("dataforseo", tasksNeeded * DFS_USD_PER_TASK))) {
+    // sin presupuesto: nada se envía; el research que espera pasa al siguiente proveedor
+    await markProvider("dataforseo", "no_balance", "presupuesto mensual agotado (DATAFORSEO_MONTHLY_USD)");
+    await db.volumeRequest.updateMany({ where: { id: { in: pending.map((r) => r.id) } }, data: { status: "error" } });
+    return 0;
+  }
   const groups = new Map<string, typeof pending>();
   for (const r of pending) groups.set(`${r.locationCode}|${r.language}`, [...(groups.get(`${r.locationCode}|${r.language}`) ?? []), r]);
   let tasks = 0;
