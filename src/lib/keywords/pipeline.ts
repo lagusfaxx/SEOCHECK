@@ -90,7 +90,7 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   const volMap = new Map<string, { volume: number | null; cpc: number | null; competition: number | null }>();
   if (env.dfsLogin) {
     try {
-      for (const v of await volumeProvider().volumes(kept.map((k) => k.term), { locationCode: p.locationCode, language: p.language })) volMap.set(v.keyword, v);
+      for (const v of await volumeProvider().volumes(kept.map((k) => k.term), { locationCode: p.locationCode, language: p.language, projectId: p.id })) volMap.set(v.keyword, v);
     } catch (e) {
       console.warn("[keywords] volumen", e);
     }

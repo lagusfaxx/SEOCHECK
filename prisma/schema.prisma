@@ -134,6 +134,7 @@ model SerpSnapshot {
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   keyword   String
   depth     Int      @default(10)
+  source    String   @default("deep") // deep | quick
   organic   Json
   paa       String[]
   related   String[]
@@ -311,4 +312,17 @@ model CorpusTerm {
 model CorpusMeta {
   lang String @id
   docs Int
+}
+
+/// Log de costos de APIs externas (unidades facturables según cada proveedor).
+model ApiCall {
+  id        String   @id @default(cuid())
+  projectId String?
+  provider  String
+  endpoint  String
+  units     Int
+  ref       String?
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
 }

@@ -6,9 +6,9 @@ export async function checkRank(trackedId: string) {
   const t = await db.trackedKeyword.findUniqueOrThrow({ where: { id: trackedId }, include: { project: true } });
   const p = t.project;
   const own = hostOf(p.domain);
-  // num=100 solo si el keyword lo pide (cada página se cobra)
-  const serp = await serpProvider().search(t.keyword, { country: p.country, language: p.language, depth: t.depth });
-  await db.serpSnapshot.create({ data: { projectId: p.id, keyword: t.keyword, depth: t.depth, organic: serp.organic, paa: serp.paa, related: serp.related, features: serp.features, aiOverview: (serp.aiOverview ?? undefined) as any } });
+  // Quick con num=100: una sola unidad facturada por keyword, top 100 completo.
+  const serp = await serpProvider().quick(t.keyword, { country: p.country, language: p.language, projectId: p.id, num: 100 });
+  await db.serpSnapshot.create({ data: { projectId: p.id, keyword: t.keyword, depth: 100, source: "quick", organic: serp.organic, paa: serp.paa, related: serp.related, features: serp.features, aiOverview: (serp.aiOverview ?? undefined) as any } });
   const hit = serp.organic.find((o) => o.domain === own || o.domain.endsWith("." + own));
   const competitors = serp.organic.slice(0, 10).filter((o) => o.domain !== own).map((o) => ({ domain: o.domain, position: o.position, url: o.url }));
   return db.rankCheck.create({

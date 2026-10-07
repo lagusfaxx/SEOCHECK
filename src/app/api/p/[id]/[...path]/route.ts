@@ -173,6 +173,16 @@ const GETS: Record<string, H> = {
     return rows.map((r: any) => ({ key: r[other], clicks: r._sum.clicks, impressions: r._sum.impressions, position: r._avg.position }));
   },
 
+  costs: async ({ id, url }) => {
+    const days = Number(url.searchParams.get("days") ?? 30);
+    const since = new Date(Date.now() - days * 864e5);
+    const [byEndpoint, recent] = await Promise.all([
+      db.apiCall.groupBy({ by: ["provider", "endpoint"], where: { projectId: id, createdAt: { gte: since } }, _sum: { units: true }, _count: true }),
+      db.apiCall.findMany({ where: { projectId: id }, orderBy: { createdAt: "desc" }, take: 200 }),
+    ]);
+    return { byEndpoint: byEndpoint.map((r) => ({ provider: r.provider, endpoint: r.endpoint, calls: r._count, units: r._sum.units ?? 0 })), recent };
+  },
+
   content: async ({ id }) =>
     db.contentAnalysis.findMany({ where: { projectId: id }, orderBy: { createdAt: "desc" }, select: { id: true, url: true, keyword: true, score: true, status: true, createdAt: true } }),
 

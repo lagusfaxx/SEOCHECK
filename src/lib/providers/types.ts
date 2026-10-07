@@ -9,14 +9,19 @@ export type Serp = {
   aiOverview: unknown | null;
 };
 
+export type SerpOpts = { country: string; language: string; projectId?: string };
+
 export interface SerpProvider {
-  search(q: string, opts: { country: string; language: string; depth?: number }): Promise<Serp>;
+  /** SERP completo de 1 página: orgánicos + PAA + related + features. Research y content. */
+  deep(q: string, opts: SerpOpts): Promise<Serp>;
+  /** Solo orgánicos hasta `num` (≤100) en una llamada facturada una vez. Rank tracking. */
+  quick(q: string, opts: SerpOpts & { num?: number }): Promise<Serp>;
 }
 
 export type VolumeRow = { keyword: string; volume: number | null; cpc: number | null; competition: number | null };
 
 export interface VolumeProvider {
-  volumes(keywords: string[], opts: { locationCode: number; language: string }): Promise<VolumeRow[]>;
+  volumes(keywords: string[], opts: { locationCode: number; language: string; projectId?: string }): Promise<VolumeRow[]>;
 }
 
 export interface EmbeddingProvider {

@@ -1,9 +1,10 @@
 import { env } from "../env";
+import { logCost } from "../costs";
 import { chunk, fetchT } from "../util";
 import type { VolumeProvider, VolumeRow } from "./types";
 
 export class DataForSeoProvider implements VolumeProvider {
-  async volumes(keywords: string[], opts: { locationCode: number; language: string }): Promise<VolumeRow[]> {
+  async volumes(keywords: string[], opts: { locationCode: number; language: string; projectId?: string }): Promise<VolumeRow[]> {
     if (!env.dfsLogin) throw new Error("Falta DATAFORSEO_LOGIN");
     const auth = Buffer.from(`${env.dfsLogin}:${env.dfsPassword}`).toString("base64");
     const out: VolumeRow[] = [];
@@ -17,6 +18,8 @@ export class DataForSeoProvider implements VolumeProvider {
         timeoutMs: 120000,
       });
       if (!res.ok) throw new Error(`DataForSEO ${res.status}`);
+      // DataForSEO factura por task (hasta 1.000 keywords por task)
+      await logCost("dataforseo", "google_ads/search_volume", 1, { projectId: opts.projectId, ref: `${batch.length} keywords` });
       const json: any = await res.json();
       const task = json.tasks?.[0];
       if (task?.status_code && task.status_code >= 40000) throw new Error(`DataForSEO: ${task.status_message}`);
