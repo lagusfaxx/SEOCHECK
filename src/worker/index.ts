@@ -98,7 +98,7 @@ async function main() {
           console.log(`[${name}] start ${job.id}`);
           try {
             await jobProgress(d.jobRunId, 1);
-            const r = await runWithJob(d.jobRunId, () => handle(boss, name, d));
+            const r = await runWithJob(d.jobRunId, () => handle(boss, name, d), d.projectId);
             await jobDone(d.jobRunId, r && typeof r === "object" ? JSON.stringify(r).slice(0, 300) : undefined);
             console.log(`[${name}] done ${job.id}`);
           } catch (e) {

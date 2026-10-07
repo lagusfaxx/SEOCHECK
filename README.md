@@ -43,20 +43,22 @@ IndexNow: publica `https://dominio/<INDEXNOW_KEY>.txt` con la key como contenido
 
 ## LLM
 
-Por defecto `claude-sonnet-5-5`. Para usar Opus: `LLM_MODEL=claude-opus-5-5`. Sin `ANTHROPIC_API_KEY` usa OpenAI si hay `OPENAI_API_KEY`; sin ninguno, el intent queda por reglas y el brief es determinista.
+`LLM_PROVIDER=openai` (default) con `OPENAI_API_KEY` y `LLM_MODEL` por defecto **`gpt-4o-mini`**: el modelo "mini" más barato vigente según la tabla de precios de OpenAI al 2026-10-07 ($0,15 / 1M tokens de entrada, $0,075 cacheados, $0,60 / 1M de salida), y no figura en su página de deprecaciones. Se llama por Chat Completions en JSON mode con `max_completion_tokens`, que sirve también para la familia gpt-5 si cambias el modelo.
 
-Se usa para clasificar el intent de las keywords dudosas (effort `low`) y para generar el brief (effort `medium`).
+Claude es opcional: `LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` (default `claude-sonnet-5-5`). Sin la clave del proveedor elegido no hay LLM: el intent queda por reglas y el brief es determinista.
 
-**Rechazos y fallback.** Las requests van con `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`). Si el modelo rechaza, la API reintenta dentro de la misma llamada en otro modelo, según la categoría del rechazo:
+Se usa para el intent de keywords dudosas y para el brief. Cada llamada registra en `ProviderUsage` el modelo, los tokens de entrada y salida y el costo en USD, calculado con `src/lib/pricing.ts`. Para un modelo que no está en la tabla se usa `LLM_PRICE_INPUT`/`LLM_PRICE_OUTPUT` (USD por 1M) o, si no están, la tarifa más cara conocida (conservador para el presupuesto).
+
+**Rechazos con Claude (`LLM_PROVIDER=anthropic`).** Las requests van con `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`):
 
 | Modelo | Categoría del rechazo | Qué pasa |
 |---|---|---|
 | `claude-sonnet-5-5` | `cyber`, `frontier_llm` | se reintenta en `claude-sonnet-5` |
 | `claude-sonnet-5-5` | `bio`, `reasoning_extraction`, `general_harms` | sin fallback: rechazo final |
 | `claude-opus-5-5` | según categoría (`cyber` → `claude-opus-4-8`) | destinos posibles: `claude-opus-5`, `claude-opus-4-8` |
-| `claude-haiku-*` | — | sin fallback server-side (no se envía el parámetro) |
+| `claude-haiku-*` | — | sin fallback server-side |
 
-Todo queda en `JobRun.log` del job: cada fallback (`LLM fallback: <modelo> rechazó, continuó <modelo>`), el modelo que respondió si no es el pedido, y el rechazo final con su categoría. Ante un rechazo final, el intent cae a `informational` y el brief al determinista; ambos casos también se registran.
+Cada fallback y rechazo final queda en `JobRun.log`. Con OpenAI, un `refusal` también queda registrado y el job cae a reglas o brief determinista.
 
 ## Crawler
 

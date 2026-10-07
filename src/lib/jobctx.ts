@@ -2,11 +2,13 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { db } from "./db";
 
 /** Contexto del job en curso: lo que se loggee con jobLog() queda en JobRun.log. */
-const store = new AsyncLocalStorage<{ jobRunId?: string }>();
+const store = new AsyncLocalStorage<{ jobRunId?: string; projectId?: string }>();
 
-export function runWithJob<T>(jobRunId: string | undefined, fn: () => Promise<T>) {
-  return store.run({ jobRunId }, fn);
+export function runWithJob<T>(jobRunId: string | undefined, fn: () => Promise<T>, projectId?: string) {
+  return store.run({ jobRunId, projectId }, fn);
 }
+
+export const currentProjectId = () => store.getStore()?.projectId;
 
 export async function jobLog(level: "info" | "warn" | "error", msg: string, data?: unknown) {
   const line = `[job${store.getStore()?.jobRunId ? ` ${store.getStore()!.jobRunId}` : ""}] ${msg}`;

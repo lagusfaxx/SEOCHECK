@@ -20,7 +20,7 @@ before(async () => {
 after(async () => {
   if (!hasDb) return;
   const { db } = await import("./db");
-  await db.apiCall.deleteMany({ where: { projectId } });
+  await db.providerUsage.deleteMany({ where: { projectId } });
   await db.project.delete({ where: { id: projectId } }).catch(() => {});
   await db.workspace.deleteMany({ where: { name: "test-exp" } });
   await mock.close();

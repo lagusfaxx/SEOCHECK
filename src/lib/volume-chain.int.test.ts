@@ -51,7 +51,7 @@ after(async () => {
   const { db } = await import("./db");
   await db.volumeCache.deleteMany({ where: { country: "xx" } });
   await db.providerState.deleteMany({});
-  await db.apiCall.deleteMany({ where: { projectId } });
+  await db.providerUsage.deleteMany({ where: { projectId } });
   await db.project.deleteMany({ where: { id: projectId } });
   await db.workspace.deleteMany({ where: { name: "test-chain" } });
   servers.forEach((s) => s.close());

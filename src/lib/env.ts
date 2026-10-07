@@ -23,7 +23,10 @@ export const env = {
   embeddingsUrl: process.env.EMBEDDINGS_URL ?? "",
   openaiKey: process.env.OPENAI_API_KEY ?? "",
   anthropicKey: process.env.ANTHROPIC_API_KEY ?? "",
-  llmModel: process.env.LLM_MODEL || "claude-sonnet-5-5",
+  /** openai (default) | anthropic */
+  llmProvider: (process.env.LLM_PROVIDER === "anthropic" ? "anthropic" : "openai") as "openai" | "anthropic",
+  /** Default: gpt-4o-mini (mini más barato vigente de OpenAI) o claude-sonnet-5-5 con LLM_PROVIDER=anthropic */
+  llmModel: process.env.LLM_MODEL || (process.env.LLM_PROVIDER === "anthropic" ? "claude-sonnet-5-5" : "gpt-4o-mini"),
   psiKey: process.env.PAGESPEED_API_KEY ?? "",
   gscCredentials: process.env.GSC_SERVICE_ACCOUNT_JSON ?? "",
   browserWs: process.env.BROWSER_WS_ENDPOINT ?? "",

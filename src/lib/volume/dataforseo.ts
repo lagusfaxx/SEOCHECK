@@ -50,7 +50,8 @@ async function post(path: string, body: unknown) {
 /** Live: un task; si DataForSEO rechaza el task completo, se parte en mitades para aislar keywords inválidas. */
 async function liveTask(batch: string[], ctx: VolumeCtx, depth = 0): Promise<Row[]> {
   const json = await post("/live", [{ keywords: batch, location_code: ctx.locationCode, language_code: ctx.language }]);
-  await logCost("dataforseo", `search_volume/live (${env.dfsEnv})`, 1, { projectId: ctx.projectId, ref: `${batch.length} keywords` });
+  // DataForSEO informa el costo real de cada request en `cost` (USD)
+  await logCost("dataforseo", `search_volume/live (${env.dfsEnv})`, 1, { projectId: ctx.projectId, ref: `${batch.length} keywords` }, typeof json.cost === "number" ? json.cost : null);
   const task = json.tasks?.[0];
   if (task?.status_code && task.status_code >= 40000) {
     if (batch.length === 1 || depth >= 6) {
@@ -112,7 +113,7 @@ export async function flushDfsQueue(): Promise<number> {
         throw e;
       }
       const projects = [...new Set(batch.flatMap((k) => byClean.get(k)!.map((r) => r.projectId)).filter(Boolean))];
-      await logCost("dataforseo", `search_volume/task_post (${env.dfsEnv})`, 1, { ref: `${batch.length} keywords, ${projects.length} proyecto(s)` });
+      await logCost("dataforseo", `search_volume/task_post (${env.dfsEnv})`, 1, { ref: `${batch.length} keywords, ${projects.length} proyecto(s)` }, typeof json.cost === "number" ? json.cost : null);
       const task = json.tasks?.[0];
       const ids = batch.flatMap((k) => byClean.get(k)!.map((r) => r.id));
       if (!task?.id || (task.status_code && task.status_code >= 40000)) {

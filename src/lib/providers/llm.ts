@@ -1,6 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { env } from "../env";
 import { jobLog } from "../jobctx";
+import { logUsage } from "../costs";
+import { llmCost } from "../pricing";
+import { fetchT } from "../util";
 import type { LLMProvider } from "./types";
 
 function extractJson<T>(text: string): T {
@@ -64,6 +67,10 @@ class AnthropicLLM implements LLMProvider {
     };
     const stream = this.client.beta.messages.stream(params as any);
     const msg: any = await stream.finalMessage();
+    const inTok = (msg.usage?.input_tokens ?? 0) + (msg.usage?.cache_read_input_tokens ?? 0) + (msg.usage?.cache_creation_input_tokens ?? 0);
+    const outTok = msg.usage?.output_tokens ?? 0;
+    const served = msg.model ?? model;
+    await logUsage({ provider: "llm", endpoint: "anthropic/messages", model: served, inputTokens: inTok, outputTokens: outTok, costUsd: llmCost(served, inTok, outTok, msg.usage?.cache_read_input_tokens ?? 0) });
     const r = inspectMessage(msg, model);
     for (const e of r.events) await jobLog(e.level, e.msg, e.data);
     if (r.refusal) throw r.refusal;
@@ -71,31 +78,51 @@ class AnthropicLLM implements LLMProvider {
   }
 }
 
+/** OpenAI Chat Completions (JSON mode). Default: gpt-4o-mini. */
 class OpenAILLM implements LLMProvider {
+  constructor(private base = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1") {}
+
   async json<T>(system: string, user: string, maxTokens = 8000): Promise<T> {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const model = env.llmModel;
+    const res = await fetchT(`${this.base}/chat/completions`, {
       method: "POST",
       headers: { Authorization: `Bearer ${env.openaiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-        max_tokens: maxTokens,
+        model,
+        // max_completion_tokens vale para gpt-4o-mini y para la familia gpt-5 (que no acepta max_tokens)
+        max_completion_tokens: maxTokens,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: `${system}\nResponde solo con JSON válido.` },
           { role: "user", content: user },
         ],
       }),
+      timeoutMs: 180_000,
     });
-    if (!res.ok) throw new Error(`OpenAI ${res.status}`);
+    if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(await res.text()).slice(0, 300)}`);
     const json: any = await res.json();
-    return extractJson<T>(json.choices[0].message.content);
+    const u = json.usage ?? {};
+    const inTok = u.prompt_tokens ?? 0, outTok = u.completion_tokens ?? 0, cached = u.prompt_tokens_details?.cached_tokens ?? 0;
+    const served = json.model ?? model;
+    await logUsage({ provider: "llm", endpoint: "openai/chat.completions", model: served, inputTokens: inTok, outputTokens: outTok, costUsd: llmCost(served, inTok, outTok, cached) });
+    const choice = json.choices?.[0];
+    if (choice?.finish_reason === "length") await jobLog("warn", `OpenAI cortó la respuesta por max_completion_tokens (${maxTokens})`);
+    if (choice?.message?.refusal) throw new Error(`OpenAI rechazó la solicitud: ${choice.message.refusal}`);
+    return extractJson<T>(choice?.message?.content ?? "");
   }
 }
 
 export { AnthropicLLM };
 
+export { OpenAILLM };
+
+/** LLM_PROVIDER=openai (default) | anthropic. Sin la clave del proveedor elegido: sin LLM (reglas / brief determinista). */
 export function llmProvider(): LLMProvider | null {
-  if (env.anthropicKey) return new AnthropicLLM();
-  if (env.openaiKey) return new OpenAILLM();
-  return null;
+  if (env.llmProvider === "anthropic") return env.anthropicKey ? new AnthropicLLM() : null;
+  return env.openaiKey ? new OpenAILLM() : null;
+}
+
+export function llmStatus() {
+  const key = env.llmProvider === "anthropic" ? env.anthropicKey : env.openaiKey;
+  return { provider: env.llmProvider, model: env.llmModel, available: Boolean(key), reason: key ? null : `falta ${env.llmProvider === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"}` };
 }

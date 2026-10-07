@@ -1,5 +1,6 @@
 import { env } from "../env";
 import { logCost } from "../costs";
+import { SERPENT_USD_PER_CALL } from "../pricing";
 import { jobLog } from "../jobctx";
 import { fetchT, hostOf } from "../util";
 import type { Serp, SerpOpts, SerpProvider } from "./types";
@@ -77,7 +78,7 @@ export class SerpentProvider implements SerpProvider {
   async deep(q: string, opts: SerpOpts): Promise<Serp> {
     // Deep cobra por página: siempre 1 página (sin num).
     const json = await this.call("/api/search", q, { country: opts.country, language: opts.language, pages: "1", include_aio: "true" });
-    await logCost("serpent", "deep", 1, { projectId: opts.projectId, ref: q });
+    await logCost("serpent", "deep", 1, { projectId: opts.projectId, ref: q }, SERPENT_USD_PER_CALL);
     return parseSerpent(q, json);
   }
 
@@ -85,7 +86,7 @@ export class SerpentProvider implements SerpProvider {
     // Quick cobra 1 vez por llamada sin importar num.
     const num = String(Math.min(100, Math.max(10, opts.num ?? 100)));
     const json = await this.call("/api/search/quick", q, { country: opts.country, language: opts.language, num });
-    await logCost("serpent", "quick", 1, { projectId: opts.projectId, ref: q });
+    await logCost("serpent", "quick", 1, { projectId: opts.projectId, ref: q }, SERPENT_USD_PER_CALL);
     return parseSerpent(q, json);
   }
 }

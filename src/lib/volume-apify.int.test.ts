@@ -43,7 +43,7 @@ after(async () => {
   if (!hasDb) return;
   const { db } = await import("./db");
   await db.volumeCache.deleteMany({ where: { country: "zz" } });
-  await db.apiCall.deleteMany({ where: { projectId: { in: ids } } });
+  await db.providerUsage.deleteMany({ where: { projectId: { in: ids } } });
   await db.project.deleteMany({ where: { id: { in: ids } } });
   await db.workspace.deleteMany({ where: { name: "test-vol" } });
   srv.close();
@@ -65,7 +65,7 @@ test("Apify por seed: mapea, deja null lo no devuelto y registra costo", { skip:
   assert.equal(r.data.get("botas trekking mujer")!.volume, 0, "0 real");
   assert.equal(r.data.has("botas raras"), false, "no devuelta → sin dato (null)");
   assert.equal(r.stats.missing, 1);
-  const cost = await db.apiCall.findFirst({ where: { projectId: ids[0], provider: "apify" } });
+  const cost = await db.providerUsage.findFirst({ where: { projectId: ids[0], provider: "apify" } });
   assert.equal(cost?.costUsd, 0.009);
 });
 

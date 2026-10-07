@@ -25,7 +25,7 @@ after(async () => {
   const { db } = await import("./db");
   await db.project.delete({ where: { id: projectId } }).catch(() => {});
   await db.workspace.deleteMany({ where: { name: "test", projects: { none: {} } } });
-  await db.apiCall.deleteMany({ where: { projectId } });
+  await db.providerUsage.deleteMany({ where: { projectId } });
   await mock.close();
   await db.$disconnect();
 });
@@ -40,7 +40,7 @@ test("rank tracking usa Quick num=100 y registra 1 unidad por keyword", { skip: 
     assert.equal(c.position, 42);
     assert.equal(c.url, `https://www.mi-sitio.cl/${encodeURIComponent(keyword)}`);
   }
-  const calls = await db.apiCall.findMany({ where: { projectId } });
+  const calls = await db.providerUsage.findMany({ where: { projectId } });
   assert.equal(calls.length, kws.length);
   assert.ok(calls.every((c) => c.provider === "serpent" && c.endpoint === "quick" && c.units === 1));
   assert.ok(mock.hits.every((h) => h.path === "/api/search/quick" && h.params.num === "100"));
@@ -61,7 +61,7 @@ test("research/content usan Deep de 1 página con PAA y related, y caché no reu
   assert.deepEqual(s.related, ["zapatillas trail barato", "zapatillas trail chile"]);
   await getSerp(projectId, "zapatillas trail", { country: "cl", language: "es" });
   assert.equal(mock.hits.length, before + 1, "segunda llamada sale de caché");
-  const deep = await db.apiCall.findMany({ where: { projectId, endpoint: "deep" } });
+  const deep = await db.providerUsage.findMany({ where: { projectId, endpoint: "deep" } });
   assert.equal(deep.length, 1);
   assert.equal(deep[0].units, 1);
 });

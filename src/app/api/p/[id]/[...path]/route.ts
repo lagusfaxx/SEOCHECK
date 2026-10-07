@@ -8,6 +8,7 @@ import { makeBrief, type ContentResult } from "@/lib/content/analyze";
 import { parseKeywordPlannerCsv } from "@/lib/volume/csv";
 import { backfillVolumes, volumeChainStatus, writeCache } from "@/lib/volume/broker";
 import { env } from "@/lib/env";
+import { llmStatus } from "@/lib/providers/llm";
 import { normTerm, normUrl } from "@/lib/util";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ const GETS: Record<string, H> = {
       volumeChain: chain,
       providers: {
         serp: Boolean(env.serpentKey), volume: chain.find((c) => c.available)?.provider ?? false, embeddings: env.embeddingsUrl ? "local" : env.openaiKey ? "openai" : "hash",
-        llm: Boolean(env.anthropicKey || env.openaiKey), gsc: Boolean(env.gscCredentials), psi: Boolean(env.psiKey), render: Boolean(env.browserWs), indexnow: Boolean(env.indexNowKey),
+        llm: llmStatus().available ? `${env.llmProvider}:${env.llmModel}` : false, gsc: Boolean(env.gscCredentials), psi: Boolean(env.psiKey), render: Boolean(env.browserWs), indexnow: Boolean(env.indexNowKey),
       },
     };
   },
@@ -181,8 +182,8 @@ const GETS: Record<string, H> = {
     const days = Number(url.searchParams.get("days") ?? 30);
     const since = new Date(Date.now() - days * 864e5);
     const [byEndpoint, recent] = await Promise.all([
-      db.apiCall.groupBy({ by: ["provider", "endpoint"], where: { projectId: id, createdAt: { gte: since } }, _sum: { units: true }, _count: true }),
-      db.apiCall.findMany({ where: { projectId: id }, orderBy: { createdAt: "desc" }, take: 200 }),
+      db.providerUsage.groupBy({ by: ["provider", "endpoint"], where: { projectId: id, createdAt: { gte: since } }, _sum: { units: true }, _count: true }),
+      db.providerUsage.findMany({ where: { projectId: id }, orderBy: { createdAt: "desc" }, take: 200 }),
     ]);
     return { byEndpoint: byEndpoint.map((r) => ({ provider: r.provider, endpoint: r.endpoint, calls: r._count, units: r._sum.units ?? 0 })), recent };
   },

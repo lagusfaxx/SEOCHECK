@@ -337,19 +337,23 @@ model CorpusMeta {
   docs Int
 }
 
-/// Log de costos de APIs externas (unidades facturables según cada proveedor).
-model ApiCall {
-  id        String   @id @default(cuid())
-  projectId String?
-  provider  String
-  endpoint  String
-  units     Int
-  /// Costo en USD cuando el proveedor lo informa (Apify usageTotalUsd)
-  costUsd   Float?
-  ref       String?
-  createdAt DateTime @default(now())
+/// Uso de proveedores externos: unidades, créditos, tokens y costo en USD (base del presupuesto mensual).
+model ProviderUsage {
+  id           String   @id @default(cuid())
+  projectId    String?
+  provider     String
+  endpoint     String
+  units        Int
+  /// Costo en USD (informado por el proveedor o calculado con su tarifa)
+  costUsd      Float?
+  inputTokens  Int?
+  outputTokens Int?
+  model        String?
+  ref          String?
+  createdAt    DateTime @default(now())
 
-  @@index([projectId, createdAt])
+  @@index([projectId, createdAt], map: "ApiCall_projectId_createdAt_idx")
+  @@index([provider, createdAt])
 }
 
 /// Caché global de volumen (sin importar el proyecto): país + idioma + keyword normalizada.
