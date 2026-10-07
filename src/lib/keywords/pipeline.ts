@@ -2,7 +2,8 @@ import pLimit from "p-limit";
 import { db } from "../db";
 import { gscQuery } from "../providers/google";
 import { expandSeed } from "../providers/autocomplete";
-import { embeddingProvider, volumeProvider } from "../providers";
+import { embeddingProvider, volumeProvider, type EmbeddingProvider } from "../providers";
+import { HashEmbeddings } from "../providers/embeddings";
 import { getSerp } from "../serp";
 import { cosine, hostOf, normTerm } from "../util";
 import { env } from "../env";
@@ -60,11 +61,13 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
 
   // SERP de los seeds → PAA + related
   await step(22, "serp seeds");
+  let seedSerpOk = false;
   for (const s of env.serpentKey ? run.seeds : []) {
     try {
       const serp = await getSerp(p.id, normTerm(s), { country: p.country, language: p.language });
       serp.paa.forEach((q) => add(q, "paa"));
       serp.related.forEach((q) => add(q, "related"));
+      seedSerpOk = true;
     } catch (e) {
       console.warn("[keywords] serp seed", e);
     }
@@ -74,9 +77,17 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   // 2. Relevancia por embeddings
   await step(28, "embeddings");
   const terms = [...sources.keys()];
-  const emb = embeddingProvider();
-  const seedVecs = await emb.embed(run.seeds.map(normTerm));
-  const vecs = await emb.embed(terms);
+  let emb: EmbeddingProvider = embeddingProvider();
+  let seedVecs: number[][], vecs: number[][];
+  try {
+    seedVecs = await emb.embed(run.seeds.map(normTerm));
+    vecs = await emb.embed(terms);
+  } catch (e) {
+    console.warn(`[keywords] embeddings ${emb.name} fallaron, uso trigram-hash`, e);
+    emb = new HashEmbeddings();
+    seedVecs = await emb.embed(run.seeds.map(normTerm));
+    vecs = await emb.embed(terms);
+  }
   const rel = terms.map((_, i) => Math.max(...seedVecs.map((s) => cosine(s, vecs[i]))));
   let kept = terms
     .map((t, i) => ({ term: t, rel: rel[i], vec: vecs[i], src: [...sources.get(t)!] }))
@@ -181,7 +192,7 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
 
   // 6. Topics con HDBSCAN sobre embeddings de las primarias
   await step(94, "topics");
-  const labels = topicLabels(created.map((c) => c.vec), 2);
+  const { labels, forcedSplit } = topicLabels(created.map((c) => c.vec), 2);
   const byLabel = new Map<number, typeof created>();
   created.forEach((c, i) => {
     const l = labels[i] < 0 ? -1000 - i : labels[i]; // ruido = topic propio
@@ -189,13 +200,14 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   });
   for (const members of byLabel.values()) {
     const pillar = [...members].sort((a, b) => b.volume - a.volume)[0];
-    const t = await db.topic.create({ data: { projectId: p.id, runId, name: pillar.primary } });
+    const t = await db.topic.create({ data: { projectId: p.id, runId, name: pillar.primary, forcedSplit } });
     await db.cluster.updateMany({ where: { id: { in: members.map((m) => m.id) } }, data: { topicId: t.id } });
     await db.cluster.update({ where: { id: pillar.id }, data: { isPillar: true } });
   }
   stats.topics = byLabel.size;
 
-  await db.keywordRun.update({ where: { id: runId }, data: { status: "done", stats } });
+  const runSources = { serp: serps.size > 0 || seedSerpOk ? "real" : "none", embeddings: emb.name, volumes: volMap.size > 0 ? "real" : "none" };
+  await db.keywordRun.update({ where: { id: runId }, data: { status: "done", stats, sources: runSources } });
   return stats;
 }
 

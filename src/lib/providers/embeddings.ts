@@ -4,6 +4,7 @@ import type { EmbeddingProvider } from "./types";
 
 /** text-embeddings-inference (HF) corriendo paraphrase-multilingual-MiniLM-L12-v2 en local. */
 class TeiEmbeddings implements EmbeddingProvider {
+  readonly name = process.env.EMBEDDINGS_MODEL ?? "paraphrase-multilingual-MiniLM-L12-v2";
   async embed(texts: string[]) {
     const out: number[][] = [];
     for (const batch of chunk(texts, 32)) {
@@ -21,6 +22,7 @@ class TeiEmbeddings implements EmbeddingProvider {
 }
 
 class OpenAIEmbeddings implements EmbeddingProvider {
+  readonly name = "text-embedding-3-small";
   async embed(texts: string[]) {
     const out: number[][] = [];
     for (const batch of chunk(texts, 512)) {
@@ -39,7 +41,8 @@ class OpenAIEmbeddings implements EmbeddingProvider {
 }
 
 /** Sin proveedor: bolsa de trigramas de caracteres hasheados (degradado pero funcional). */
-class HashEmbeddings implements EmbeddingProvider {
+export class HashEmbeddings implements EmbeddingProvider {
+  readonly name = "trigram-hash";
   async embed(texts: string[]) {
     const D = 512;
     return texts.map((t) => {

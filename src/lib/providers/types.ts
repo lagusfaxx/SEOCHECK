@@ -25,6 +25,8 @@ export interface VolumeProvider {
 }
 
 export interface EmbeddingProvider {
+  /** Modelo efectivo (p.ej. paraphrase-multilingual-MiniLM-L12-v2) o "trigram-hash". */
+  readonly name: string;
   embed(texts: string[]): Promise<number[][]>;
 }
 

@@ -3,9 +3,9 @@ import { useState } from "react";
 import Board from "@/components/kw/Board";
 import MindMap from "@/components/kw/MindMap";
 import KwTable from "@/components/kw/Table";
-import type { KwData } from "@/components/kw/types";
+import type { KwData, RunSources } from "@/components/kw/types";
 import { useProject } from "@/components/Shell";
-import { api, Empty, fmt, Icon, Tabs, useLocal } from "@/components/ui";
+import { api, cx, Empty, fmt, Icon, Tabs, useLocal } from "@/components/ui";
 import { useApi } from "@/components/ui";
 
 export default function KeywordsPage() {
@@ -75,6 +75,7 @@ export default function KeywordsPage() {
               <option key={r.id} value={r.id}>{r.seeds.join(", ")} · {new Date(r.createdAt).toLocaleDateString("es-CL")}</option>
             ))}
           </select>
+          {current?.sources?.serp && <SourceBadges s={current.sources} />}
           {current && (
             <div className="flex gap-3 text-xs text-ink-500">
               {current.status !== "done" && <span className="chip">{current.status}</span>}
@@ -100,6 +101,23 @@ export default function KeywordsPage() {
       ) : (
         <MindMap data={data} reload={() => mutate()} />
       )}
+    </div>
+  );
+}
+
+function SourceBadges({ s }: { s: RunSources }) {
+  const items: [string, string, boolean][] = [
+    ["SERP", s.serp === "real" ? "real" : "sin SERP", s.serp === "real"],
+    ["Embeddings", s.embeddings === "trigram-hash" ? "trigram-hash" : s.embeddings ?? "?", s.embeddings !== "trigram-hash"],
+    ["Volumen", s.volumes === "real" ? "real" : "sin volumen", s.volumes === "real"],
+  ];
+  return (
+    <div className="flex gap-1.5">
+      {items.map(([k, v, ok]) => (
+        <span key={k} title={k} className={cx("rounded-md px-1.5 py-0.5 text-[11px] font-medium", ok ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300")}>
+          {k} · {v}
+        </span>
+      ))}
     </div>
   );
 }

@@ -41,13 +41,14 @@ function TopicCol({ t, clusters, children, onRename, onDelete }: { t: Tp | null;
   const drop = useDroppable({ id: `t:${t?.id ?? "none"}` });
   const vol = clusters.reduce((s, c) => s + c.volume, 0);
   return (
-    <div ref={drop.setNodeRef} className={cx("flex w-72 shrink-0 flex-col rounded-xl bg-ink-100/70 p-2 dark:bg-ink-900/60", drop.isOver && "ring-2 ring-acc")}>
+    <div ref={drop.setNodeRef} className={cx("flex w-72 shrink-0 flex-col rounded-xl bg-ink-100/70 p-2 dark:bg-ink-900/60", t?.forcedSplit && "border border-dashed border-amber-400/70 bg-amber-50/40 dark:bg-amber-950/10", drop.isOver && "ring-2 ring-acc")}>
       <div className="flex items-center gap-1 px-1 pb-2">
         {t ? (
           <input defaultValue={t.name} onBlur={(e) => e.target.value !== t.name && onRename?.(e.target.value)} className="min-w-0 flex-1 truncate bg-transparent text-sm font-semibold outline-none focus:underline" />
         ) : (
           <span className="flex-1 text-sm font-semibold text-ink-400">sin topic</span>
         )}
+        {t?.forcedSplit && <span className="rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" title="split forzado: HDBSCAN no separó, agrupado por average linkage">forzado</span>}
         <span className="text-xs tabular-nums text-ink-400">{fmt(vol)}</span>
         {onDelete && <button className="btn-g p-0.5" onClick={onDelete}><Icon name="x" className="h-3 w-3" /></button>}
       </div>

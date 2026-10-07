@@ -6,7 +6,7 @@ import { useProject } from "../Shell";
 import { api, cx, fmt, Icon, IntentChip } from "../ui";
 import type { Cl, Kw, KwData } from "./types";
 
-type ND = { label: string; vol?: number; kind: "root" | "topic" | "cluster" | "kw"; pillar?: boolean; intent?: string | null; n?: number };
+type ND = { label: string; vol?: number; kind: "root" | "topic" | "cluster" | "kw"; pillar?: boolean; intent?: string | null; n?: number; forced?: boolean };
 
 function MapNode({ data, selected }: NodeProps<Node<ND>>) {
   const d = data;
@@ -15,7 +15,9 @@ function MapNode({ data, selected }: NodeProps<Node<ND>>) {
     d.kind === "root"
       ? "border-ink-900 bg-ink-900 text-white text-base font-semibold dark:bg-white dark:text-ink-900"
       : d.kind === "topic"
-        ? "border-acc bg-acc text-white font-semibold"
+        ? d.forced
+          ? "border-2 border-dashed border-acc bg-acc-soft text-acc font-semibold dark:bg-acc/20"
+          : "border-acc bg-acc text-white font-semibold"
         : d.kind === "cluster"
           ? cx("bg-white dark:bg-ink-900", d.pillar ? "border-acc ring-2 ring-acc/30" : "border-ink-200 dark:border-ink-700")
           : "border-transparent bg-ink-100 text-xs dark:bg-ink-800 px-2 py-1";
@@ -27,7 +29,7 @@ function MapNode({ data, selected }: NodeProps<Node<ND>>) {
         <span className="truncate text-sm">{d.label}</span>
       </div>
       {d.kind !== "kw" && d.kind !== "root" && (
-        <div className={cx("mt-0.5 flex items-center gap-1.5 text-[11px]", d.kind === "topic" ? "text-white/80" : "text-ink-400")}>
+        <div className={cx("mt-0.5 flex items-center gap-1.5 text-[11px]", d.kind === "topic" && !d.forced ? "text-white/80" : "text-ink-400")}>
           <span className="tabular-nums">{fmt(d.vol)}</span>
           {d.n != null && <span>· {d.n}</span>}
           {d.kind === "cluster" && <IntentChip intent={d.intent} />}
@@ -53,10 +55,10 @@ function layout(data: KwData, showKw: boolean, rootLabel: string) {
   nodes.push({ id: "root", type: "m", position: { x: 0, y: 0 }, data: { label: rootLabel, kind: "root" }, draggable: true });
   const T = topics.length + (orphan.length ? 1 : 0);
   const R1 = Math.max(420, T * 90);
-  const placeTopic = (tid: string, name: string, cs: Cl[], i: number, saved: { x: number; y: number } | null) => {
+  const placeTopic = (tid: string, name: string, cs: Cl[], i: number, saved: { x: number; y: number } | null, forced = false) => {
     const ang = (i / Math.max(1, T)) * Math.PI * 2 - Math.PI / 2;
     const tp = saved ?? { x: Math.cos(ang) * R1, y: Math.sin(ang) * R1 };
-    nodes.push({ id: `t:${tid}`, type: "m", position: tp, data: { label: name, kind: "topic", vol: cs.reduce((s, c) => s + c.volume, 0), n: cs.length } });
+    nodes.push({ id: `t:${tid}`, type: "m", position: tp, data: { label: name, kind: "topic", vol: cs.reduce((s, c) => s + c.volume, 0), n: cs.length, forced } });
     edges.push({ id: `e:root:${tid}`, source: "root", target: `t:${tid}`, type: "simplebezier", style: { stroke: "#5b5bf6", strokeWidth: 2 } });
     const pillar = cs.find((c) => c.isPillar);
     cs.forEach((c, j) => {
@@ -75,7 +77,7 @@ function layout(data: KwData, showKw: boolean, rootLabel: string) {
       }
     });
   };
-  topics.forEach(({ t, cs }, i) => placeTopic(t.id, t.name, cs, i, t.pos));
+  topics.forEach(({ t, cs }, i) => placeTopic(t.id, t.name, cs, i, t.pos, t.forcedSplit));
   if (orphan.length) placeTopic("none", "sin topic", orphan, topics.length, null);
   return { nodes, edges };
 }

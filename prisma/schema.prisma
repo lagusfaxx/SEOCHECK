@@ -66,6 +66,8 @@ model KeywordRun {
   threshold Float    @default(0.45)
   status    String   @default("queued")
   stats     Json     @default("{}")
+  /// Fuentes efectivamente usadas: { serp: real|none, embeddings: <modelo>|trigram-hash, volumes: real|none }
+  sources   Json     @default("{}")
   createdAt DateTime @default(now())
 
   keywords Keyword[]
@@ -125,6 +127,8 @@ model Topic {
   run       KeywordRun? @relation(fields: [runId], references: [id], onDelete: Cascade)
   name      String
   pos       Json?
+  /// Creado por el fallback average-linkage (HDBSCAN no separó nada)
+  forcedSplit Boolean @default(false)
   clusters  Cluster[]
 }
 

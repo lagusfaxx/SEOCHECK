@@ -130,10 +130,10 @@ export function hdbscan(points: number[][], minClusterSize = 3, minSamples = min
  * Topics: HDBSCAN y, si no separa nada (un solo grupo con n ≥ 6), clustering aglomerativo
  * average-linkage cortado en el percentil 75 de similitudes por pares.
  */
-export function topicLabels(points: number[][], minClusterSize = 2): number[] {
+export function topicLabels(points: number[][], minClusterSize = 2): { labels: number[]; forcedSplit: boolean } {
   const labels = hdbscan(points, minClusterSize, minClusterSize);
   const distinct = new Set(labels.filter((l) => l >= 0));
-  if (distinct.size > 1 || points.length < 6) return labels;
+  if (distinct.size > 1 || points.length < 6) return { labels, forcedSplit: false };
   const n = points.length;
   const S: number[][] = points.map((a) => points.map((b) => cosine(a, b)));
   const sims: number[] = [];
@@ -159,5 +159,5 @@ export function topicLabels(points: number[][], minClusterSize = 2): number[] {
   }
   const out = new Array(n).fill(-1);
   groups.forEach((g, l) => g.forEach((i) => (out[i] = l)));
-  return out;
+  return { labels: out, forcedSplit: true };
 }
