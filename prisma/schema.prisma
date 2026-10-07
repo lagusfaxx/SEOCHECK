@@ -91,6 +91,8 @@ model Keyword {
   difficulty  Float?
   score       Float?
   excluded    Boolean   @default(false)
+  /// Asignación keyword→cluster hecha a mano: el re-run no la cambia
+  locked      Boolean   @default(false)
   clusterId   String?
   cluster     Cluster?  @relation(fields: [clusterId], references: [id], onDelete: SetNull)
   embedding   Float[]
@@ -115,6 +117,10 @@ model Cluster {
   topicId   String?
   topic     Topic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
   isPillar  Boolean   @default(false)
+  /// Ediciones manuales que el re-run respeta
+  topicLocked  Boolean @default(false)
+  nameLocked   Boolean @default(false)
+  pillarLocked Boolean @default(false)
   pos       Json?
   keywords  Keyword[]
 }
@@ -129,6 +135,7 @@ model Topic {
   pos       Json?
   /// Creado por el fallback average-linkage (HDBSCAN no separó nada)
   forcedSplit Boolean @default(false)
+  nameLocked  Boolean @default(false)
   clusters  Cluster[]
 }
 

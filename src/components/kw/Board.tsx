@@ -5,17 +5,27 @@ import { useProject } from "../Shell";
 import { api, cx, fmt, Icon, IntentChip } from "../ui";
 import type { Cl, Kw, KwData, Tp } from "./types";
 
-function KwChip({ k }: { k: Kw }) {
+function Lock({ on, onUnlock, title }: { on: boolean; onUnlock: () => void; title: string }) {
+  if (!on) return null;
+  return (
+    <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onUnlock(); }} title={`${title} · clic para desbloquear`} className="text-amber-600 hover:text-ink-400">
+      <Icon name="lock" className="h-3 w-3" />
+    </button>
+  );
+}
+
+function KwChip({ k, onUnlock }: { k: Kw; onUnlock: () => void }) {
   const d = useDraggable({ id: `k:${k.id}` });
   return (
-    <span ref={d.setNodeRef} {...d.listeners} {...d.attributes} className={cx("chip cursor-grab select-none", d.isDragging && "opacity-30")} title={`${fmt(k.volume)} · score ${fmt(k.score)}`}>
+    <span ref={d.setNodeRef} {...d.listeners} {...d.attributes} className={cx("chip cursor-grab select-none", k.locked && "ring-1 ring-amber-300", d.isDragging && "opacity-30")} title={`${fmt(k.volume)} · score ${fmt(k.score)}`}>
+      <Lock on={k.locked} onUnlock={onUnlock} title="asignación fijada" />
       {k.term}
       {k.volume != null && <span className="text-ink-400">{fmt(k.volume)}</span>}
     </span>
   );
 }
 
-function ClusterCard({ c, kws, open, onToggle, onPillar, onRename }: { c: Cl; kws: Kw[]; open: boolean; onToggle: () => void; onPillar: () => void; onRename: (n: string) => void }) {
+function ClusterCard({ c, kws, open, onToggle, onPillar, onRename, onUnlock }: { c: Cl; kws: Kw[]; open: boolean; onToggle: () => void; onPillar: () => void; onRename: (n: string) => void; onUnlock: (target: { keywordId?: string; clusterId?: string }) => void }) {
   const drag = useDraggable({ id: `c:${c.id}` });
   const drop = useDroppable({ id: `cl:${c.id}` });
   return (
@@ -24,6 +34,7 @@ function ClusterCard({ c, kws, open, onToggle, onPillar, onRename }: { c: Cl; kw
         <span ref={drag.setNodeRef} {...drag.listeners} {...drag.attributes} className="cursor-grab text-ink-300 hover:text-ink-600"><Icon name="grip" className="h-3.5 w-3.5" /></span>
         <button onClick={onPillar} title="pillar" className={cx("text-sm", c.isPillar ? "text-acc" : "text-ink-300 hover:text-ink-500")}>★</button>
         <input defaultValue={c.name} onBlur={(e) => e.target.value !== c.name && onRename(e.target.value)} className="min-w-0 flex-1 truncate bg-transparent text-sm font-medium outline-none focus:underline" />
+        <Lock on={c.topicLocked || c.nameLocked || c.pillarLocked} onUnlock={() => onUnlock({ clusterId: c.id })} title={[c.topicLocked && "topic", c.nameLocked && "nombre", c.pillarLocked && "pillar"].filter(Boolean).join(", ") + " fijado"} />
         <IntentChip intent={c.intent} />
       </div>
       <button onClick={onToggle} className="mt-1 flex w-full items-center gap-2 text-xs text-ink-500">
@@ -32,12 +43,12 @@ function ClusterCard({ c, kws, open, onToggle, onPillar, onRename }: { c: Cl; kw
         <span>{kws.length} kw</span>
         <Icon name={open ? "up" : "down"} className="ml-auto h-3 w-3" />
       </button>
-      {open && <div className="mt-2 flex flex-wrap gap-1">{kws.map((k) => <KwChip key={k.id} k={k} />)}</div>}
+      {open && <div className="mt-2 flex flex-wrap gap-1">{kws.map((k) => <KwChip key={k.id} k={k} onUnlock={() => onUnlock({ keywordId: k.id })} />)}</div>}
     </div>
   );
 }
 
-function TopicCol({ t, clusters, children, onRename, onDelete }: { t: Tp | null; clusters: Cl[]; children: React.ReactNode; onRename?: (n: string) => void; onDelete?: () => void }) {
+function TopicCol({ t, clusters, children, onRename, onDelete, onUnlock }: { t: Tp | null; clusters: Cl[]; children: React.ReactNode; onRename?: (n: string) => void; onDelete?: () => void; onUnlock?: () => void }) {
   const drop = useDroppable({ id: `t:${t?.id ?? "none"}` });
   const vol = clusters.reduce((s, c) => s + c.volume, 0);
   return (
@@ -48,6 +59,7 @@ function TopicCol({ t, clusters, children, onRename, onDelete }: { t: Tp | null;
         ) : (
           <span className="flex-1 text-sm font-semibold text-ink-400">sin topic</span>
         )}
+        {t && <Lock on={t.nameLocked} onUnlock={() => onUnlock?.()} title="nombre fijado" />}
         {t?.forcedSplit && <span className="rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" title="split forzado: HDBSCAN no separó, agrupado por average linkage">forzado</span>}
         <span className="text-xs tabular-nums text-ink-400">{fmt(vol)}</span>
         {onDelete && <button className="btn-g p-0.5" onClick={onDelete}><Icon name="x" className="h-3 w-3" /></button>}
@@ -78,7 +90,7 @@ export default function Board({ data, reload, setData }: { data: KwData; reload:
       const kid = a.slice(2);
       const cid = o.startsWith("cl:") ? o.slice(3) : null;
       if (!cid) return;
-      setData({ ...data, keywords: data.keywords.map((k) => (k.id === kid ? { ...k, clusterId: cid } : k)) });
+      setData({ ...data, keywords: data.keywords.map((k) => (k.id === kid ? { ...k, clusterId: cid, locked: true } : k)) });
       await patch({ action: "move", keywordId: kid, clusterId: cid });
       reload();
     } else if (a.startsWith("c:")) {
@@ -87,7 +99,7 @@ export default function Board({ data, reload, setData }: { data: KwData; reload:
       if (o.startsWith("t:")) tid = o.slice(2) === "none" ? null : o.slice(2);
       else if (o.startsWith("cl:")) tid = data.clusters.find((c) => c.id === o.slice(3))?.topicId ?? null;
       if (tid === undefined) return;
-      setData({ ...data, clusters: data.clusters.map((c) => (c.id === cid ? { ...c, topicId: tid!, isPillar: c.topicId === tid ? c.isPillar : false } : c)) });
+      setData({ ...data, clusters: data.clusters.map((c) => (c.id === cid ? { ...c, topicId: tid!, topicLocked: true, isPillar: c.topicId === tid ? c.isPillar : false } : c)) });
       await patch({ action: "clusterTopic", clusterId: cid, topicId: tid });
       reload();
     }
@@ -104,6 +116,7 @@ export default function Board({ data, reload, setData }: { data: KwData; reload:
       onToggle={() => setOpen((s) => { const n = new Set(s); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; })}
       onPillar={async () => { await patch({ action: "pillar", clusterId: c.id }); reload(); }}
       onRename={async (name) => { await patch({ action: "renameCluster", clusterId: c.id, name }); reload(); }}
+      onUnlock={async (target) => { await patch({ action: "unlock", ...target }); reload(); }}
     />
   );
   const unassigned = byTopic(null);
@@ -126,6 +139,7 @@ export default function Board({ data, reload, setData }: { data: KwData; reload:
               clusters={cs}
               onRename={async (name) => { await patch({ action: "renameTopic", topicId: t.id, name }); reload(); }}
               onDelete={async () => { await api(`/api/p/${id}/keywords/topic`, "DELETE", { topicId: t.id }); reload(); }}
+              onUnlock={async () => { await patch({ action: "unlock", topicId: t.id }); reload(); }}
             >
               {cs.map(card)}
             </TopicCol>

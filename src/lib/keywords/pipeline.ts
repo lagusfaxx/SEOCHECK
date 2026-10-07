@@ -11,8 +11,9 @@ import { jobProgress } from "../queue";
 import { classifyIntents } from "./intent";
 import { difficultyProxy, embeddingClusters, kwScore, overlapClusters } from "./cluster";
 import { topicLabels } from "./hdbscan";
+import { matchGroups } from "./reconcile";
 
-type Opts = { maxKeywords?: number; serpTop?: number; useGsc?: boolean; minShared?: number };
+type Opts = { maxKeywords?: number; serpTop?: number; useGsc?: boolean; minShared?: number; autocomplete?: boolean };
 
 export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   const run = await db.keywordRun.findUniqueOrThrow({ where: { id: runId }, include: { project: true } });
@@ -35,7 +36,7 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
     sources.get(k)!.add(s);
   };
   for (const s of run.seeds) add(s, "seed");
-  for (let i = 0; i < run.seeds.length; i++) {
+  for (let i = 0; opts.autocomplete !== false && i < run.seeds.length; i++) {
     await step(2 + (i / run.seeds.length) * 15, "autocomplete");
     for (const s of await expandSeed(run.seeds[i], p.language, p.country)) add(s, "autocomplete");
   }
@@ -153,19 +154,37 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
       embedding: k.vec,
     };
   });
+  // Estado previo del run (re-run): lo bloqueado a mano se conserva
+  const prevClusters = await db.cluster.findMany({ where: { runId }, include: { keywords: { select: { term: true, locked: true } } } });
+  const prevTopics = await db.topic.findMany({ where: { runId }, include: { clusters: { select: { id: true, topicLocked: true } } } });
+  const lockedTerms = new Set(prevClusters.flatMap((c) => c.keywords.filter((k) => k.locked).map((k) => k.term)));
+  const keptClusters = prevClusters.filter((c) => c.topicLocked || c.nameLocked || c.pillarLocked || c.keywords.some((k) => k.locked));
+  const keptClusterIds = new Set(keptClusters.map((c) => c.id));
+  const keptTopics = prevTopics.filter((t) => t.nameLocked || t.clusters.some((c) => c.topicLocked && keptClusterIds.has(c.id)));
+  const prevTopicOf = new Map(prevClusters.map((c) => [c.id, c.topicId]));
+  await db.cluster.deleteMany({ where: { runId, id: { notIn: [...keptClusterIds] } } });
+  await db.topic.deleteMany({ where: { runId, id: { notIn: keptTopics.map((t) => t.id) } } });
+  await db.keyword.updateMany({ where: { clusterId: { in: [...keptClusterIds] }, locked: false }, data: { clusterId: null } });
+  await db.cluster.updateMany({ where: { id: { in: [...keptClusterIds] }, pillarLocked: false }, data: { isPillar: false } });
+  await db.cluster.updateMany({ where: { id: { in: [...keptClusterIds] }, topicLocked: false }, data: { topicId: null } });
+
+  // Keywords bloqueadas (en este u otro run) solo actualizan métricas; no cambian de run ni de cluster
+  const lockedElsewhere = new Set(
+    (await db.keyword.findMany({ where: { projectId: p.id, locked: true, term: { in: rows.map((r) => r.term) } }, select: { term: true } })).map((k) => k.term)
+  );
   for (const r of rows) {
+    const locked = lockedTerms.has(r.term) || lockedElsewhere.has(r.term);
     await db.keyword.upsert({
       where: { projectId_term: { projectId: p.id, term: r.term } },
       create: { ...r, projectId: p.id, runId },
-      update: { ...r, runId, clusterId: null },
+      update: locked ? r : { ...r, runId, clusterId: null },
     });
   }
+  const free = rows.filter((r) => !lockedTerms.has(r.term) && !lockedElsewhere.has(r.term));
 
-  // 5. Clustering por overlap
+  // 5. Clustering por overlap (solo keywords no bloqueadas)
   await step(88, "clusters");
-  await db.cluster.deleteMany({ where: { runId } });
-  await db.topic.deleteMany({ where: { runId } });
-  const withSerp = rows
+  const withSerp = free
     .filter((r) => serps.has(r.term))
     .map((r) => ({ term: r.term, volume: r.volume ?? 0, intent: r.intent ?? "informational", urls: serps.get(r.term)!.organic.slice(0, 10).map((o) => o.url) }));
   const groups = overlapClusters(withSerp, opts.minShared);
@@ -173,48 +192,86 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   const inSerp = new Set(withSerp.map((w) => w.term));
   groups.push(
     ...embeddingClusters(
-      rows.filter((r) => !inSerp.has(r.term)).map((r) => ({ term: r.term, volume: r.volume ?? 0, intent: r.intent ?? "informational", urls: [], vec: r.embedding })),
-      env.embeddingsUrl || env.openaiKey ? 0.8 : 0.7
+      free.filter((r) => !inSerp.has(r.term)).map((r) => ({ term: r.term, volume: r.volume ?? 0, intent: r.intent ?? "informational", urls: [], vec: r.embedding })),
+      emb.name === "trigram-hash" ? 0.7 : 0.8
     )
   );
   const rowBy = new Map(rows.map((r) => [r.term, r]));
-  const created: { id: string; primary: string; volume: number; vec: number[] }[] = [];
-  for (const g of groups) {
-    const vol = g.members.reduce((s, m) => s + m.volume, 0);
-    const score = g.members.reduce((s, m) => s + (rowBy.get(m.term)?.score ?? 0), 0);
-    const c = await db.cluster.create({
-      data: { projectId: p.id, runId, name: g.primary.term, primary: g.primary.term, intent: g.primary.intent, volume: vol, score, urls: g.primary.urls },
-    });
-    await db.keyword.updateMany({ where: { projectId: p.id, term: { in: g.members.map((m) => m.term) } }, data: { clusterId: c.id } });
-    created.push({ id: c.id, primary: g.primary.term, volume: vol, vec: rowBy.get(g.primary.term)!.embedding });
+  const match = matchGroups(
+    groups.map((g) => ({ members: g.members.map((m) => m.term) })),
+    keptClusters.map((c) => ({ id: c.id, anchor: c.primary, prevMembers: new Set(c.keywords.map((k) => k.term)) }))
+  );
+  for (const [i, g] of groups.entries()) {
+    let cid = match[i];
+    if (!cid) {
+      const c = await db.cluster.create({
+        data: { projectId: p.id, runId, name: g.primary.term, primary: g.primary.term, intent: g.primary.intent, urls: g.primary.urls },
+      });
+      cid = c.id;
+    }
+    await db.keyword.updateMany({ where: { projectId: p.id, locked: false, term: { in: g.members.map((m) => m.term) } }, data: { clusterId: cid } });
   }
-  stats.clusters = created.length;
+  const clusters = await db.cluster.findMany({ where: { runId } });
+  for (const c of clusters) await refreshCluster(c.id);
+  const live = await db.cluster.findMany({ where: { runId } });
+  stats.clusters = live.length;
 
-  // 6. Topics con HDBSCAN sobre embeddings de las primarias
+  // 6. Topics con HDBSCAN sobre embeddings de las primarias (clusters sin topic bloqueado)
   await step(94, "topics");
-  const { labels, forcedSplit } = topicLabels(created.map((c) => c.vec), 2);
-  const byLabel = new Map<number, typeof created>();
-  created.forEach((c, i) => {
+  const primEmb = new Map(
+    (await db.keyword.findMany({ where: { projectId: p.id, term: { in: live.map((c) => c.primary) } }, select: { term: true, embedding: true } })).map((k) => [k.term, k.embedding])
+  );
+  const vecOf = (c: (typeof live)[number]) => rowBy.get(c.primary)?.embedding ?? primEmb.get(c.primary) ?? [];
+  const floating = live.filter((c) => !c.topicLocked && vecOf(c).length);
+  const { labels, forcedSplit } = topicLabels(floating.map(vecOf), 2);
+  const byLabel = new Map<number, typeof floating>();
+  floating.forEach((c, i) => {
     const l = labels[i] < 0 ? -1000 - i : labels[i]; // ruido = topic propio
     byLabel.set(l, [...(byLabel.get(l) ?? []), c]);
   });
-  for (const members of byLabel.values()) {
-    const pillar = [...members].sort((a, b) => b.volume - a.volume)[0];
-    const t = await db.topic.create({ data: { projectId: p.id, runId, name: pillar.primary, forcedSplit } });
-    await db.cluster.updateMany({ where: { id: { in: members.map((m) => m.id) } }, data: { topicId: t.id } });
-    await db.cluster.update({ where: { id: pillar.id }, data: { isPillar: true } });
+  const labelGroups = [...byLabel.values()];
+  const topicMatch = matchGroups(
+    labelGroups.map((g) => ({ members: g.map((c) => c.id) })),
+    keptTopics.map((t) => ({ id: t.id, prevMembers: new Set(prevClusters.filter((c) => prevTopicOf.get(c.id) === t.id).map((c) => c.id)) }))
+  );
+  for (const [i, members] of labelGroups.entries()) {
+    const top = [...members].sort((a, b) => b.volume - a.volume)[0];
+    const tid = topicMatch[i] ?? (await db.topic.create({ data: { projectId: p.id, runId, name: top.primary, forcedSplit } })).id;
+    await db.cluster.updateMany({ where: { id: { in: members.map((m) => m.id) } }, data: { topicId: tid } });
   }
-  stats.topics = byLabel.size;
+  // Pillar: la marcada a mano manda; si no, la de más volumen
+  const topicsNow = await db.topic.findMany({ where: { runId }, include: { clusters: true } });
+  for (const t of topicsNow) {
+    if (!t.clusters.length && !t.nameLocked) {
+      await db.topic.delete({ where: { id: t.id } });
+      continue;
+    }
+    if (!t.nameLocked && t.clusters.length) {
+      const top = [...t.clusters].sort((a, b) => b.volume - a.volume)[0];
+      if (t.name !== top.primary && !keptTopics.some((k) => k.id === t.id)) await db.topic.update({ where: { id: t.id }, data: { name: top.primary } });
+    }
+    const manual = t.clusters.find((c) => c.pillarLocked);
+    const pillar = manual ?? [...t.clusters].sort((a, b) => b.volume - a.volume)[0];
+    await db.cluster.updateMany({ where: { topicId: t.id }, data: { isPillar: false } });
+    if (pillar) await db.cluster.update({ where: { id: pillar.id }, data: { isPillar: true } });
+  }
+  stats.topics = await db.topic.count({ where: { runId } });
+  stats.locked = lockedTerms.size;
 
   const runSources = { serp: serps.size > 0 || seedSerpOk ? "real" : "none", embeddings: emb.name, volumes: volMap.size > 0 ? "real" : "none" };
   await db.keywordRun.update({ where: { id: runId }, data: { status: "done", stats, sources: runSources } });
   return stats;
 }
 
-/** Recalcula volumen/score de un cluster tras mover keywords en la UI. */
+/** Recalcula volumen/score de un cluster; borra los vacíos salvo que tengan ediciones manuales. */
 export async function refreshCluster(clusterId: string) {
   const kws = await db.keyword.findMany({ where: { clusterId } });
   if (!kws.length) {
+    const c = await db.cluster.findUnique({ where: { id: clusterId } });
+    if (c && (c.nameLocked || c.topicLocked || c.pillarLocked)) {
+      await db.cluster.update({ where: { id: clusterId }, data: { volume: 0, score: 0 } });
+      return;
+    }
     await db.cluster.delete({ where: { id: clusterId } }).catch(() => {});
     return;
   }

@@ -64,7 +64,7 @@ const GETS: Record<string, H> = {
     const runId = url.searchParams.get("run") ?? runs[0]?.id;
     const scope = runId ? { projectId: id, runId } : { projectId: id };
     const [keywords, clusters, topics, tracked] = await Promise.all([
-      db.keyword.findMany({ where: scope, select: { id: true, term: true, sources: true, relevance: true, volume: true, cpc: true, competition: true, intent: true, difficulty: true, score: true, excluded: true, clusterId: true }, orderBy: [{ score: { sort: "desc", nulls: "last" } }] }),
+      db.keyword.findMany({ where: scope, select: { id: true, term: true, sources: true, relevance: true, volume: true, cpc: true, competition: true, intent: true, difficulty: true, score: true, excluded: true, locked: true, clusterId: true }, orderBy: [{ score: { sort: "desc", nulls: "last" } }] }),
       db.cluster.findMany({ where: scope, orderBy: { volume: "desc" } }),
       db.topic.findMany({ where: scope }),
       db.trackedKeyword.findMany({ where: { projectId: id }, select: { keyword: true } }),
@@ -198,7 +198,13 @@ const POSTS: Record<string, H> = {
     return run;
   },
 
-  "keywords/topic": async ({ id, body }) => db.topic.create({ data: { projectId: id, runId: body.runId ?? null, name: body.name ?? "nuevo topic", pos: body.pos } }),
+  "keywords/rerun": async ({ id, body }) => {
+    const run = await db.keywordRun.findFirstOrThrow({ where: { projectId: id, id: body.runId } });
+    await db.keywordRun.update({ where: { id: run.id }, data: { status: "queued" } });
+    return enqueue(id, QUEUES.keywords, { runId: run.id }, run.id);
+  },
+
+  "keywords/topic": async ({ id, body }) => db.topic.create({ data: { projectId: id, runId: body.runId ?? null, name: body.name ?? "nuevo topic", pos: body.pos, nameLocked: true } }),
 
   "keywords/cluster": async ({ id, body }) =>
     db.cluster.create({ data: { projectId: id, runId: body.runId ?? null, name: body.name ?? "nuevo cluster", primary: body.name ?? "", topicId: body.topicId ?? null } }),
@@ -277,24 +283,34 @@ const PATCHS: Record<string, H> = {
     switch (body.action) {
       case "move": {
         const k = await db.keyword.findFirstOrThrow({ where: { id: body.keywordId, projectId: id } });
-        await db.keyword.update({ where: { id: k.id }, data: { clusterId: body.clusterId ?? null } });
+        await db.keyword.update({ where: { id: k.id }, data: { clusterId: body.clusterId ?? null, locked: true } });
         if (k.clusterId) await refreshCluster(k.clusterId);
         if (body.clusterId) await refreshCluster(body.clusterId);
         return { ok: true };
       }
       case "exclude":
         return db.keyword.updateMany({ where: { projectId: id, id: { in: body.ids } }, data: { excluded: Boolean(body.value) } });
-      case "clusterTopic":
-        return db.cluster.updateMany({ where: { projectId: id, id: body.clusterId }, data: { topicId: body.topicId ?? null } });
+      case "clusterTopic": {
+        const c = await db.cluster.findFirstOrThrow({ where: { projectId: id, id: body.clusterId } });
+        // Cambiar de topic suelta la pillar manual del topic anterior
+        return db.cluster.update({ where: { id: c.id }, data: { topicId: body.topicId ?? null, topicLocked: true, ...(c.topicId !== (body.topicId ?? null) ? { isPillar: false, pillarLocked: false } : {}) } });
+      }
       case "pillar": {
         const c = await db.cluster.findFirstOrThrow({ where: { id: body.clusterId, projectId: id } });
-        if (c.topicId) await db.cluster.updateMany({ where: { topicId: c.topicId }, data: { isPillar: false } });
-        return db.cluster.update({ where: { id: c.id }, data: { isPillar: true } });
+        if (c.topicId) await db.cluster.updateMany({ where: { topicId: c.topicId }, data: { isPillar: false, pillarLocked: false } });
+        return db.cluster.update({ where: { id: c.id }, data: { isPillar: true, pillarLocked: true, topicLocked: Boolean(c.topicId) } });
       }
       case "renameCluster":
-        return db.cluster.updateMany({ where: { projectId: id, id: body.clusterId }, data: { name: body.name } });
+        return db.cluster.updateMany({ where: { projectId: id, id: body.clusterId }, data: { name: body.name, nameLocked: true } });
       case "renameTopic":
-        return db.topic.updateMany({ where: { projectId: id, id: body.topicId }, data: { name: body.name } });
+        return db.topic.updateMany({ where: { projectId: id, id: body.topicId }, data: { name: body.name, nameLocked: true } });
+      case "unlock": {
+        // Quita todas las marcas manuales de un keyword, cluster o topic
+        if (body.keywordId) return db.keyword.updateMany({ where: { projectId: id, id: body.keywordId }, data: { locked: false } });
+        if (body.clusterId) return db.cluster.updateMany({ where: { projectId: id, id: body.clusterId }, data: { topicLocked: false, nameLocked: false, pillarLocked: false } });
+        if (body.topicId) return db.topic.updateMany({ where: { projectId: id, id: body.topicId }, data: { nameLocked: false } });
+        throw new Error("unlock");
+      }
       case "positions": {
         for (const n of body.nodes ?? []) {
           if (n.kind === "topic") await db.topic.updateMany({ where: { projectId: id, id: n.id }, data: { pos: n.pos } });

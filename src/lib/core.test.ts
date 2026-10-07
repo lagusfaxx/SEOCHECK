@@ -121,3 +121,21 @@ test("overlap usa URLs normalizadas: variantes cuentan como coincidencia", () =>
   // urls originales se conservan para mostrar
   assert.deepEqual(c[0].primary.urls, a);
 });
+
+test("matchGroups: ancla, mayoría de miembros previos y una estructura por grupo", async () => {
+  const { matchGroups } = await import("./keywords/reconcile");
+  const existing = [
+    { id: "A", anchor: "zapatillas trail", prevMembers: new Set(["zapatillas trail", "trail barato"]) },
+    { id: "B", anchor: null, prevMembers: new Set(["x", "y", "z"]) },
+  ];
+  const r = matchGroups(
+    [
+      { members: ["zapatillas trail", "nuevo"] }, // ancla → A
+      { members: ["x", "y", "w"] }, // 2/3 previos → B
+      { members: ["trail barato", "q", "r"] }, // 1/3 < 0.5 y A ya tomado → nuevo
+      { members: ["z"] }, // B ya tomado → nuevo
+    ],
+    existing
+  );
+  assert.deepEqual(r, ["A", "B", null, null]);
+});

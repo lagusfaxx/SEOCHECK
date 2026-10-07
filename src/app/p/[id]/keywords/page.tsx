@@ -85,7 +85,12 @@ export default function KeywordsPage() {
             </div>
           )}
           {current && (
-            <button className="btn-g ml-auto" onClick={async () => { if (confirm("¿Borrar esta investigación?")) { await api(`/api/p/${id}/keywords/run`, "DELETE", { runId: current.id }); setRun(""); mutate(); } }}>
+            <button className="btn ml-auto" disabled={running} title="re-correr: respeta lo fijado a mano" onClick={async () => { await api(`/api/p/${id}/keywords/rerun`, "POST", { runId: current.id }); refreshJobs(); }}>
+              <Icon name="refresh" />Re-correr
+            </button>
+          )}
+          {current && (
+            <button className="btn-g" onClick={async () => { if (confirm("¿Borrar esta investigación?")) { await api(`/api/p/${id}/keywords/run`, "DELETE", { runId: current.id }); setRun(""); mutate(); } }}>
               <Icon name="trash" />
             </button>
           )}
