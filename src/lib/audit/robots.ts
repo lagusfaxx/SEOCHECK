@@ -1,5 +1,5 @@
 import { env } from "../env";
-import { fetchT } from "../util";
+import { safeFetch } from "../net/ssrf";
 
 export type Robots = { disallow: string[]; allow: string[]; sitemaps: string[] };
 
@@ -38,7 +38,7 @@ export async function fetchSitemapUrls(sitemaps: string[], max = 20000): Promise
     if (visited.has(sm)) continue;
     visited.add(sm);
     try {
-      const res = await fetchT(sm, { headers: { "User-Agent": env.userAgent }, timeoutMs: 30000 });
+      const { res } = await safeFetch(sm, { headers: { "User-Agent": env.userAgent }, timeoutMs: 30000 });
       if (!res.ok) continue;
       let xml: string;
       if (sm.endsWith(".gz")) {

@@ -4,7 +4,8 @@ import pLimit from "p-limit";
 import { db } from "../db";
 import { env } from "../env";
 import { jobProgress } from "../queue";
-import { fetchT, hostOf, normUrl } from "../util";
+import { assertUrlAllowed, safeFetch } from "../net/ssrf";
+import { hostOf, normUrl } from "../util";
 import { computeIssues } from "./issues";
 import { fetchSitemapUrls, parseRobots, type Robots } from "./robots";
 
@@ -34,43 +35,57 @@ export type PageData = {
   headings: { tag: string; text: string }[];
 };
 
-async function fetchFollow(url: string) {
-  const redirects: { url: string; status: number }[] = [];
-  let cur = url;
+export type FetchOpts = { userAgent?: string };
+
+async function fetchFollow(url: string, o: FetchOpts = {}) {
   const t0 = Date.now();
-  for (let i = 0; i < 10; i++) {
-    const res = await fetchT(cur, { redirect: "manual", headers: { "User-Agent": env.userAgent, Accept: "text/html,*/*" }, timeoutMs: 25000 });
-    if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
-      redirects.push({ url: cur, status: res.status });
-      const next = normUrl(res.headers.get("location")!, cur);
-      await res.body?.cancel().catch(() => {});
-      if (!next) break;
-      cur = next;
-      continue;
-    }
-    const ct = res.headers.get("content-type");
-    const html = ct?.includes("html") ? await res.text() : (await res.body?.cancel().catch(() => {}), "");
-    return { status: res.status, finalUrl: cur, redirects, contentType: ct, html, ms: Date.now() - t0, xRobots: res.headers.get("x-robots-tag") };
-  }
-  return { status: 310, finalUrl: cur, redirects, contentType: null, html: "", ms: Date.now() - t0, xRobots: null };
+  const { res, finalUrl, redirects } = await safeFetch(url, { headers: { "User-Agent": o.userAgent || env.userAgent, Accept: "text/html,*/*" }, timeoutMs: 25000 });
+  const ct = res.headers.get("content-type");
+  const html = ct?.includes("html") ? await res.text() : (await res.body?.cancel().catch(() => {}), "");
+  return { status: res.status, finalUrl, redirects, contentType: ct, html, ms: Date.now() - t0, xRobots: res.headers.get("x-robots-tag") };
 }
 
 let browserP: Promise<any> | null = null;
-async function renderHtml(url: string): Promise<string | null> {
+const SKIP_TYPES = new Set(["image", "media", "font"]);
+
+/**
+ * Render con Chromium remoto. Todas las requests del navegador se interceptan y se resuelven
+ * desde el worker con safeFetch (validación SSRF + IP fijada); el navegador nunca sale a la red.
+ */
+async function renderHtml(url: string, o: FetchOpts = {}): Promise<string | null> {
   if (!env.browserWs) return null;
   try {
+    assertUrlAllowed(url);
     if (!browserP) {
       const { chromium } = await import("playwright-core");
       browserP = chromium.connectOverCDP(env.browserWs);
     }
     const browser = await browserP;
-    const ctx = browser.contexts()[0] ?? (await browser.newContext({ userAgent: env.userAgent }));
-    const page = await ctx.newPage();
+    const ctx = await browser.newContext({ userAgent: o.userAgent || env.userAgent, serviceWorkers: "block" });
     try {
+      await ctx.routeWebSocket(/.*/, (ws: any) => ws.close());
+      await ctx.route("**/*", async (route: any) => {
+        const req = route.request();
+        if (SKIP_TYPES.has(req.resourceType())) return route.abort();
+        try {
+          const { res } = await safeFetch(req.url(), {
+            method: req.method(),
+            headers: { ...req.headers(), "user-agent": o.userAgent || env.userAgent },
+            body: req.postDataBuffer() ?? undefined,
+            timeoutMs: 20000,
+          });
+          const headers: Record<string, string> = {};
+          res.headers.forEach((v, k) => { if (!["content-encoding", "content-length", "transfer-encoding"].includes(k)) headers[k] = v; });
+          await route.fulfill({ status: res.status, headers, body: Buffer.from(await res.arrayBuffer()) });
+        } catch {
+          await route.abort("blockedbyclient");
+        }
+      });
+      const page = await ctx.newPage();
       await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
       return await page.content();
     } finally {
-      await page.close();
+      await ctx.close().catch(() => {});
     }
   } catch (e) {
     browserP = null;
@@ -179,7 +194,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   let robots: Robots = { disallow: [], allow: [], sitemaps: [] };
   let robotsTxt: string | null = null;
   try {
-    const r = await fetchT(`${origin}/robots.txt`, { headers: { "User-Agent": env.userAgent } });
+    const { res: r } = await safeFetch(`${origin}/robots.txt`, { headers: { "User-Agent": env.userAgent } });
     if (r.ok) {
       robotsTxt = await r.text();
       robots = parseRobots(robotsTxt);
