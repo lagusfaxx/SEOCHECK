@@ -7,6 +7,7 @@ import { getSerp } from "../serp";
 import { ngrams, tf, tokens } from "../text";
 import { hostOf, median } from "../util";
 import { jobProgress } from "../queue";
+import { jobLog } from "../jobctx";
 
 export type Section = { label: string; count: number; covered: boolean; variants: string[] };
 export type Term = { term: string; weight: number; coverage: number; target: number; mine: number; missing: boolean };
@@ -239,7 +240,9 @@ export async function makeBrief(r: ContentResult, language: string, country: str
   try {
     const out = await llm.json<Omit<Brief, "outline"> & { outline: { tag: "h2" | "h3"; text: string; notes?: string }[] }>(
       "Eres un editor SEO senior. Escribes en el idioma y variante del país indicado. Títulos ≤ 60 caracteres, metas 140–155 caracteres. Sin relleno ni frases genéricas.",
-      `Con este análisis de SERP genera el brief.\n\nFormato:\n{"titles": [5 strings], "metas": [3 strings], "outline": [{"tag":"h2"|"h3","text": string,"notes": string corto con términos a cubrir}], "faq": [{"q": string,"a": respuesta de 2-3 frases}], "notes": [máx 5 indicaciones concretas]}\n\nEl outline cubre las secciones comunes, los términos faltantes y las PAA sin responder. FAQ de 4 a 8 preguntas.\n\n${JSON.stringify(input)}`
+      `Con este análisis de SERP genera el brief.\n\nFormato:\n{"titles": [5 strings], "metas": [3 strings], "outline": [{"tag":"h2"|"h3","text": string,"notes": string corto con términos a cubrir}], "faq": [{"q": string,"a": respuesta de 2-3 frases}], "notes": [máx 5 indicaciones concretas]}\n\nEl outline cubre las secciones comunes, los términos faltantes y las PAA sin responder. FAQ de 4 a 8 preguntas.\n\n${JSON.stringify(input)}`,
+      16000,
+      "medium"
     );
     return {
       titles: out.titles ?? [],
@@ -249,7 +252,7 @@ export async function makeBrief(r: ContentResult, language: string, country: str
       notes: out.notes ?? [],
     };
   } catch (e) {
-    console.warn("[brief]", e);
+    await jobLog("warn", "brief con LLM falló; se usa brief determinista", { error: e instanceof Error ? e.message : String(e) });
     return fallbackBrief(r);
   }
 }

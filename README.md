@@ -40,3 +40,20 @@ Multi-tenant: `Workspace → Project`; todo cuelga de `projectId`.
 GSC: crea una service account, agrega su email como usuario de la propiedad y pega el JSON (crudo o base64) en `GSC_SERVICE_ACCOUNT_JSON`. Propiedad en ajustes del proyecto (`sc-domain:dominio.cl` o `https://dominio.cl/`).
 
 IndexNow: publica `https://dominio/<INDEXNOW_KEY>.txt` con la key como contenido.
+
+## LLM
+
+Por defecto `claude-sonnet-5-5`. Para usar Opus: `LLM_MODEL=claude-opus-5-5`. Sin `ANTHROPIC_API_KEY` usa OpenAI si hay `OPENAI_API_KEY`; sin ninguno, el intent queda por reglas y el brief es determinista.
+
+Se usa para clasificar el intent de las keywords dudosas (effort `low`) y para generar el brief (effort `medium`).
+
+**Rechazos y fallback.** Las requests van con `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`). Si el modelo rechaza, la API reintenta dentro de la misma llamada en otro modelo, según la categoría del rechazo:
+
+| Modelo | Categoría del rechazo | Qué pasa |
+|---|---|---|
+| `claude-sonnet-5-5` | `cyber`, `frontier_llm` | se reintenta en `claude-sonnet-5` |
+| `claude-sonnet-5-5` | `bio`, `reasoning_extraction`, `general_harms` | sin fallback: rechazo final |
+| `claude-opus-5-5` | según categoría (`cyber` → `claude-opus-4-8`) | destinos posibles: `claude-opus-5`, `claude-opus-4-8` |
+| `claude-haiku-*` | — | sin fallback server-side (no se envía el parámetro) |
+
+Todo queda en `JobRun.log` del job: cada fallback (`LLM fallback: <modelo> rechazó, continuó <modelo>`), el modelo que respondió si no es el pedido, y el rechazo final con su categoría. Ante un rechazo final, el intent cae a `informational` y el brief al determinista; ambos casos también se registran.

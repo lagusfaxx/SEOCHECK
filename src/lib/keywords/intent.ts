@@ -1,5 +1,6 @@
 import { llmProvider } from "../providers";
 import { strip } from "../text";
+import { jobLog } from "../jobctx";
 
 export type Intent = "informational" | "commercial" | "transactional" | "navigational";
 
@@ -43,7 +44,7 @@ export async function classifyIntents(items: { term: string; features: string[] 
         );
         for (const [k, v] of Object.entries(res)) if (["informational", "commercial", "transactional", "navigational"].includes(v)) out.set(k, v);
       } catch (e) {
-        console.warn("[intent] llm", e);
+        await jobLog("warn", "intent con LLM falló; esos casos quedan como informational", { error: e instanceof Error ? e.message : String(e), batch: batch.length });
       }
     }
   }

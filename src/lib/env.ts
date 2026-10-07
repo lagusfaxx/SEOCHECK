@@ -7,7 +7,7 @@ export const env = {
   embeddingsUrl: process.env.EMBEDDINGS_URL ?? "",
   openaiKey: process.env.OPENAI_API_KEY ?? "",
   anthropicKey: process.env.ANTHROPIC_API_KEY ?? "",
-  llmModel: process.env.LLM_MODEL ?? "claude-opus-5-5",
+  llmModel: process.env.LLM_MODEL || "claude-sonnet-5-5",
   psiKey: process.env.PAGESPEED_API_KEY ?? "",
   gscCredentials: process.env.GSC_SERVICE_ACCOUNT_JSON ?? "",
   browserWs: process.env.BROWSER_WS_ENDPOINT ?? "",

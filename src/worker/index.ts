@@ -9,6 +9,7 @@ import { checkRank, dueTracked } from "../lib/rank/rank";
 import { syncGsc } from "../lib/rank/gsc";
 import { computeAlerts } from "../lib/rank/alerts";
 import { analyzeContent } from "../lib/content/analyze";
+import { runWithJob } from "../lib/jobctx";
 
 type Data = { projectId: string; jobRunId?: string; [k: string]: any };
 
@@ -82,7 +83,7 @@ async function main() {
           console.log(`[${name}] start ${job.id}`);
           try {
             await jobProgress(d.jobRunId, 1);
-            const r = await handle(boss, name, d);
+            const r = await runWithJob(d.jobRunId, () => handle(boss, name, d));
             await jobDone(d.jobRunId, r && typeof r === "object" ? JSON.stringify(r).slice(0, 300) : undefined);
             console.log(`[${name}] done ${job.id}`);
           } catch (e) {

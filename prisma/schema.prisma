@@ -52,6 +52,8 @@ model JobRun {
   status    String   @default("queued") // queued | running | done | error
   progress  Int      @default(0)
   message   String?
+  /// Eventos del job (fallback de LLM, respuestas crudas de APIs, avisos): [{ at, level, msg, data? }]
+  log       Json     @default("[]")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

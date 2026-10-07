@@ -31,5 +31,5 @@ export interface EmbeddingProvider {
 }
 
 export interface LLMProvider {
-  json<T>(system: string, user: string, maxTokens?: number): Promise<T>;
+  json<T>(system: string, user: string, maxTokens?: number, effort?: "low" | "medium" | "high"): Promise<T>;
 }

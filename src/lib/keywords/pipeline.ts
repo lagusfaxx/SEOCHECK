@@ -264,7 +264,11 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   const labelGroups = [...byLabel.values()];
   const topicMatch = matchGroups(
     labelGroups.map((g) => ({ members: g.map((c) => c.id) })),
-    keptTopics.map((t) => ({ id: t.id, prevMembers: new Set(prevClusters.filter((c) => prevTopicOf.get(c.id) === t.id).map((c) => c.id)) }))
+    keptTopics.map((t) => ({
+      id: t.id,
+      anchor: prevClusters.find((c) => prevTopicOf.get(c.id) === t.id && c.isPillar)?.id ?? null,
+      prevMembers: new Set(prevClusters.filter((c) => prevTopicOf.get(c.id) === t.id).map((c) => c.id)),
+    }))
   );
   for (const [i, members] of labelGroups.entries()) {
     const top = [...members].sort((a, b) => b.volume - a.volume)[0];

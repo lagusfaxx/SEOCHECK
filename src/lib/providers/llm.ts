@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { env } from "../env";
+import { jobLog } from "../jobctx";
 import type { LLMProvider } from "./types";
 
 function extractJson<T>(text: string): T {
@@ -9,24 +10,64 @@ function extractJson<T>(text: string): T {
   return JSON.parse(start > 0 ? raw.slice(start) : raw) as T;
 }
 
+export class LLMRefusal extends Error {
+  constructor(public model: string, public category: string | null) {
+    super(`LLM rechazó la solicitud (${model}${category ? `, categoría ${category}` : ""})`);
+    this.name = "LLMRefusal";
+  }
+}
+
+/**
+ * Fallback ante rechazos (server-side, beta `server-side-fallback-2026-07-01`, `fallbacks: "default"`):
+ * la API reintenta dentro de la misma llamada en el modelo que Anthropic recomienda para la
+ * categoría del rechazo. Con el modelo por defecto `claude-sonnet-5-5`:
+ *   - categorías `cyber` y `frontier_llm` → se reintenta en `claude-sonnet-5`;
+ *   - `bio`, `reasoning_extraction` y `general_harms` → sin fallback: vuelve `stop_reason: "refusal"`.
+ * Con `claude-opus-5-5` los destinos son `claude-opus-5` / `claude-opus-4-8` (cyber → opus-4-8).
+ * Los modelos Haiku no tienen fallback server-side: no se envía el parámetro.
+ * Cada fallback (bloque `fallback` con from/to) y cada rechazo final quedan en el log del job.
+ */
+export function fallbackParams(model: string) {
+  if (/haiku/.test(model)) return {};
+  return { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" };
+}
+
+type LlmEvent = { level: "info" | "warn" | "error"; msg: string; data?: unknown };
+
+/** Interpreta la respuesta: fallbacks ocurridos, rechazo final y texto. */
+export function inspectMessage(msg: any, requested: string): { events: LlmEvent[]; refusal: LLMRefusal | null; text: string } {
+  const events: LlmEvent[] = [];
+  for (const b of msg.content ?? []) {
+    if (b.type === "fallback") events.push({ level: "warn", msg: `LLM fallback: ${b.from?.model} rechazó, continuó ${b.to?.model}`, data: { from: b.from, to: b.to } });
+  }
+  if (msg.stop_reason === "refusal") {
+    const category = msg.stop_details?.category ?? null;
+    events.push({ level: "error", msg: `LLM rechazo final en ${msg.model} (sin fallback disponible)`, data: { category, explanation: msg.stop_details?.explanation } });
+    return { events, refusal: new LLMRefusal(msg.model, category), text: "" };
+  }
+  if (msg.model && msg.model !== requested) events.push({ level: "info", msg: `LLM respondido por ${msg.model} (pedido ${requested})` });
+  return { events, refusal: null, text: (msg.content ?? []).map((b: any) => (b.type === "text" ? b.text : "")).join("") };
+}
+
 class AnthropicLLM implements LLMProvider {
   private client = new Anthropic({ apiKey: env.anthropicKey });
 
-  async json<T>(system: string, user: string, maxTokens = 16000): Promise<T> {
+  async json<T>(system: string, user: string, maxTokens = 16000, effort: "low" | "medium" | "high" = "low"): Promise<T> {
+    const model = env.llmModel;
     const params = {
-      model: env.llmModel,
+      model,
       max_tokens: maxTokens,
       system: `${system}\nResponde solo con JSON válido, sin texto adicional.`,
       messages: [{ role: "user" as const, content: user }],
-      output_config: { effort: "low" as const },
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
+      output_config: { effort },
+      ...fallbackParams(model),
     };
     const stream = this.client.beta.messages.stream(params as any);
-    const msg = await stream.finalMessage();
-    if (msg.stop_reason === "refusal") throw new Error("LLM rechazó la solicitud");
-    const text = msg.content.map((b: any) => (b.type === "text" ? b.text : "")).join("");
-    return extractJson<T>(text);
+    const msg: any = await stream.finalMessage();
+    const r = inspectMessage(msg, model);
+    for (const e of r.events) await jobLog(e.level, e.msg, e.data);
+    if (r.refusal) throw r.refusal;
+    return extractJson<T>(r.text);
   }
 }
 
@@ -50,6 +91,8 @@ class OpenAILLM implements LLMProvider {
     return extractJson<T>(json.choices[0].message.content);
   }
 }
+
+export { AnthropicLLM };
 
 export function llmProvider(): LLMProvider | null {
   if (env.anthropicKey) return new AnthropicLLM();
