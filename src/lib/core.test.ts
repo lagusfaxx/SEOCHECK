@@ -139,3 +139,16 @@ test("matchGroups: ancla, mayoría de miembros previos y una estructura por grup
   );
   assert.deepEqual(r, ["A", "B", null, null]);
 });
+
+test("matchGroups no depende del orden de entrada", async () => {
+  const { matchGroups } = await import("./keywords/reconcile");
+  const existing = [
+    { id: "A", anchor: "a1", prevMembers: new Set(["a1", "a2"]) },
+    { id: "B", anchor: null, prevMembers: new Set(["x", "y", "z"]) },
+  ];
+  const groups = [{ members: ["z"] }, { members: ["x", "y", "w"] }, { members: ["a2", "a1"] }];
+  const fwd = matchGroups(groups, existing);
+  const rev = matchGroups([...groups].reverse(), existing).reverse();
+  assert.deepEqual(fwd, rev);
+  assert.deepEqual(fwd, [null, "B", "A"]);
+});

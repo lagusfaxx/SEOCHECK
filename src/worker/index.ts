@@ -10,6 +10,8 @@ import { syncGsc } from "../lib/rank/gsc";
 import { computeAlerts } from "../lib/rank/alerts";
 import { analyzeContent } from "../lib/content/analyze";
 import { runWithJob } from "../lib/jobctx";
+import { collectDfsQueue, flushDfsQueue } from "../lib/volume/dataforseo";
+import { backfillVolumes, writeCache } from "../lib/volume/broker";
 
 type Data = { projectId: string; jobRunId?: string; [k: string]: any };
 
@@ -57,6 +59,19 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
     }
     case QUEUES.alerts:
       return computeAlerts(d.projectId);
+    case QUEUES.dfsFlush: {
+      const tasks = await flushDfsQueue();
+      if (tasks) await boss.send(QUEUES.dfsCollect, {}, { singletonKey: "dfs-collect", startAfter: 15 });
+      return { tasks };
+    }
+    case QUEUES.dfsCollect: {
+      const r = await collectDfsQueue((rows, country, language) => writeCache(rows, country, language, "dataforseo"));
+      let updated = 0;
+      for (const t of r.touched) updated += await backfillVolumes(t.country, t.language, t.keywords);
+      // quedan tasks en cola: volver a revisar
+      if (r.waiting) await boss.send(QUEUES.dfsCollect, {}, { singletonKey: "dfs-collect", startAfter: 20 });
+      return { done: r.done, waiting: r.waiting, updated };
+    }
     case QUEUES.content:
       return analyzeContent(d.contentId, d.jobRunId).catch(async (e) => {
         await db.contentAnalysis.update({ where: { id: d.contentId }, data: { status: "error" } });

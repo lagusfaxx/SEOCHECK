@@ -2,7 +2,8 @@ import pLimit from "p-limit";
 import { db } from "../db";
 import { gscQuery } from "../providers/google";
 import { expandSeed } from "../providers/autocomplete";
-import { embeddingProvider, volumeProvider, type EmbeddingProvider } from "../providers";
+import { embeddingProvider, type EmbeddingProvider } from "../providers";
+import { resolveVolumes, volKey } from "../volume/broker";
 import { HashEmbeddings } from "../providers/embeddings";
 import { getSerp } from "../serp";
 import { cosine, hostOf, normTerm } from "../util";
@@ -131,17 +132,20 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
 
   // 3. Volumen
   await step(35, "volumen");
-  const volMap = new Map<string, { volume: number | null; cpc: number | null; competition: number | null }>();
-  if (env.dfsLogin) {
-    try {
-      for (const v of await volumeProvider().volumes(kept.map((k) => k.term), { locationCode: p.locationCode, language: p.language, projectId: p.id })) volMap.set(v.keyword, v);
-    } catch (e) {
-      console.warn("[keywords] volumen", e);
-    }
-  }
+  const runOpts = (run.options ?? {}) as { volumeLive?: boolean };
+  const vol = await resolveVolumes(
+    kept.map((k) => k.term),
+    { country: p.country, language: p.language, locationCode: p.locationCode, projectId: p.id, seeds: run.seeds, live: Boolean(runOpts.volumeLive) }
+  );
+  const volMap = vol.data;
+  stats.volCache = Number(vol.stats.cache ?? 0);
+  stats.volFetched = Number(vol.stats.fetched ?? 0);
+  stats.volGsc = Number(vol.stats.gsc ?? 0);
+  stats.volMissing = Number(vol.stats.missing ?? 0);
 
   // 4. SERP top 10 (las N con más volumen×relevancia)
-  const byPotential = [...kept].sort((a, b) => (volMap.get(b.term)?.volume ?? 0) * b.rel - (volMap.get(a.term)?.volume ?? 0) * a.rel);
+  const vget = (t: string) => volMap.get(volKey(t));
+  const byPotential = [...kept].sort((a, b) => (vget(b.term)?.volume ?? 0) * b.rel - (vget(a.term)?.volume ?? 0) * a.rel);
   const serpTerms = env.serpentKey ? byPotential.slice(0, opts.serpTop) : [];
   const serps = new Map<string, Awaited<ReturnType<typeof getSerp>>>();
   const limit = pLimit(4);
@@ -163,14 +167,16 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
 
   // Intent
   await step(80, "intent");
-  const intents = await classifyIntents(kept.map((k) => ({ term: k.term, features: serps.get(k.term)?.features ?? [] })), brands);
+  // El intent del proveedor de volumen (si lo trae) es dato; el resto va por reglas/LLM
+  const intents = await classifyIntents(kept.filter((k) => !vget(k.term)?.intent).map((k) => ({ term: k.term, features: serps.get(k.term)?.features ?? [] })), brands);
+  for (const k of kept) if (vget(k.term)?.intent) intents.set(k.term, vget(k.term)!.intent as any);
 
   // Persistir keywords
   await step(84, "guardando");
   const extraStrong: string[] = settings.strongDomains ?? [];
   const own = hostOf(p.domain);
   const rows = kept.map((k) => {
-    const v = volMap.get(k.term);
+    const v = vget(k.term);
     const serp = serps.get(k.term);
     const difficulty = serp ? difficultyProxy(serp.organic.filter((o) => o.domain !== own), extraStrong) : null;
     return {
@@ -178,17 +184,22 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
       sources: k.src,
       relevance: Number(k.rel.toFixed(3)),
       volume: v?.volume ?? null,
+      volumeMin: v?.volumeMin ?? null,
+      volumeMax: v?.volumeMax ?? null,
+      volumeSource: v?.source ?? null,
+      volumeAt: v?.at ?? null,
       cpc: v?.cpc ?? null,
       competition: v?.competition ?? null,
       intent: intents.get(k.term) ?? null,
       difficulty,
-      score: v?.volume != null || difficulty != null ? kwScore(v?.volume ?? 0, k.rel, difficulty ?? 50) : null,
+      // volumen desconocido → score desconocido (null), no 0
+      score: v?.volume != null ? kwScore(v.volume, k.rel, difficulty ?? 50) : null,
       embedding: k.vec,
     };
   });
   // Estado previo del run (re-run): lo bloqueado a mano se conserva
-  const prevClusters = await db.cluster.findMany({ where: { runId }, include: { keywords: { select: { term: true, locked: true } } } });
-  const prevTopics = await db.topic.findMany({ where: { runId }, include: { clusters: { select: { id: true, topicLocked: true } } } });
+  const prevClusters = await db.cluster.findMany({ where: { runId }, orderBy: { id: "asc" }, include: { keywords: { select: { term: true, locked: true } } } });
+  const prevTopics = await db.topic.findMany({ where: { runId }, orderBy: { id: "asc" }, include: { clusters: { select: { id: true, topicLocked: true } } } });
   const lockedTerms = new Set(prevClusters.flatMap((c) => c.keywords.filter((k) => k.locked).map((k) => k.term)));
   const keptClusters = prevClusters.filter((c) => c.topicLocked || c.nameLocked || c.pillarLocked || c.keywords.some((k) => k.locked));
   const keptClusterIds = new Set(keptClusters.map((c) => c.id));
@@ -243,9 +254,9 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
     }
     await db.keyword.updateMany({ where: { projectId: p.id, locked: false, term: { in: g.members.map((m) => m.term) } }, data: { clusterId: cid } });
   }
-  const clusters = await db.cluster.findMany({ where: { runId } });
+  const clusters = await db.cluster.findMany({ where: { runId }, orderBy: { id: "asc" } });
   for (const c of clusters) await refreshCluster(c.id);
-  const live = await db.cluster.findMany({ where: { runId } });
+  const live = await db.cluster.findMany({ where: { runId }, orderBy: { id: "asc" } });
   stats.clusters = live.length;
 
   // 6. Topics con HDBSCAN sobre embeddings de las primarias (clusters sin topic bloqueado)
@@ -276,7 +287,7 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
     await db.cluster.updateMany({ where: { id: { in: members.map((m) => m.id) } }, data: { topicId: tid } });
   }
   // Pillar: la marcada a mano manda; si no, la de más volumen
-  const topicsNow = await db.topic.findMany({ where: { runId }, include: { clusters: true } });
+  const topicsNow = await db.topic.findMany({ where: { runId }, orderBy: { id: "asc" }, include: { clusters: { orderBy: { id: "asc" } } } });
   for (const t of topicsNow) {
     if (!t.clusters.length && !t.nameLocked) {
       await db.topic.delete({ where: { id: t.id } });
@@ -294,7 +305,7 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   stats.topics = await db.topic.count({ where: { runId } });
   stats.locked = lockedTerms.size;
 
-  const runSources = { serp: serps.size > 0 || seedSerpOk ? "real" : "none", embeddings: emb.name, volumes: volMap.size > 0 ? "real" : "none", gsc: gscState };
+  const runSources = { serp: serps.size > 0 || seedSerpOk ? "real" : "none", embeddings: emb.name, volumes: [...volMap.values()].some((v) => v.source !== "gsc") ? "real" : volMap.size ? "gsc" : "none", volumeProvider: env.volumeProvider, gsc: gscState };
   await db.keywordRun.update({ where: { id: runId }, data: { status: "done", stats, sources: runSources } });
   return stats;
 }

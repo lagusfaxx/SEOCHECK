@@ -18,12 +18,6 @@ export interface SerpProvider {
   quick(q: string, opts: SerpOpts & { num?: number }): Promise<Serp>;
 }
 
-export type VolumeRow = { keyword: string; volume: number | null; cpc: number | null; competition: number | null };
-
-export interface VolumeProvider {
-  volumes(keywords: string[], opts: { locationCode: number; language: string; projectId?: string }): Promise<VolumeRow[]>;
-}
-
 export interface EmbeddingProvider {
   /** Modelo efectivo (p.ej. paraphrase-multilingual-MiniLM-L12-v2) o "trigram-hash". */
   readonly name: string;
@@ -33,3 +27,4 @@ export interface EmbeddingProvider {
 export interface LLMProvider {
   json<T>(system: string, user: string, maxTokens?: number, effort?: "low" | "medium" | "high"): Promise<T>;
 }
+export type { VolumeProvider, VolumeData, VolumeCtx, VolumeSource } from "../volume/types";

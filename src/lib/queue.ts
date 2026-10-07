@@ -12,6 +12,8 @@ export const QUEUES = {
   gscDaily: "gsc.daily",
   alerts: "alerts.compute",
   content: "content.analyze",
+  dfsFlush: "volume.dfs.flush",
+  dfsCollect: "volume.dfs.collect",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 

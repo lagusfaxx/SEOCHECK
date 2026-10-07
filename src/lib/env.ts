@@ -4,6 +4,16 @@ export const env = {
   serpentBase: process.env.SERPENT_BASE_URL ?? "https://apiserpent.com",
   dfsLogin: process.env.DATAFORSEO_LOGIN ?? "",
   dfsPassword: process.env.DATAFORSEO_PASSWORD ?? "",
+  /** sandbox (gratis, datos ficticios) | live */
+  dfsEnv: (process.env.DATAFORSEO_ENV === "live" ? "live" : "sandbox") as "live" | "sandbox",
+  dfsBaseOverride: process.env.DATAFORSEO_BASE_URL ?? "",
+  /** Segundos que el research espera la standard queue de DataForSEO antes de seguir (lo pendiente se completa después) */
+  dfsQueueWait: Number(process.env.DATAFORSEO_QUEUE_WAIT_SECONDS ?? 300),
+  /** dataforseo | apify | csv */
+  volumeProvider: (process.env.VOLUME_PROVIDER ?? "dataforseo") as "dataforseo" | "apify" | "csv",
+  apifyToken: process.env.APIFY_TOKEN ?? "",
+  apifyActor: (process.env.APIFY_ACTOR_ID || "s-r~google-keywords").replace("/", "~"),
+  apifyBase: process.env.APIFY_BASE_URL ?? "https://api.apify.com",
   embeddingsUrl: process.env.EMBEDDINGS_URL ?? "",
   openaiKey: process.env.OPENAI_API_KEY ?? "",
   anthropicKey: process.env.ANTHROPIC_API_KEY ?? "",

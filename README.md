@@ -71,3 +71,32 @@ Opciones por proyecto en `settings.crawler` (vía `PATCH /api/p/:id/_`), sobrees
 Páginas de challenge/bloqueo de WAF (Cloudflare `cf-mitigated` / "Just a moment..." / `cf-chl`, DataDome, PerimeterX, Akamai) se guardan con `error = blocked_by_waf` y el issue crítico correspondiente, no como páginas válidas. Tras 15 bloqueos seguidos el crawl se detiene (`stats.wafAborted`).
 
 Seguridad: todo fetch hacia URLs de usuario o crawleadas pasa por `safeFetch` (bloquea red interna, valida la IP al conectar y en cada redirect).
+
+## Volumen de búsqueda
+
+Prioridad por keyword: **impresiones de GSC** (28 días, si el proyecto tiene datos) > **`VOLUME_PROVIDER`** > `null`. Cada keyword guarda `volumeSource` (`gsc`/`dataforseo`/`apify`/`csv`) y `volumeAt`; la tabla muestra la fuente.
+
+**Caché global:** `VolumeCache` por país + idioma + keyword normalizada, sin importar el proyecto. No se vuelve a pedir un dato de menos de 30 días. Lo que el proveedor no devuelve queda en `null` (nunca 0) y no se cachea.
+
+| Proveedor | Cómo funciona |
+|---|---|
+| `dataforseo` | `DATAFORSEO_ENV=sandbox` por defecto (gratis, datos ficticios). Standard queue por defecto: las keywords pendientes de todos los proyectos se juntan en tasks de hasta 1.000 (`task_post` → `task_get`). El research espera hasta `DATAFORSEO_QUEUE_WAIT_SECONDS`; lo que llega después se aplica solo (backfill de volumen y score). Endpoint Live solo si el run lo pide: `POST /api/p/:id/keywords/run` con `"volumeLive": true`. |
+| `apify` | Actor `APIFY_ACTOR_ID` (def. `s-r~google-keywords`), token en `Authorization: Bearer`. El actor expande **un seed** en variantes con volumen (no acepta listas): se corre un run por seed del research (`limit` 500, `min_volume` 0) y se cruzan las variantes con nuestras keywords. Hasta 200 keywords pedidas usa `run-sync-get-dataset-items`; más, runs asíncronos con polling dentro del job del worker. El costo (`usageTotalUsd`) queda en el log del job y en `ApiCall`. Sin `APIFY_TOKEN` el proveedor queda no disponible y la app sigue. |
+| `csv` | Solo lo importado desde Keyword Planner. |
+
+**Importar CSV de Keyword Planner** (UTF-16, tabs, inglés o español; rangos como `100 – 1K` → `volumeMin`/`volumeMax`, con volumen representativo = media geométrica del rango):
+
+```bash
+curl -X POST https://<host>/api/p/<projectId>/volumes/csv -H 'content-type: text/csv' --data-binary @"Keyword Stats.csv"
+```
+
+**Comparar proveedores** (máx. 100 keywords, una por línea):
+
+```bash
+npm run compare-volume -- --file keywords.txt [--out compare-volume.csv] [--apify-limit 20]
+# en Docker: docker compose exec worker npm run compare-volume -- --file /tmp/keywords.txt
+```
+
+Genera `keyword, vol_dataforseo, vol_apify, diferencia_pct` y un resumen con Spearman, mediana de la diferencia % y cuántas devolvió cada uno. Con `DATAFORSEO_ENV=sandbox` los datos de DataForSEO son ficticios.
+
+Fixture real de Apify para tests: `APIFY_TOKEN=... npm run apify-fixture` (el test usa la salida real si existe; si no, un ejemplo construido con el schema del dataset).

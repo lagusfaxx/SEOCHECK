@@ -114,7 +114,7 @@ function SourceBadges({ s }: { s: RunSources }) {
   const items: [string, string, boolean][] = [
     ["SERP", s.serp === "real" ? "real" : "sin SERP", s.serp === "real"],
     ["Embeddings", s.embeddings === "trigram-hash" ? "trigram-hash" : s.embeddings ?? "?", s.embeddings !== "trigram-hash"],
-    ["Volumen", s.volumes === "real" ? "real" : "sin volumen", s.volumes === "real"],
+    ["Volumen", s.volumes === "real" ? s.volumeProvider ?? "real" : s.volumes === "gsc" ? "solo GSC" : "sin volumen", s.volumes === "real" || s.volumes === "gsc"],
     ...(s.gsc && s.gsc !== "none" ? [["GSC", s.gsc === "real" ? "real" : "error", s.gsc === "real"] as [string, string, boolean]] : []),
   ];
   return (

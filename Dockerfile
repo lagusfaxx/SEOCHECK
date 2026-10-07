@@ -22,6 +22,7 @@ COPY --from=build /app/.next ./.next
 COPY --from=build /app/package.json /app/tsconfig.json /app/next.config.mjs ./
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/src ./src
+COPY --from=build /app/scripts ./scripts
 EXPOSE 3000
 # Las migraciones las aplica el servicio `migrate` (prisma migrate deploy) antes de levantar web/worker.
 CMD ["sh", "-c", "npx next start -p ${PORT}"]

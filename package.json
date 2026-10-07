@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/lib/*.test.ts",
     "db:migrate": "prisma migrate dev",
-    "db:deploy": "prisma migrate deploy"
+    "db:deploy": "prisma migrate deploy",
+    "compare-volume": "tsx scripts/compare-volume.ts",
+    "apify-fixture": "tsx scripts/apify-fixture.ts"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

@@ -5,6 +5,8 @@ import { api, cx, DataTable, fmt, Icon, IntentChip, INTENT, type Col } from "../
 import type { Kw, KwData } from "./types";
 
 const SRC: Record<string, string> = { seed: "seed", autocomplete: "auto", gsc: "gsc", paa: "paa", related: "rel" };
+const VSRC: Record<string, string> = { gsc: "GSC impr.", dataforseo: "DataForSEO", apify: "Apify", csv: "Keyword Planner" };
+const short = (n: number) => (n >= 1e6 ? `${n / 1e6}M` : n >= 1e3 ? `${n / 1e3}K` : String(n));
 
 export default function KwTable({ data, reload }: { data: KwData; reload: () => void }) {
   const { id, refreshJobs } = useProject();
@@ -24,7 +26,8 @@ export default function KwTable({ data, reload }: { data: KwData; reload: () => 
     { key: "sel", label: <input type="checkbox" checked={sel.size > 0 && sel.size === rows.length} onChange={(e) => setSel(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} />, get: (k) => (sel.has(k.id) ? 1 : 0), render: (k) => <input type="checkbox" checked={sel.has(k.id)} onChange={() => toggle(k.id)} onClick={(e) => e.stopPropagation()} /> },
     { key: "term", label: "Keyword", get: (k) => k.term, render: (k) => <span className={cx(k.excluded && "text-ink-400 line-through")}>{k.term}{tracked.has(k.term) && <Icon name="rank" className="ml-1 inline h-3 w-3 text-acc" />}</span> },
     { key: "intent", label: "Intent", get: (k) => k.intent, render: (k) => <IntentChip intent={k.intent} /> },
-    { key: "volume", label: "Vol.", get: (k) => k.volume, render: (k) => fmt(k.volume), num: true },
+    { key: "volume", label: "Vol.", get: (k) => k.volume, render: (k) => (k.volumeMin != null && k.volumeMax != null && k.volumeMin !== k.volumeMax ? <span title={`estimado ${fmt(k.volume)}`}>{short(k.volumeMin)}–{short(k.volumeMax)}</span> : fmt(k.volume)), num: true },
+    { key: "vsrc", label: "Fuente vol.", get: (k) => k.volumeSource, render: (k) => (k.volumeSource ? <span className={cx("chip", k.volumeSource === "gsc" && "!bg-emerald-100 !text-emerald-700")} title={k.volumeAt ? `dato del ${new Date(k.volumeAt).toLocaleDateString("es-CL")}` : ""}>{VSRC[k.volumeSource] ?? k.volumeSource}</span> : <span className="text-ink-300">—</span>) },
     { key: "cpc", label: "CPC", get: (k) => k.cpc, render: (k) => fmt(k.cpc, 2), num: true },
     { key: "comp", label: "Comp.", get: (k) => k.competition, render: (k) => fmt(k.competition, 2), num: true },
     { key: "rel", label: "Relev.", get: (k) => k.relevance, render: (k) => fmt(k.relevance, 2), num: true },

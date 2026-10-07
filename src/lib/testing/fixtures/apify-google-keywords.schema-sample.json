@@ -1,0 +1,14 @@
+{
+  "_meta": {
+    "origin": "schema",
+    "note": "NO es salida real: construido con los nombres de campo del dataset schema del actor s-r~google-keywords (build 0.1.24: keyword, country, language, volume, cpc, cpc_usd, sd, pd, competition, intent). Los tipos/valores son supuestos. Reemplazar con `npm run apify-fixture` (requiere APIFY_TOKEN); el test usa el fixture real si existe."
+  },
+  "items": [
+    { "keyword": "zapatillas trail", "country": "cl", "language": "es", "volume": 2900, "cpc": 0.41, "cpc_usd": 0.41, "sd": 34, "pd": 88, "competition": 0.92, "intent": "transactional" },
+    { "keyword": "zapatillas trail mujer", "country": "cl", "language": "es", "volume": 880, "cpc": 0.37, "cpc_usd": 0.37, "sd": 21, "pd": 90, "competition": 0.95, "intent": ["commercial", "transactional"] },
+    { "keyword": "Zapatillas Trail  Hombre", "country": "cl", "language": "es", "volume": "1,300", "cpc": "$0.39", "cpc_usd": null, "sd": 25, "pd": 85, "competition": "HIGH", "intent": "commercial" },
+    { "keyword": "que zapatillas trail comprar", "country": "cl", "language": "es", "volume": 0, "cpc": null, "cpc_usd": null, "sd": 5, "pd": 10, "competition": 12, "intent": "I" },
+    { "keyword": "zapatillas trail salomon", "country": "cl", "language": "es", "volume": null, "cpc": 0.52, "cpc_usd": 0.52, "sd": 40, "pd": 70, "competition": 0.7, "intent": "navigational" },
+    { "errors": ["upstream throttled"], "keyword": null }
+  ]
+}

@@ -43,5 +43,5 @@ test("2ª ronda: PAA y related de los términos descubiertos, con límite", { sk
   assert.ok(terms.includes("¿qué es botas barato?"), "PAA de 2ª ronda");
   assert.equal(stats.expanded, 1 + 4 + 3 * 4);
   const r = await db.keywordRun.findUniqueOrThrow({ where: { id: run.id } });
-  assert.deepEqual(r.sources, { serp: "real", embeddings: "trigram-hash", volumes: "none", gsc: "none" });
+  assert.deepEqual(r.sources, { serp: "real", embeddings: "trigram-hash", volumes: "none", volumeProvider: "dataforseo", gsc: "none" });
 });

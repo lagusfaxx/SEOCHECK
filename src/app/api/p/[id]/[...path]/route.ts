@@ -5,6 +5,8 @@ import { refreshCluster } from "@/lib/keywords/pipeline";
 import { ISSUE_LABELS } from "@/lib/audit/issues";
 import { indexNow, normalizeGscProperty } from "@/lib/providers/google";
 import { makeBrief, type ContentResult } from "@/lib/content/analyze";
+import { parseKeywordPlannerCsv } from "@/lib/volume/csv";
+import { backfillVolumes, volumeProviderStatus, writeCache } from "@/lib/volume/broker";
 import { env } from "@/lib/env";
 import { normTerm, normUrl } from "@/lib/util";
 
@@ -22,8 +24,8 @@ const GETS: Record<string, H> = {
     return {
       ...p,
       providers: {
-        serp: Boolean(env.serpentKey), volume: Boolean(env.dfsLogin), embeddings: env.embeddingsUrl ? "local" : env.openaiKey ? "openai" : "hash",
-        llm: Boolean(env.anthropicKey || env.openaiKey), gsc: Boolean(env.gscCredentials), psi: Boolean(env.psiKey), render: Boolean(env.browserWs), indexnow: Boolean(env.indexNowKey),
+        serp: Boolean(env.serpentKey), volume: volumeProviderStatus().available ? env.volumeProvider : false, embeddings: env.embeddingsUrl ? "local" : env.openaiKey ? "openai" : "hash",
+        llm: Boolean(env.anthropicKey || env.openaiKey), volumeProvider: volumeProviderStatus(), gsc: Boolean(env.gscCredentials), psi: Boolean(env.psiKey), render: Boolean(env.browserWs), indexnow: Boolean(env.indexNowKey),
       },
     };
   },
@@ -64,7 +66,7 @@ const GETS: Record<string, H> = {
     const runId = url.searchParams.get("run") ?? runs[0]?.id;
     const scope = runId ? { projectId: id, runId } : { projectId: id };
     const [keywords, clusters, topics, tracked] = await Promise.all([
-      db.keyword.findMany({ where: scope, select: { id: true, term: true, sources: true, relevance: true, volume: true, cpc: true, competition: true, intent: true, difficulty: true, score: true, excluded: true, locked: true, clusterId: true }, orderBy: [{ score: { sort: "desc", nulls: "last" } }] }),
+      db.keyword.findMany({ where: scope, select: { id: true, term: true, sources: true, relevance: true, volume: true, volumeMin: true, volumeMax: true, volumeSource: true, volumeAt: true, cpc: true, competition: true, intent: true, difficulty: true, score: true, excluded: true, locked: true, clusterId: true }, orderBy: [{ score: { sort: "desc", nulls: "last" } }] }),
       db.cluster.findMany({ where: scope, orderBy: { volume: "desc" } }),
       db.topic.findMany({ where: scope }),
       db.trackedKeyword.findMany({ where: { projectId: id }, select: { keyword: true } }),
@@ -193,7 +195,8 @@ const POSTS: Record<string, H> = {
   "keywords/run": async ({ id, body }) => {
     const seeds: string[] = (body.seeds ?? []).map((s: string) => normTerm(s)).filter(Boolean);
     if (!seeds.length) throw new Error("seeds");
-    const run = await db.keywordRun.create({ data: { projectId: id, seeds, threshold: Number(body.threshold ?? 0.45) } });
+    // volumeLive: DataForSEO endpoint Live (solo si se pide explícitamente); por defecto standard queue
+    const run = await db.keywordRun.create({ data: { projectId: id, seeds, threshold: Number(body.threshold ?? 0.45), options: { volumeLive: body.volumeLive === true } } });
     await enqueue(id, QUEUES.keywords, { runId: run.id }, run.id);
     return run;
   },
@@ -215,6 +218,16 @@ const POSTS: Record<string, H> = {
     });
     await enqueue(id, QUEUES.crawl, { crawlId: crawl.id }, crawl.id);
     return crawl;
+  },
+
+  /** Importa un CSV de Keyword Planner (body crudo, UTF-16/tab) como fuente de volumen `csv`. */
+  "volumes/csv": async ({ id, body }) => {
+    if (!Buffer.isBuffer(body) || !body.length) throw new Error("envía el archivo CSV como body (Content-Type: text/csv u octet-stream)");
+    const p = await db.project.findUniqueOrThrow({ where: { id } });
+    const { rows, skipped } = parseKeywordPlannerCsv(body);
+    await writeCache(rows, p.country, p.language, "csv");
+    const updated = await backfillVolumes(p.country, p.language, rows.map((r) => r.keyword));
+    return { imported: rows.length, skipped, updated, withRange: rows.filter((r) => r.volumeMin !== r.volumeMax).length };
   },
 
   "audit/psi": async ({ id, body }) => enqueue(id, QUEUES.psi, { urls: (body.urls ?? []).slice(0, 20), strategies: body.strategies ?? ["mobile", "desktop"] }),
@@ -352,7 +365,10 @@ function make(table: Record<string, H>) {
     const h = table[key];
     if (!h) return bad("not found", 404);
     let body: any = {};
-    if (req.method !== "GET") body = await req.json().catch(() => ({}));
+    if (req.method !== "GET") {
+      const ct = req.headers.get("content-type") ?? "";
+      body = ct.includes("json") || !ct ? await req.json().catch(() => ({})) : Buffer.from(await req.arrayBuffer());
+    }
     try {
       return ok(await h({ id: params.id, path, url: new URL(req.url), body }));
     } catch (e) {

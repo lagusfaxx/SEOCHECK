@@ -66,6 +66,8 @@ model KeywordRun {
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   seeds     String[]
   threshold Float    @default(0.45)
+  /// Opciones del run: { volumeLive?: boolean } (DataForSEO Live en vez de standard queue)
+  options   Json     @default("{}")
   status    String   @default("queued")
   stats     Json     @default("{}")
   /// Fuentes efectivamente usadas: { serp: real|none, embeddings: <modelo>|trigram-hash, volumes: real|none }
@@ -87,6 +89,12 @@ model Keyword {
   sources     String[]
   relevance   Float?
   volume      Int?
+  /// Rangos de Keyword Planner (CSV): "100 – 1K" → 100 / 1000
+  volumeMin   Int?
+  volumeMax   Int?
+  /// gsc | dataforseo | apify | csv
+  volumeSource String?
+  volumeAt    DateTime?
   cpc         Float?
   competition Float?
   intent      String?
@@ -336,8 +344,45 @@ model ApiCall {
   provider  String
   endpoint  String
   units     Int
+  /// Costo en USD cuando el proveedor lo informa (Apify usageTotalUsd)
+  costUsd   Float?
   ref       String?
   createdAt DateTime @default(now())
 
   @@index([projectId, createdAt])
+}
+
+/// Caché global de volumen (sin importar el proyecto): país + idioma + keyword normalizada.
+model VolumeCache {
+  country     String
+  language    String
+  keyword     String
+  source      String   // dataforseo | apify | csv
+  volume      Int?
+  volumeMin   Int?
+  volumeMax   Int?
+  cpc         Float?
+  competition Float?
+  intent      String?
+  fetchedAt   DateTime @default(now())
+
+  @@id([country, language, keyword, source])
+  @@index([country, language, keyword, fetchedAt])
+}
+
+/// Cola de keywords para DataForSEO standard queue: se juntan keywords de varios proyectos por task.
+model VolumeRequest {
+  id           String   @id @default(cuid())
+  country      String
+  language     String
+  locationCode Int
+  keyword      String
+  projectId    String?
+  status       String   @default("pending") // pending | sent | done | error
+  taskId       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([status, locationCode, language])
+  @@index([taskId])
 }
