@@ -274,7 +274,11 @@ const PATCHS: Record<string, H> = {
     if ("locationCode" in body) data.locationCode = Number(body.locationCode);
     if (body.settings) {
       const p = await db.project.findUniqueOrThrow({ where: { id } });
-      data.settings = { ...(p.settings as object), ...body.settings };
+      // merge de un nivel: { keywords: {...} } no borra claves de keywords que no vengan en el body
+      const cur = (p.settings ?? {}) as Record<string, any>;
+      const next: Record<string, any> = { ...cur };
+      for (const [k, v] of Object.entries(body.settings as Record<string, any>)) next[k] = v && typeof v === "object" && !Array.isArray(v) && cur[k] && typeof cur[k] === "object" ? { ...cur[k], ...v } : v;
+      data.settings = next;
     }
     return db.project.update({ where: { id }, data });
   },

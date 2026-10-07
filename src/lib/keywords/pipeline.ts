@@ -13,13 +13,21 @@ import { difficultyProxy, embeddingClusters, kwScore, overlapClusters } from "./
 import { topicLabels } from "./hdbscan";
 import { matchGroups } from "./reconcile";
 
-type Opts = { maxKeywords?: number; serpTop?: number; useGsc?: boolean; minShared?: number; autocomplete?: boolean };
+type Opts = {
+  maxKeywords?: number;
+  serpTop?: number;
+  useGsc?: boolean;
+  minShared?: number;
+  autocomplete?: boolean;
+  /** Máx. de SERPs Deep extra de la 2ª ronda (sobre PAA/related de los seeds). 0 = desactivado. */
+  serpExpansion?: number;
+};
 
 export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   const run = await db.keywordRun.findUniqueOrThrow({ where: { id: runId }, include: { project: true } });
   const p = run.project;
   const settings = (p.settings ?? {}) as Record<string, any>;
-  const opts: Opts = { maxKeywords: 400, serpTop: 150, useGsc: true, minShared: 3, ...(settings.keywords ?? {}) };
+  const opts: Opts = { maxKeywords: 400, serpTop: 150, useGsc: true, minShared: 3, serpExpansion: 20, ...(settings.keywords ?? {}) };
   const brands: string[] = settings.brands ?? [p.domain.split(".")[0]];
   const stats: Record<string, number> = {};
   const step = async (pct: number, msg: string) => {
@@ -40,8 +48,10 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
     await step(2 + (i / run.seeds.length) * 15, "autocomplete");
     for (const s of await expandSeed(run.seeds[i], p.language, p.country)) add(s, "autocomplete");
   }
-  stats.autocomplete = sources.size;
+  stats.autocomplete = [...sources.values()].filter((v) => v.has("autocomplete")).length;
 
+  // Queries reales del sitio en GSC (90 días)
+  let gscState: "real" | "none" | "error" = "none";
   if (opts.useGsc && p.gscProperty && env.gscCredentials) {
     await step(18, "gsc");
     try {
@@ -55,24 +65,46 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
       });
       for (const r of rows) add(r.keys[0], "gsc");
       stats.gsc = rows.length;
+      gscState = "real";
     } catch (e) {
+      gscState = "error";
       console.warn("[keywords] gsc", e);
     }
   }
 
-  // SERP de los seeds → PAA + related
-  await step(22, "serp seeds");
+  // SERP de los seeds → PAA + related (1ª ronda)
+  await step(20, "serp seeds");
   let seedSerpOk = false;
+  const round1: string[] = [];
+  const harvest = (serp: { paa: string[]; related: string[] }, out?: string[]) => {
+    for (const q of serp.related) { add(q, "related"); out?.push(normTerm(q)); }
+    for (const q of serp.paa) { add(q, "paa"); out?.push(normTerm(q)); }
+  };
   for (const s of env.serpentKey ? run.seeds : []) {
     try {
-      const serp = await getSerp(p.id, normTerm(s), { country: p.country, language: p.language });
-      serp.paa.forEach((q) => add(q, "paa"));
-      serp.related.forEach((q) => add(q, "related"));
+      harvest(await getSerp(p.id, normTerm(s), { country: p.country, language: p.language }), round1);
       seedSerpOk = true;
     } catch (e) {
       console.warn("[keywords] serp seed", e);
     }
   }
+
+  // 2ª ronda: SERP de los términos descubiertos en la 1ª (related primero: suelen abrir subtemas)
+  const seedSet = new Set(run.seeds.map(normTerm));
+  const round2 = [...new Set(round1)].filter((t) => !seedSet.has(t) && t.length <= 80).slice(0, env.serpentKey ? opts.serpExpansion ?? 0 : 0);
+  let r2 = 0;
+  for (const t of round2) {
+    await jobProgress(jobRunId, 22 + (r2 / Math.max(1, round2.length)) * 5, `serp ronda 2 ${r2 + 1}/${round2.length}`);
+    try {
+      harvest(await getSerp(p.id, t, { country: p.country, language: p.language }));
+      r2++;
+    } catch (e) {
+      console.warn("[keywords] serp ronda 2", t, e);
+    }
+  }
+  stats.serpRound2 = r2;
+  stats.paa = [...sources.values()].filter((v) => v.has("paa")).length;
+  stats.related = [...sources.values()].filter((v) => v.has("related")).length;
   stats.expanded = sources.size;
 
   // 2. Relevancia por embeddings
@@ -258,7 +290,7 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   stats.topics = await db.topic.count({ where: { runId } });
   stats.locked = lockedTerms.size;
 
-  const runSources = { serp: serps.size > 0 || seedSerpOk ? "real" : "none", embeddings: emb.name, volumes: volMap.size > 0 ? "real" : "none" };
+  const runSources = { serp: serps.size > 0 || seedSerpOk ? "real" : "none", embeddings: emb.name, volumes: volMap.size > 0 ? "real" : "none", gsc: gscState };
   await db.keywordRun.update({ where: { id: runId }, data: { status: "done", stats, sources: runSources } });
   return stats;
 }

@@ -115,6 +115,7 @@ function SourceBadges({ s }: { s: RunSources }) {
     ["SERP", s.serp === "real" ? "real" : "sin SERP", s.serp === "real"],
     ["Embeddings", s.embeddings === "trigram-hash" ? "trigram-hash" : s.embeddings ?? "?", s.embeddings !== "trigram-hash"],
     ["Volumen", s.volumes === "real" ? "real" : "sin volumen", s.volumes === "real"],
+    ...(s.gsc && s.gsc !== "none" ? [["GSC", s.gsc === "real" ? "real" : "error", s.gsc === "real"] as [string, string, boolean]] : []),
   ];
   return (
     <div className="flex gap-1.5">
