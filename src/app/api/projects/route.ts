@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { normDomain } from "@/lib/util";
+import { normalizeGscProperty } from "@/lib/providers/google";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,13 @@ export async function POST(req: Request) {
   if (!b.domain) return Response.json({ error: "domain" }, { status: 400 });
   let ws = await db.workspace.findFirst();
   if (!ws) ws = await db.workspace.create({ data: { name: "default" } });
+  if (b.gscProperty) {
+    try {
+      normalizeGscProperty(b.gscProperty);
+    } catch (e) {
+      return Response.json({ error: (e as Error).message }, { status: 400 });
+    }
+  }
   const country = (b.country ?? "cl").toLowerCase();
   const domain = normDomain(b.domain);
   const p = await db.project.create({
@@ -25,7 +33,7 @@ export async function POST(req: Request) {
       country,
       language: b.language ?? "es",
       locationCode: b.locationCode ?? LOCATIONS[country] ?? 2152,
-      gscProperty: b.gscProperty || null,
+      gscProperty: b.gscProperty ? normalizeGscProperty(b.gscProperty) : null,
     },
   });
   return Response.json(p);

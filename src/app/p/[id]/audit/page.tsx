@@ -212,9 +212,15 @@ function PsiTable({ rows }: { rows: any[] }) {
               <td className={cx("num", cwv("lcp", r.lab.lcp))}>{ms(r.lab.lcp)}</td>
               <td className={cx("num", cwv("cls", r.lab.cls))}>{r.lab.cls?.toFixed(3) ?? "–"}</td>
               <td className={cx("num", cwv("tbt", r.lab.tbt))}>{ms(r.lab.tbt)}</td>
-              <td className={cx("num", cwv("lcp", r.field.lcp?.p75))}>{ms(r.field.lcp?.p75)}</td>
-              <td className={cx("num", cwv("inp", r.field.inp?.p75))}>{ms(r.field.inp?.p75)}</td>
-              <td className={cx("num", cwv("cls", r.field.cls ? r.field.cls.p75 / 100 : null))}>{r.field.cls ? (r.field.cls.p75 / 100).toFixed(2) : "–"}</td>
+              {r.field?.lcp || r.field?.inp || r.field?.cls ? (
+                <>
+                  <td className={cx("num", cwv("lcp", r.field.lcp?.p75))}>{r.field.lcp ? ms(r.field.lcp.p75) : "sin datos"}{r.field.source === "origin" && <span className="ml-1 text-[10px] text-ink-400" title="CrUX a nivel de origen: la URL no tiene datos propios">origen</span>}</td>
+                  <td className={cx("num", cwv("inp", r.field.inp?.p75))}>{r.field.inp ? ms(r.field.inp.p75) : "sin datos"}</td>
+                  <td className={cx("num", cwv("cls", r.field.cls ? r.field.cls.p75 / 100 : null))}>{r.field.cls ? (r.field.cls.p75 / 100).toFixed(2) : "sin datos"}</td>
+                </>
+              ) : (
+                <td colSpan={3} className="text-center text-xs text-ink-400" title="CrUX no tiene datos de campo para esta URL ni su origen">sin datos de campo</td>
+              )}
             </tr>
           ))}
         </tbody>

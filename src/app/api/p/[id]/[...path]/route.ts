@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { enqueue, QUEUES } from "@/lib/queue";
 import { refreshCluster } from "@/lib/keywords/pipeline";
 import { ISSUE_LABELS } from "@/lib/audit/issues";
-import { indexNow } from "@/lib/providers/google";
+import { indexNow, normalizeGscProperty } from "@/lib/providers/google";
 import { makeBrief, type ContentResult } from "@/lib/content/analyze";
 import { env } from "@/lib/env";
 import { normTerm, normUrl } from "@/lib/util";
@@ -271,6 +271,7 @@ const PATCHS: Record<string, H> = {
   "": async ({ id, body }) => {
     const data: Prisma.ProjectUpdateInput = {};
     for (const k of ["name", "domain", "country", "language", "gscProperty"] as const) if (k in body) (data as any)[k] = body[k] || (k === "gscProperty" ? null : body[k]);
+    if (body.gscProperty) data.gscProperty = normalizeGscProperty(body.gscProperty);
     if ("locationCode" in body) data.locationCode = Number(body.locationCode);
     if (body.settings) {
       const p = await db.project.findUniqueOrThrow({ where: { id } });
@@ -357,6 +358,7 @@ function make(table: Record<string, H>) {
     } catch (e) {
       console.error(`[api] ${req.method} ${key}`, e);
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") return bad("no existe", 404);
+      if (e instanceof Error && e.message.startsWith("Propiedad GSC inválida")) return bad(e.message, 400);
       return bad(e instanceof Error ? e.message : "error", 500);
     }
   };

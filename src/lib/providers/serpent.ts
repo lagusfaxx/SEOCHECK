@@ -1,5 +1,6 @@
 import { env } from "../env";
 import { logCost } from "../costs";
+import { jobLog } from "../jobctx";
 import { fetchT, hostOf } from "../util";
 import type { Serp, SerpOpts, SerpProvider } from "./types";
 
@@ -58,8 +59,10 @@ export class SerpentProvider implements SerpProvider {
         const text = await res.text();
         if (!res.ok) throw Object.assign(new Error(`Serpent ${res.status}: ${text.slice(0, 200)}`), { fatal: true });
         if (rawLogsLeft > 0) {
+          // Respuesta cruda de las primeras llamadas (SERPENT_LOG_RAW, def. 3): para verificar la forma real
+          // de peopleAlsoAsk/relatedSearches. Queda en el log del job y en stdout.
           rawLogsLeft--;
-          console.log(`[serpent raw] ${path} q=${JSON.stringify(q)} ${text.slice(0, 8000)}`);
+          await jobLog("info", `serpent raw ${path} q=${JSON.stringify(q)}`, { body: text.slice(0, 20000) });
         }
         return JSON.parse(text);
       } catch (e: any) {
