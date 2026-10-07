@@ -6,6 +6,8 @@ export const ISSUE_LABELS: Record<string, string> = {
   http_4xx: "Error 4xx",
   http_5xx: "Error 5xx",
   fetch_failed: "No responde",
+  blocked_by_waf: "Bloqueada por WAF (Cloudflare)",
+  ssrf_blocked: "URL bloqueada (red interna)",
   redirect_chain: "Cadena de redirects",
   redirect: "Redirect",
   broken_link: "Link roto",
@@ -50,7 +52,7 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
   if (!ctx.robotsTxt) add(`https://${ctx.site}/robots.txt`, "robots_missing", "warning");
   if (!ctx.sitemapCount) add(`https://${ctx.site}/sitemap.xml`, "sitemap_missing", "warning");
 
-  const html = pages.filter((p) => p.status === 200 && (p.contentType ?? "").includes("html"));
+  const html = pages.filter((p) => p.status === 200 && !p.error && (p.contentType ?? "").includes("html"));
   const group = (key: (p: Page) => string | null) => {
     const m = new Map<string, Page[]>();
     for (const p of html) {
@@ -65,6 +67,8 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
   for (const p of pages) {
     const redirects = (p.redirects as { url: string; status: number }[]) ?? [];
     if (p.blocked) { add(p.url, "blocked_robots", p.inSitemap ? "warning" : "info"); continue; }
+    if (p.error === "blocked_by_waf") { add(p.url, "blocked_by_waf", "critical", `HTTP ${p.status}`); continue; }
+    if (p.error === "ssrf_blocked") { add(p.url, "ssrf_blocked", "warning"); continue; }
     if (p.status === 0) { add(p.url, "fetch_failed", "critical"); continue; }
     if (p.status >= 500) add(p.url, "http_5xx", "critical", String(p.status));
     else if (p.status >= 400) add(p.url, "http_4xx", "critical", String(p.status));

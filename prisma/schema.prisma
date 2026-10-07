@@ -204,6 +204,8 @@ model Page {
   inSitemap     Boolean  @default(false)
   orphan        Boolean  @default(false)
   blocked       Boolean  @default(false)
+  /// blocked_by_waf | ssrf_blocked | fetch_failed (la página no es válida)
+  error         String?
 
   @@unique([crawlId, url])
 }

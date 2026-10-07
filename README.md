@@ -57,3 +57,17 @@ Se usa para clasificar el intent de las keywords dudosas (effort `low`) y para g
 | `claude-haiku-*` | — | sin fallback server-side (no se envía el parámetro) |
 
 Todo queda en `JobRun.log` del job: cada fallback (`LLM fallback: <modelo> rechazó, continuó <modelo>`), el modelo que respondió si no es el pedido, y el rechazo final con su categoría. Ante un rechazo final, el intent cae a `informational` y el brief al determinista; ambos casos también se registran.
+
+## Crawler
+
+Opciones por proyecto en `settings.crawler` (vía `PATCH /api/p/:id/_`), sobreescribibles por crawl en el body de `POST /api/p/:id/audit`:
+
+| Opción | Default | Qué hace |
+|---|---|---|
+| `userAgent` | `CRAWLER_UA` | User-agent del crawl (robots.txt, páginas, sitemaps y render) |
+| `maxPerPattern` | `50` | Máx. de URLs por patrón de path (`/productos/{n}?color&talla`). Corta trampas de facetas, calendarios y paginación infinita. `0` = sin límite |
+| `ignoreParams` | `utm_*, gclid, fbclid, msclkid, sessionid, phpsessid, sid` | Parámetros que se quitan de las URLs descubiertas. `*` = todos |
+
+Páginas de challenge/bloqueo de WAF (Cloudflare `cf-mitigated` / "Just a moment..." / `cf-chl`, DataDome, PerimeterX, Akamai) se guardan con `error = blocked_by_waf` y el issue crítico correspondiente, no como páginas válidas. Tras 15 bloqueos seguidos el crawl se detiene (`stats.wafAborted`).
+
+Seguridad: todo fetch hacia URLs de usuario o crawleadas pasa por `safeFetch` (bloquea red interna, valida la IP al conectar y en cada redirect).

@@ -4,12 +4,27 @@ import pLimit from "p-limit";
 import { db } from "../db";
 import { env } from "../env";
 import { jobProgress } from "../queue";
-import { assertUrlAllowed, safeFetch } from "../net/ssrf";
+import { assertUrlAllowed, safeFetch, SsrfError } from "../net/ssrf";
+import { DEFAULT_IGNORE_PARAMS, detectWaf, PatternLimiter, stripParams } from "./guards";
 import { hostOf, normUrl } from "../util";
 import { computeIssues } from "./issues";
 import { fetchSitemapUrls, parseRobots, type Robots } from "./robots";
 
-export type CrawlOptions = { maxPages?: number; concurrency?: number; render?: boolean; startUrl?: string; maxDepth?: number };
+export type CrawlOptions = {
+  maxPages?: number;
+  concurrency?: number;
+  render?: boolean;
+  startUrl?: string;
+  maxDepth?: number;
+  /** UA del crawl; si no viene, settings.crawler.userAgent del proyecto o CRAWLER_UA */
+  userAgent?: string;
+  /** Máx. de URLs por patrón de path (trampas de facetas/paginación). 0 = sin límite */
+  maxPerPattern?: number;
+  /** Parámetros de query a ignorar al descubrir URLs (`*` = todos, `utm_*` = comodín) */
+  ignoreParams?: string[];
+};
+
+export type PageError = "blocked_by_waf" | "ssrf_blocked" | "fetch_failed";
 
 export type PageData = {
   url: string;
@@ -33,6 +48,7 @@ export type PageData = {
   contentHash: string | null;
   text: string;
   headings: { tag: string; text: string }[];
+  error?: PageError;
 };
 
 export type FetchOpts = { userAgent?: string };
@@ -41,8 +57,10 @@ async function fetchFollow(url: string, o: FetchOpts = {}) {
   const t0 = Date.now();
   const { res, finalUrl, redirects } = await safeFetch(url, { headers: { "User-Agent": o.userAgent || env.userAgent, Accept: "text/html,*/*" }, timeoutMs: 25000 });
   const ct = res.headers.get("content-type");
-  const html = ct?.includes("html") ? await res.text() : (await res.body?.cancel().catch(() => {}), "");
-  return { status: res.status, finalUrl, redirects, contentType: ct, html, ms: Date.now() - t0, xRobots: res.headers.get("x-robots-tag") };
+  const isText = ct?.includes("html") || res.status === 403 || res.status === 503 || res.status === 429;
+  const html = isText ? await res.text() : (await res.body?.cancel().catch(() => {}), "");
+  const waf = detectWaf(res.status, res.headers, html);
+  return { status: res.status, finalUrl, redirects, contentType: ct, html: waf ? "" : html, waf, ms: Date.now() - t0, xRobots: res.headers.get("x-robots-tag") };
 }
 
 let browserP: Promise<any> | null = null;
@@ -149,10 +167,10 @@ export function parseHtml(html: string, url: string) {
   };
 }
 
-export async function fetchPage(url: string, render = false): Promise<PageData> {
-  const r = await fetchFollow(url);
+export async function fetchPage(url: string, render = false, o: FetchOpts = {}): Promise<PageData> {
+  const r = await fetchFollow(url, o);
   let html = r.html;
-  if (render && r.status === 200 && html) html = (await renderHtml(r.finalUrl)) ?? html;
+  if (render && r.status === 200 && html) html = (await renderHtml(r.finalUrl, o)) ?? html;
   const parsed = html ? parseHtml(html, r.finalUrl) : null;
   return {
     url,
@@ -176,13 +194,24 @@ export async function fetchPage(url: string, render = false): Promise<PageData> 
     contentHash: parsed?.hash ?? null,
     text: parsed?.text ?? "",
     headings: parsed?.headings ?? [],
+    error: r.waf ? "blocked_by_waf" : undefined,
   };
 }
 
 /** Crawl BFS con concurrencia limitada. */
 export async function runCrawl(crawlId: string, jobRunId?: string) {
   const crawl = await db.crawl.findUniqueOrThrow({ where: { id: crawlId }, include: { project: true } });
-  const o: CrawlOptions = { maxPages: 500, concurrency: 5, render: false, maxDepth: 20, ...(crawl.options as CrawlOptions) };
+  const projectCrawler = ((crawl.project.settings ?? {}) as Record<string, any>).crawler ?? {};
+  const o: CrawlOptions = {
+    maxPages: 500, concurrency: 5, render: false, maxDepth: 20, maxPerPattern: 50, ignoreParams: DEFAULT_IGNORE_PARAMS,
+    ...projectCrawler,
+    ...(crawl.options as CrawlOptions),
+  };
+  const ua = o.userAgent || env.userAgent;
+  const patterns = new PatternLimiter(o.maxPerPattern ?? 0);
+  const clean = (u: string) => normUrl(stripParams(u, o.ignoreParams ?? []))!;
+  let wafStreak = 0;
+  let wafAbort = false;
   const domain = crawl.project.domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
   const start = normUrl(o.startUrl || `https://${domain}/`)!;
   const site = hostOf(start);
@@ -194,7 +223,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   let robots: Robots = { disallow: [], allow: [], sitemaps: [] };
   let robotsTxt: string | null = null;
   try {
-    const { res: r } = await safeFetch(`${origin}/robots.txt`, { headers: { "User-Agent": env.userAgent } });
+    const { res: r } = await safeFetch(`${origin}/robots.txt`, { headers: { "User-Agent": ua } });
     if (r.ok) {
       robotsTxt = await r.text();
       robots = parseRobots(robotsTxt);
@@ -221,7 +250,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   seen.set(start, 0);
   const limit = pLimit(o.concurrency!);
   let depth = 0;
-  while (queue.length && pages.length < o.maxPages! && depth <= o.maxDepth!) {
+  while (queue.length && pages.length < o.maxPages! && depth <= o.maxDepth! && !wafAbort) {
     const batch = queue.slice(0, o.maxPages! - pages.length);
     const next: string[] = [];
     await Promise.all(
@@ -233,21 +262,26 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
           }
           let pd: PageData;
           try {
-            pd = await fetchPage(u, o.render);
-          } catch {
-            pd = emptyPage(u);
+            pd = await fetchPage(u, o.render, { userAgent: ua });
+          } catch (e) {
+            pd = { ...emptyPage(u), error: e instanceof SsrfError ? "ssrf_blocked" : "fetch_failed" };
           }
           pages.push(pd);
+          // Si el WAF bloquea todo, no seguir golpeando el sitio
+          wafStreak = pd.error === "blocked_by_waf" ? wafStreak + 1 : 0;
+          if (wafStreak >= 15) wafAbort = true;
           if (pd.finalUrl !== u && isInternal(pd.finalUrl) && !seen.has(pd.finalUrl)) {
             seen.set(pd.finalUrl, depth);
             next.push(pd.finalUrl);
           }
-          for (const l of pd.links) {
-            if (!isInternal(l)) {
-              external.add(l);
+          for (const raw of pd.links) {
+            if (!isInternal(raw)) {
+              external.add(raw);
               continue;
             }
+            const l = clean(raw);
             if (skipExt.test(l) || seen.has(l)) continue;
+            if (!patterns.allow(l)) continue;
             seen.set(l, depth + 1);
             next.push(l);
           }
@@ -268,7 +302,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     orphans.slice(0, orphanLimit).map((u) =>
       limit(async () => {
         try {
-          const pd = await fetchPage(u, false);
+          const pd = await fetchPage(u, false, { userAgent: ua });
           pages.push(pd);
           seen.set(u, -1);
         } catch {}
@@ -311,7 +345,8 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     contentHash: p.contentHash,
     inSitemap: sitemapUrls.has(p.url),
     orphan: orphanSet.has(p.url),
-    blocked: p.status === 0 && blocked(p.url),
+    blocked: p.status === 0 && !p.error && blocked(p.url),
+    error: p.error ?? null,
   }));
   for (let i = 0; i < rows.length; i += 200) await db.page.createMany({ data: rows.slice(i, i + 200), skipDuplicates: true });
 
@@ -327,6 +362,10 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     ok: saved.filter((p) => p.status === 200).length,
     redirects: saved.filter((p) => p.redirects && (p.redirects as unknown[]).length).length,
     errors: saved.filter((p) => p.status >= 400 || p.status === 0).length,
+    blockedByWaf: saved.filter((p) => p.error === "blocked_by_waf").length,
+    wafAborted: wafAbort,
+    trapSkipped: [...patterns.skipped.values()].reduce((a, b) => a + b, 0),
+    trapPatterns: [...patterns.skipped.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([pattern, skipped]) => ({ pattern, skipped })),
     orphans: orphans.length,
     sitemap: sitemapUrls.size,
     external: external.size,
