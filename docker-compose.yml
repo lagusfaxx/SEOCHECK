@@ -16,7 +16,6 @@ services:
 
   migrate:
     build: .
-    image: seocheck-app
     command: ["npx", "prisma", "migrate", "deploy"]
     restart: "no"
     depends_on:
@@ -27,7 +26,6 @@ services:
 
   web:
     build: .
-    image: seocheck-app
     restart: unless-stopped
     depends_on:
       db:
@@ -81,7 +79,6 @@ services:
 
   worker:
     build: .
-    image: seocheck-app
     restart: unless-stopped
     command: ["npx", "tsx", "src/worker/index.ts"]
     depends_on:
