@@ -7,6 +7,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useProject } from "@/components/Shell";
 import { api, cx, Delta, Empty, fmt, Icon, IconBadge, Score, Stat, useApi, useLocal, Spinner } from "@/components/ui";
+import { Coverage } from "@/components/Coverage";
 
 type W = { id: string; w: 1 | 2 | 3 };
 const DEFAULT: W[] = [
@@ -79,6 +80,25 @@ const WIDGET_ICON: Record<string, { icon: string; tone: "acc" | "good" | "bad" |
   alerts: { icon: "bell", tone: "warn" }, actions: { icon: "bolt", tone: "acc" }, spend: { icon: "coin", tone: "mute" }, content: { icon: "content", tone: "info" },
 };
 
+/** Mientras falten pasos del wizard: recordatorio con el avance. */
+function SetupBanner({ id }: { id: string }) {
+  const { data } = useApi<{ status: Record<string, string>; finished: boolean; dismissed: boolean }>(`/api/p/${id}/onboarding`);
+  if (!data || data.finished) return null;
+  const done = Object.values(data.status).filter((s) => s === "done" || s === "skipped").length;
+  const total = Object.keys(data.status).length;
+  return (
+    <Link href={`/p/${id}/start`} className="anim-in group flex items-center gap-4 rounded-xl border border-acc/30 bg-gradient-to-r from-acc-soft to-white p-4 transition hover:shadow-md dark:from-acc/20 dark:to-ink-900">
+      <span className="ic-float"><IconBadge name="rocket" pulse /></span>
+      <div className="min-w-0 flex-1">
+        <div className="font-semibold">Termina de configurar tu proyecto</div>
+        <div className="text-sm text-ink-500">Llevas {done} de {total} pasos. Con todo listo, SEOCHECK prioriza con datos reales de Google.</div>
+        <div className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/70 dark:bg-ink-800"><div className="h-full rounded-full bg-acc" style={{ width: `${(done / total) * 100}%` }} /></div>
+      </div>
+      <span className="btn-p hov-nudge shrink-0">Continuar<Icon name="chevr" /></span>
+    </Link>
+  );
+}
+
 const ALERT_LABEL: Record<string, string> = { drop: "Caída", cannibal: "Canibalización", lowctr: "CTR bajo" };
 
 export default function Overview() {
@@ -108,13 +128,16 @@ export default function Overview() {
       case "kpis":
         return [
           "Estado",
-          <div key="k" className="stagger grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-6">
+          <div key="k" className="space-y-4">
+          <Coverage projectId={id} />
+          <div className="stagger grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-6">
             <Stat icon="key" label="Keywords" value={fmt(data?.keywords)} sub={`${fmt(data?.volume)} vol.`} hint="Keywords del último research y la suma de su volumen mensual de búsquedas." />
             <Stat icon="layers" label="Clusters" value={fmt(data?.clusters)} hint="Grupos de keywords que se atacan con una misma página." />
             <Stat icon="target" label="Trackeadas" value={fmt(data?.tracked)} sub={`${fmt(data?.top3)} top 3 · ${fmt(data?.top10)} top 10`} hint="Keywords a las que se les sigue la posición en Google, y cuántas están en el top 3 y top 10." />
             <Stat icon="rank" label="Pos. media" value={fmt(data?.avgPos, 1)} hint="Posición promedio de las keywords trackeadas que aparecen en el top 100. Más bajo es mejor." />
             <Stat icon="trend" label="Clicks 90d" value={fmt(sum("clicks"))} hint="Clics desde Google en los últimos 90 días (Search Console)." />
             <Stat icon="eye" label="Impr. 90d" value={fmt(sum("impressions"))} hint="Veces que tu sitio apareció en resultados de Google en 90 días (Search Console)." />
+          </div>
           </div>,
         ];
       case "gsc":
@@ -141,7 +164,10 @@ export default function Overview() {
           "Salud técnica",
           data?.crawl ? (
             <Link key="h" href={`/p/${id}/audit`} className="flex items-center gap-4">
-              <Score value={st.health} size={84} />
+              <div className="flex flex-col items-center gap-1">
+                <Score value={st.health} size={84} />
+                <span className="text-[11px] text-ink-400">{st.health == null ? "sin puntaje" : "de 100"}</span>
+              </div>
               {data.crawl.status === "partial" && <span className="chip !bg-amber-100 !text-amber-800" title={data.crawl.reason ?? ""}>parcial</span>}
               <div className="space-y-1 text-sm">
                 <div><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-rose-500" />{fmt(st.critical)}</div>
@@ -220,7 +246,8 @@ export default function Overview() {
   };
 
   return (
-    <div className="p-4 md:p-6">
+    <div className="space-y-4 p-4 md:p-6">
+      <SetupBanner id={id} />
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
           <div className="stagger-fade grid grid-cols-1 gap-4 md:grid-cols-3">

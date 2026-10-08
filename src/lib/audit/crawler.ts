@@ -8,6 +8,7 @@ import { assertUrlAllowed, safeFetch, SsrfError } from "../net/ssrf";
 import { DEFAULT_IGNORE_PARAMS, detectWaf, PatternLimiter, stripParams } from "./guards";
 import { hostOf, normUrl } from "../util";
 import { computeIssues } from "./issues";
+import { detectCms, type Cms } from "./cms";
 import { fetchSitemapUrls, parseRobots, robotsAllows, type Robots } from "./robots";
 
 export type CrawlOptions = {
@@ -53,6 +54,8 @@ export type PageData = {
   /** Señales para clasificar el tipo de página */
   signals: PageSignals;
   error?: PageError;
+  /** CMS / framework detectado en el HTML */
+  cms?: Cms | null;
 };
 
 export type TextBlock = {
@@ -424,6 +427,7 @@ export async function fetchPage(url: string, render = false, o: FetchOpts = {}):
     blocks: parsed?.blocks ?? [],
     signals: parsed?.signals ?? { linkGroup: 0, article: false, time: false, cart: false, price: false },
     error: r.waf ? "blocked_by_waf" : undefined,
+    cms: html ? detectCms(html) : null,
   };
 }
 
@@ -618,6 +622,8 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     health: Math.max(0, Math.round(100 - (sev("critical") * 5 + sev("warning")) / Math.max(1, saved.length) * 10)) as number | null,
     /** cobertura: páginas leídas por links vs. el máximo pedido */
     limitReached: linkLimitHit,
+    /** CMS más frecuente entre las páginas leídas (la home manda si lo tiene) */
+    cms: pages.find((p) => p.url === start)?.cms ?? mode(pages.map((p) => p.cms).filter((c): c is Cms => Boolean(c))),
   };
   const outcome = classifyCrawl({
     pages: pages.map((p) => ({ url: p.url, finalUrl: p.finalUrl, status: p.status, error: p.error ?? null, contentType: p.contentType, robotsBlocked: p.status === 0 && !p.error && blocked(p.url) })),
@@ -625,13 +631,29 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     wafAbort,
     startError,
   });
-  // sin acceso al sitio no hay puntaje: un 70/100 de algo que no se leyó sería falso
-  if (outcome.status === "failed") stats.health = null;
+  // sin datos mínimos no hay puntaje: un 70/100 de algo que no se leyó sería falso
+  const note = healthBlocker(outcome.status, saved);
+  if (note) Object.assign(stats, { health: null, healthNote: note });
   if (await cancelled()) throw new NoRetryError("Crawl cancelado");
   await db.crawl.update({ where: { id: crawlId }, data: { status: outcome.status, reason: outcome.reason, stats, finishedAt: new Date() } });
   if (outcome.status === "failed") throw new NoRetryError(outcome.reason ?? "Crawl fallido");
   return { ...stats, status: outcome.status };
 }
+
+/** Por qué no se puede dar un puntaje confiable (o null si sí se puede). */
+export function healthBlocker(status: string, pages: { status: number; error: string | null; contentType: string | null }[]): string | null {
+  if (status === "failed") return "Sin puntaje: no se pudo acceder al sitio.";
+  const ok = pages.filter((p) => p.status === 200 && !p.error && (p.contentType ?? "").includes("html")).length;
+  if (!ok) return "Sin puntaje: ninguna página HTML respondió bien.";
+  if (status === "partial" && ok < pages.length * 0.5) return `Sin puntaje: solo se pudieron leer ${ok} de ${pages.length} URLs, no alcanza para un puntaje confiable.`;
+  return null;
+}
+
+const mode = <T,>(xs: T[]): T | null => {
+  const m = new Map<T, number>();
+  for (const x of xs) m.set(x, (m.get(x) ?? 0) + 1);
+  return [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+};
 
 function emptyPage(url: string): PageData {
   return {

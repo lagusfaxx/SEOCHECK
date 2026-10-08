@@ -17,7 +17,7 @@ export default function NewProject({ onDone }: { onDone?: () => void }) {
         try {
           const p = await api("/api/projects", "POST", f);
           onDone?.();
-          r.push(`/p/${p.id}`);
+          r.push(`/p/${p.id}/start`);
         } finally {
           setBusy(false);
         }
