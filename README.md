@@ -31,7 +31,12 @@ Las cotas son estimaciones conservadoras: la caché de SERP y de volumen hace qu
 
 `Informe` → **Correr todo** encola un solo job (`report.full`) que corre en orden: crawl → Search Console (90 días) → inspección de las 20 URLs más enlazadas → PageSpeed mobile de 5 URLs → keywords (si se dan semillas) → rankings de las trackeadas → alertas. Cada paso sin credenciales o sin presupuesto se salta y el resto sigue; el resultado por paso queda en el log del job.
 
-El informe (`GET /api/p/{id}/report`, `?download=1` para bajar el `.md`) se arma con lo último guardado de cada módulo: tareas por prioridad agrupadas por sección del sitio (`/perfil/*`) con la corrección a aplicar, auditoría, PageSpeed, indexación, oportunidades de GSC (posición 4–20, caídas, CTR bajo, canibalización), rankings, clusters sin página propia y briefs de contenido, más un anexo con las URLs de cada issue. Está escrito para pasárselo a un agente de código.
+El informe (`GET /api/p/{id}/report`, `?download=1` para bajar el `.md`) se arma con lo último guardado de cada módulo y está escrito para pasárselo a un agente de código:
+
+- **Tendencias** arriba: clics, impresiones, CTR y posición contra los 28 días anteriores.
+- **Tareas por impacto** = tráfico afectado (impresiones GSC de las URLs, o peso de la plantilla sin GSC) × severidad × facilidad, agrupadas por plantilla (`/perfil/*`) con el cambio concreto. Las oportunidades GSC 4–20, el CTR bajo para la posición, las variantes ortográficas, PageSpeed (datos de campo primero; aviso cuando el laboratorio no se parece a la realidad), caídas de clics, canibalización y los análisis de Contenido entran en la misma lista; los issues on-page menores (largo de title/meta, alt…) van al final.
+- **Revisado, parece intencional**: canonical de URLs con parámetros a su versión limpia, robots bloqueando login/cuenta/carrito/checkout y canibalización en consultas de marca (distancia de edición ≤ 2) o con todas las URLs en posición ≤ 1,5.
+- Si el crawl tocó el límite de páginas, las huérfanas quedan solo como aviso; si parecen páginas de menú/footer, sugiere repetir con render JS.
 
 ## Explorar
 
