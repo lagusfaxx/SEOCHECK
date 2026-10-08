@@ -114,22 +114,22 @@ export async function expand(projectId: string, type: GType, key: string, t: str
       break;
     }
     case "topic.clusters": {
-      const cs = await db.cluster.findMany({ where: { topicId: key }, orderBy: { volume: "desc" }, include: { _count: { select: { keywords: true } } } });
+      const cs = await db.cluster.findMany({ where: { projectId, topicId: key }, orderBy: { volume: "desc" }, include: { _count: { select: { keywords: true } } } });
       for (const c of cs) link(mk("cluster", c.id, c.name, { sub: `${f0(c.volume)} vol. · ${c._count.keywords} kw` }));
       break;
     }
     case "cluster.keywords": {
-      const ks = await db.keyword.findMany({ where: { clusterId: key, excluded: false }, orderBy: [{ volume: { sort: "desc", nulls: "last" } }], take: 30 });
+      const ks = await db.keyword.findMany({ where: { projectId, clusterId: key, excluded: false }, orderBy: [{ volume: { sort: "desc", nulls: "last" } }], take: 30 });
       for (const k of ks) link(mk("keyword", k.term, k.term, { sub: k.volume != null ? `${f0(k.volume)} vol.` : undefined }));
       break;
     }
     case "cluster.serp": {
-      const c = await db.cluster.findUniqueOrThrow({ where: { id: key } });
+      const c = await db.cluster.findFirstOrThrow({ where: { id: key, projectId } });
       for (const u of c.urls.slice(0, 15)) link(pageNode(ctx, u));
       break;
     }
     case "cluster.topic": {
-      const c = await db.cluster.findUniqueOrThrow({ where: { id: key }, include: { topic: true } });
+      const c = await db.cluster.findFirstOrThrow({ where: { id: key, projectId }, include: { topic: true } });
       if (!c.topic) return empty("Sin topic");
       link(mk("topic", c.topic.id, c.topic.name), undefined, true);
       break;

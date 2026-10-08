@@ -11,7 +11,7 @@ import { backfillVolumes, volumeChainStatus, writeCache } from "@/lib/volume/bro
 import { env } from "@/lib/env";
 import { llmStatus } from "@/lib/providers/llm";
 import { assertBudget, BudgetError, budgetLimits, est, monthStart, spentThisMonth } from "@/lib/budget";
-import { normTerm, normUrl } from "@/lib/util";
+import { hostOf, normTerm, normUrl } from "@/lib/util";
 import { buildReport } from "@/lib/report";
 import { expand, graphSearch, siteNode } from "@/lib/graph";
 import { TRANSFORMS, type GType } from "@/lib/graph-types";
@@ -22,6 +22,48 @@ type Ctx = { id: string; path: string[]; url: URL; body: any };
 type H = (c: Ctx) => Promise<unknown>;
 
 const ok = (data: unknown) => Response.json(data ?? { ok: true });
+
+/** Error con status HTTP (404 para no revelar que el recurso existe en otro proyecto). */
+class HttpError extends Error {
+  constructor(public status: number, msg: string) {
+    super(msg);
+  }
+}
+const notFound = () => new HttpError(404, "no existe");
+
+/** Aislamiento: todo id que llega por parámetro tiene que ser de ESTE proyecto. */
+async function ownCrawl(projectId: string, crawlId: string | null) {
+  if (!crawlId) throw notFound();
+  const c = await db.crawl.findFirst({ where: { id: crawlId, projectId }, select: { id: true } });
+  if (!c) throw notFound();
+  return c.id;
+}
+async function ownContent(projectId: string, cid: string | null | undefined) {
+  if (!cid) throw notFound();
+  const a = await db.contentAnalysis.findFirst({ where: { id: cid, projectId }, include: { project: true } });
+  if (!a) throw notFound();
+  return a;
+}
+async function ownOptional(model: "keywordRun" | "topic" | "cluster", projectId: string, id: string | null | undefined) {
+  if (id == null) return null;
+  const row = await (db[model] as any).findFirst({ where: { id, projectId }, select: { id: true } });
+  if (!row) throw notFound();
+  return row.id as string;
+}
+/** URLs que el usuario manda (crawl, PageSpeed, contenido, IndexNow): solo del dominio del proyecto o sus subdominios. */
+async function ownUrls(projectId: string, urls: string[]) {
+  const p = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { domain: true } });
+  const site = hostOf(`https://${p.domain}`);
+  const out: string[] = [];
+  for (const raw of urls) {
+    const u = normUrl(String(raw ?? ""));
+    if (!u) continue;
+    const h = hostOf(u);
+    if (h !== site && !h.endsWith(`.${site}`)) throw new HttpError(400, `La URL ${u} no es del dominio del proyecto (${site})`);
+    out.push(u);
+  }
+  return out;
+}
 const bad = (msg: string, status = 400) => Response.json({ error: msg }, { status });
 
 /** Serie diaria de Search Console: totales del sitio (GscDay) o, si aún no se sincronizan, la suma de GscRow. */
@@ -104,7 +146,8 @@ const GETS: Record<string, H> = {
 
   audit: async ({ id, url }) => {
     const crawls = await db.crawl.findMany({ where: { projectId: id }, orderBy: { startedAt: "desc" }, take: 10, select: { id: true, status: true, reason: true, stats: true, startedAt: true, finishedAt: true, options: true, sitemapUrls: true } });
-    const crawlId = url.searchParams.get("crawl") ?? crawls[0]?.id;
+    const asked = url.searchParams.get("crawl");
+    const crawlId = asked ? await ownCrawl(id, asked) : crawls[0]?.id;
     if (!crawlId) return { crawls, crawlId: null };
     const [byCode, pages, psi, inspections] = await Promise.all([
       db.issue.groupBy({ by: ["code", "severity"], where: { crawlId }, _count: true }),
@@ -127,14 +170,14 @@ const GETS: Record<string, H> = {
     };
   },
 
-  "audit/issue": async ({ url }) => {
-    const crawlId = url.searchParams.get("crawl")!;
+  "audit/issue": async ({ id, url }) => {
+    const crawlId = await ownCrawl(id, url.searchParams.get("crawl"));
     const code = url.searchParams.get("code")!;
     return db.issue.findMany({ where: { crawlId, code }, take: 2000 });
   },
 
-  "audit/page": async ({ url }) => {
-    const crawlId = url.searchParams.get("crawl")!;
+  "audit/page": async ({ id, url }) => {
+    const crawlId = await ownCrawl(id, url.searchParams.get("crawl"));
     const u = url.searchParams.get("url")!;
     const page = await db.page.findUnique({ where: { crawlId_url: { crawlId, url: u } } });
     const issues = await db.issue.findMany({ where: { crawlId, url: u } });
@@ -238,7 +281,10 @@ const GETS: Record<string, H> = {
   "report/last": async ({ id }) => db.jobRun.findFirst({ where: { projectId: id, kind: QUEUES.full }, orderBy: { createdAt: "desc" } }),
   /** Para el formulario de Contenido: qué URL ya rankea para la keyword en Search Console. */
   "content/target": async ({ id, url }) => gscTargetFor(id, url.searchParams.get("keyword") ?? "", url.searchParams.get("url") || undefined),
-  "content/one": async ({ url }) => db.contentAnalysis.findUnique({ where: { id: url.searchParams.get("cid")! } }),
+  "content/one": async ({ id, url }) => {
+    const { project: _p, ...a } = await ownContent(id, url.searchParams.get("cid"));
+    return a;
+  },
 };
 
 const POSTS: Record<string, H> = {
@@ -259,14 +305,25 @@ const POSTS: Record<string, H> = {
     return enqueue(id, QUEUES.keywords, { runId: run.id }, run.id);
   },
 
-  "keywords/topic": async ({ id, body }) => db.topic.create({ data: { projectId: id, runId: body.runId ?? null, name: body.name ?? "nuevo topic", pos: body.pos, nameLocked: true } }),
+  "keywords/topic": async ({ id, body }) =>
+    db.topic.create({ data: { projectId: id, runId: await ownOptional("keywordRun", id, body.runId), name: body.name ?? "nuevo topic", pos: body.pos, nameLocked: true } }),
 
   "keywords/cluster": async ({ id, body }) =>
-    db.cluster.create({ data: { projectId: id, runId: body.runId ?? null, name: body.name ?? "nuevo cluster", primary: body.name ?? "", topicId: body.topicId ?? null } }),
+    db.cluster.create({
+      data: { projectId: id, runId: await ownOptional("keywordRun", id, body.runId), name: body.name ?? "nuevo cluster", primary: body.name ?? "", topicId: await ownOptional("topic", id, body.topicId) },
+    }),
 
   audit: async ({ id, body }) => {
     const crawl = await db.crawl.create({
-      data: { projectId: id, options: { maxPages: Number(body.maxPages ?? 500), concurrency: Number(body.concurrency ?? 5), render: Boolean(body.render), startUrl: body.startUrl || undefined } },
+      data: {
+        projectId: id,
+        options: {
+          maxPages: Math.max(1, Math.min(Number(body.maxPages ?? 500) || 500, 20000)),
+          concurrency: Math.max(1, Math.min(Number(body.concurrency ?? 5) || 5, 20)),
+          render: Boolean(body.render),
+          startUrl: body.startUrl ? (await ownUrls(id, [body.startUrl]))[0] : undefined,
+        },
+      },
     });
     await enqueue(id, QUEUES.crawl, { crawlId: crawl.id }, crawl.id);
     return crawl;
@@ -299,13 +356,14 @@ const POSTS: Record<string, H> = {
     return enqueue(id, QUEUES.full, { opts });
   },
 
-  "audit/psi": async ({ id, body }) => enqueue(id, QUEUES.psi, { urls: (body.urls ?? []).slice(0, 20), strategies: body.strategies ?? ["mobile", "desktop"] }),
+  "audit/psi": async ({ id, body }) =>
+    enqueue(id, QUEUES.psi, { urls: (await ownUrls(id, (body.urls ?? []).slice(0, 20))), strategies: (body.strategies ?? ["mobile", "desktop"]).filter((x: string) => x === "mobile" || x === "desktop") }),
 
-  "audit/inspect": async ({ id, body }) => enqueue(id, QUEUES.inspect, { urls: (body.urls ?? []).slice(0, 100) }),
+  "audit/inspect": async ({ id, body }) => enqueue(id, QUEUES.inspect, { urls: await ownUrls(id, (body.urls ?? []).slice(0, 100)) }),
 
   indexnow: async ({ id, body }) => {
     const p = await db.project.findUniqueOrThrow({ where: { id } });
-    const status = await indexNow(p.domain, (body.urls ?? []).map((u: string) => normUrl(u)).filter(Boolean));
+    const status = await indexNow(p.domain, await ownUrls(id, body.urls ?? []));
     return { status };
   },
 
@@ -328,7 +386,9 @@ const POSTS: Record<string, H> = {
   },
 
   "rank/check": async ({ id, body }) => {
-    const ids: string[] = body.ids?.length ? body.ids : (await db.trackedKeyword.findMany({ where: { projectId: id, active: true }, select: { id: true } })).map((t) => t.id);
+    // solo keywords de este proyecto (antes se podían revisar —y cobrar— las de otro)
+    const ids: string[] = (await db.trackedKeyword.findMany({ where: { projectId: id, active: true, ...(body.ids?.length ? { id: { in: body.ids } } : {}) }, select: { id: true } })).map((t) => t.id);
+    if (!ids.length) throw new HttpError(400, "No hay keywords trackeadas para revisar");
     await assertBudget({ serpent: est.serpCalls(ids.length) }, `Rank tracking (${ids.length} keywords)`);
     return enqueue(id, QUEUES.rankOne, { trackedIds: ids });
   },
@@ -343,8 +403,9 @@ const POSTS: Record<string, H> = {
   },
 
   content: async ({ id, body }) => {
-    const u = normUrl(body.url ?? "");
-    if (!u || !body.keyword) throw new Error("url y keyword");
+    if (!body.url || !body.keyword) throw new HttpError(400, "Falta la URL o la keyword");
+    const [u] = await ownUrls(id, [body.url]);
+    if (!u) throw new HttpError(400, "URL inválida");
     await assertBudget({ serpent: est.serpCalls(1), llm: est.llmBrief() }, "Optimización de contenido");
     const a = await db.contentAnalysis.create({ data: { projectId: id, url: u, keyword: normTerm(body.keyword) } });
     await enqueue(id, QUEUES.content, { contentId: a.id }, a.id);
@@ -352,7 +413,7 @@ const POSTS: Record<string, H> = {
   },
 
   "content/rebrief": async ({ id, body }) => {
-    const a = await db.contentAnalysis.findUniqueOrThrow({ where: { id: body.cid }, include: { project: true } });
+    const a = await ownContent(id, body.cid);
     await assertBudget({ llm: est.llmBrief() }, "Regenerar brief");
     const brief = await makeBrief(a.result as unknown as ContentResult, a.project.language, a.project.country);
     return db.contentAnalysis.update({ where: { id: a.id }, data: { brief: brief as any } });
@@ -383,6 +444,7 @@ const PATCHS: Record<string, H> = {
     switch (body.action) {
       case "move": {
         const k = await db.keyword.findFirstOrThrow({ where: { id: body.keywordId, projectId: id } });
+        await ownOptional("cluster", id, body.clusterId);
         await db.keyword.update({ where: { id: k.id }, data: { clusterId: body.clusterId ?? null, locked: true } });
         if (k.clusterId) await refreshCluster(k.clusterId);
         if (body.clusterId) await refreshCluster(body.clusterId);
@@ -392,12 +454,13 @@ const PATCHS: Record<string, H> = {
         return db.keyword.updateMany({ where: { projectId: id, id: { in: body.ids } }, data: { excluded: Boolean(body.value) } });
       case "clusterTopic": {
         const c = await db.cluster.findFirstOrThrow({ where: { projectId: id, id: body.clusterId } });
+        await ownOptional("topic", id, body.topicId);
         // Cambiar de topic suelta la pillar manual del topic anterior
         return db.cluster.update({ where: { id: c.id }, data: { topicId: body.topicId ?? null, topicLocked: true, ...(c.topicId !== (body.topicId ?? null) ? { isPillar: false, pillarLocked: false } : {}) } });
       }
       case "pillar": {
         const c = await db.cluster.findFirstOrThrow({ where: { id: body.clusterId, projectId: id } });
-        if (c.topicId) await db.cluster.updateMany({ where: { topicId: c.topicId }, data: { isPillar: false, pillarLocked: false } });
+        if (c.topicId) await db.cluster.updateMany({ where: { projectId: id, topicId: c.topicId }, data: { isPillar: false, pillarLocked: false } });
         return db.cluster.update({ where: { id: c.id }, data: { isPillar: true, pillarLocked: true, topicLocked: Boolean(c.topicId) } });
       }
       case "renameCluster":
@@ -434,7 +497,7 @@ const DELETES: Record<string, H> = {
   rank: async ({ id, body }) => db.trackedKeyword.deleteMany({ where: { projectId: id, id: { in: body.ids ?? [] } } }),
   "keywords/run": async ({ id, body }) => db.keywordRun.deleteMany({ where: { projectId: id, id: body.runId } }),
   "keywords/topic": async ({ id, body }) => {
-    await db.cluster.updateMany({ where: { topicId: body.topicId }, data: { topicId: null, isPillar: false } });
+    await db.cluster.updateMany({ where: { projectId: id, topicId: body.topicId }, data: { topicId: null, isPillar: false } });
     return db.topic.deleteMany({ where: { projectId: id, id: body.topicId } });
   },
   content: async ({ id, body }) => db.contentAnalysis.deleteMany({ where: { projectId: id, id: body.cid } }),
@@ -456,6 +519,7 @@ function make(table: Record<string, H>) {
       return r instanceof Response ? r : ok(r);
     } catch (e) {
       console.error(`[api] ${req.method} ${key}`, e);
+      if (e instanceof HttpError) return bad(e.message, e.status);
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") return bad("no existe", 404);
       if (e instanceof Error && e.message.startsWith("Propiedad GSC inválida")) return bad(e.message, 400);
       if (e instanceof BudgetError) return bad(e.message, 402);
