@@ -85,7 +85,7 @@ export const PRODUCT_GETS: Record<string, Handler> = {
     const s = p.settings as any;
     return {
       experience: s.onboarding?.experience ?? "beginner",
-      skipGsc: s.onboarding?.skipGsc ?? false,
+      skipGsc: s.onboarding?.skipGsc ?? s.onboarding?.skipped?.includes("gsc") ?? false,
       completed: {
         gsc: !!p.gscProperty && !!mode,
         crawl: !!crawl,
@@ -397,7 +397,13 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
         throw invalid("Experiencia inválida");
       onboarding.experience = body.experience;
     }
-    if (typeof body.skipGsc === "boolean") onboarding.skipGsc = body.skipGsc;
+    if (typeof body.skipGsc === "boolean") {
+      onboarding.skipGsc = body.skipGsc;
+      onboarding.skipped = [...new Set([
+        ...(onboarding.skipped ?? []).filter((step: string) => step !== "gsc"),
+        ...(body.skipGsc ? ["gsc"] : []),
+      ])];
+    }
     return db.project.update({
       where: { id },
       data: { settings: { ...s, onboarding } },

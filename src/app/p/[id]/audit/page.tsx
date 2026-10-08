@@ -4,6 +4,8 @@ import { useProject } from "@/components/Shell";
 import { api, cx, DataTable, Drawer, Empty, fmt, Hint, Icon, Score, SEV, Stat, Tabs, useApi, type Col, fmtDate, Spinner, IconBadge } from "@/components/ui";
 import { ISSUE_FIX, ISSUE_WHY } from "@/lib/audit/fixes";
 import { CRAWL_STATUS } from "@/lib/status";
+import { Priorities } from "@/components/audit/Priorities";
+import { Coverage } from "@/components/Coverage";
 
 const SEV_HINT: Record<string, string> = {
   critical: "Problemas que impiden que Google vea o indexe páginas. Arreglar primero.",
@@ -50,7 +52,7 @@ export default function AuditPage() {
   const { id, project, refreshJobs, jobs } = useProject();
   const [crawl, setCrawl] = useState("");
   const { data, mutate } = useApi<any>(`/api/p/${id}/audit${crawl ? `?crawl=${crawl}` : ""}`);
-  const [tab, setTab] = useState<"issues" | "urls" | "speed" | "index">("issues");
+  const [tab, setTab] = useState<"prio" | "issues" | "urls" | "speed" | "index">("prio");
   const [opt, setOpt] = useState({ maxPages: 500, concurrency: 5, render: false });
   const [issue, setIssue] = useState<IssueAgg | null>(null);
   const [pageUrl, setPageUrl] = useState<string | null>(null);
@@ -109,6 +111,8 @@ export default function AuditPage() {
         )}
       </div>
 
+      <Coverage projectId={id} />
+
       {cur && cur.status !== "completed" && (
         <div className={cx("anim-in flex items-start gap-3 rounded-xl px-4 py-3 text-sm", CRAWL_STATUS[cur.status]?.cls)}>
           {cur.status === "running" || cur.status === "queued" ? <Spinner className="mt-0.5 h-4 w-4 shrink-0" /> : <Icon name={cur.status === "partial" ? "info" : "alert"} anim={cur.status === "failed" ? "wiggle" : "pop"} className="mt-0.5 h-4 w-4 shrink-0" />}
@@ -127,7 +131,11 @@ export default function AuditPage() {
       ) : cur && !["completed", "partial"].includes(cur.status) ? null : (
         <>
           <div className="card grid grid-cols-2 items-center gap-6 p-4 md:grid-cols-8">
-            <div className="row-span-2 flex items-start gap-1 md:row-span-1"><Score value={st.health} size={72} /><Hint text="Salud técnica de 0 a 100 (solo lo técnico, no todo el SEO): baja 5 puntos por cada crítico y 1 por cada warning, en proporción a las URLs revisadas. Si el crawl fue parcial, solo cubre lo que se pudo leer." /></div>
+            <div className="row-span-2 flex flex-col items-center gap-1 md:row-span-1" title={st.healthNote ?? undefined}>
+              <div className="flex items-start gap-1"><Score value={st.health} size={72} /><Hint text="Salud técnica de 0 a 100 (solo lo técnico, no todo el SEO): baja 5 puntos por cada crítico y 1 por cada warning, en proporción a las URLs revisadas. Si el crawl fue parcial, solo cubre lo que se pudo leer. Sin datos mínimos no se calcula." /></div>
+              <span className="lbl">Salud técnica</span>
+              {st.health == null && st.healthNote && <span className="max-w-[140px] text-center text-[11px] leading-tight text-ink-500">{st.healthNote}</span>}
+            </div>
             <Stat label="URLs" value={fmt(st.pages)} hint="Páginas revisadas: las que el crawler encontró siguiendo links, más las del sitemap que no alcanzó por links." />
             <Stat label="Errores" value={fmt(st.errors)} tone={st.errors ? "bad" : undefined} hint="Páginas que respondieron con error (404, 500) o no respondieron." />
             <Stat label="Redirects" value={fmt(st.redirects)} hint="URLs que redirigen a otra. Normal en pocas; los links internos deberían apuntar directo a la URL final." />
@@ -137,7 +145,18 @@ export default function AuditPage() {
             <Stat label="Externos" value={fmt(st.external)} hint="Dominios externos distintos a los que enlaza tu sitio." />
           </div>
 
-          <Tabs value={tab} onChange={setTab} items={[{ id: "issues", label: "Issues", icon: "alert" }, { id: "urls", label: "URLs", icon: "table" }, { id: "speed", label: "Velocidad", icon: "bolt" }, { id: "index", label: "Indexación", icon: "search" }]} />
+          <Tabs value={tab} onChange={setTab} items={[{ id: "prio", label: "Prioridades", icon: "target" }, { id: "issues", label: "Issues", icon: "alert" }, { id: "urls", label: "URLs", icon: "table" }, { id: "speed", label: "Velocidad", icon: "bolt" }, { id: "index", label: "Indexación", icon: "search" }]} />
+
+          {tab === "prio" && (
+            <Priorities
+              projectId={id}
+              crawlId={data.crawlId}
+              onIssue={(code) => {
+                const i = issues.find((x) => x.code === code);
+                if (i) setIssue(i);
+              }}
+            />
+          )}
 
           {tab === "issues" && (
             <div className="stagger grid gap-4 md:grid-cols-3">

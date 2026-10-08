@@ -11,6 +11,9 @@ import { AuthError, memLimit, requireProject, requireUser } from "@/lib/auth";
 import { sweepStale, workerAlive } from "@/lib/jobs";
 import { refreshCluster } from "@/lib/keywords/pipeline";
 import { ISSUE_LABELS } from "@/lib/audit/issues";
+import { auditInsights } from "@/lib/audit/insights-data";
+import { coverage, shortLabel } from "@/lib/coverage";
+import { onboarding } from "@/lib/onboarding";
 import { gscAvailable, gscSites, indexNow, resolveGscProperty } from "@/lib/providers/google";
 import { disconnect, GscNotConnected, oauthConfigured, startUrl } from "@/lib/gsc-oauth";
 import { gscTargetFor, makeBrief, type ContentResult } from "@/lib/content/analyze";
@@ -183,6 +186,18 @@ const GETS: Record<string, H> = {
       pages: pages.map((p) => ({ ...p, issues: cnt.get(p.url) ?? 0 })),
       psi, inspections,
     };
+  },
+
+  onboarding: async (ctx) => ({ ...(await onboarding(ctx.id)), ...(await PRODUCT_GETS.onboarding(ctx) as Record<string, unknown>) }),
+
+  coverage: async ({ id }) => (await coverage(id)).map((m) => ({ ...m, short: shortLabel(m) })),
+
+  /** Hallazgos priorizados: causa raíz por plantilla, tipo, prioridad por impacto y patrones. */
+  "audit/insights": async ({ id, url }) => {
+    const crawlId = await ownCrawl(id, url.searchParams.get("crawl"));
+    const r = await auditInsights(id, crawlId);
+    // el detalle de URLs va recortado: la lista completa está en la pestaña Issues / el anexo del informe
+    return { ...r, findings: r.findings.map((f) => ({ ...f, total: f.urls.length, urls: f.urls.slice(0, 50) })) };
   },
 
   "audit/issue": async ({ id, url }) => {

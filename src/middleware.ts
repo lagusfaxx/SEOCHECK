@@ -10,12 +10,15 @@ const PUBLIC = [/^\/login$/, /^\/setup$/, /^\/forgot$/, /^\/reset$/, /^\/api\/au
 export function middleware(req: NextRequest) {
   // Stripe authenticates this exact endpoint with its signed raw payload, not browser cookies or Basic Auth.
   if (req.nextUrl.pathname === "/api/billing/webhook" && req.method === "POST") return NextResponse.next();
+  const { pathname } = req.nextUrl;
+  // healthcheck de Docker/Coolify: siempre abierto. Si responde 401, el contenedor queda "unhealthy"
+  // y el proxy (Traefik) deja de enrutar el sitio: se ve "404 page not found".
+  if (pathname === "/api/health") return NextResponse.next();
   const cred = process.env.BASIC_AUTH;
   if (cred) {
     const h = req.headers.get("authorization");
     if (!(h?.startsWith("Basic ") && atob(h.slice(6)) === cred)) return new NextResponse("auth", { status: 401, headers: { "WWW-Authenticate": 'Basic realm="seo"' } });
   }
-  const { pathname } = req.nextUrl;
   // CSRF: un POST/PATCH/DELETE desde otro sitio no puede usar la cookie de sesión
   if (req.method !== "GET" && req.method !== "HEAD") {
     const origin = req.headers.get("origin");

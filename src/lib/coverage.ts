@@ -8,7 +8,7 @@ import { QUEUES } from "./queue";
 import { gscAvailable } from "./providers/google";
 
 export type ModState = "ok" | "partial" | "failed" | "missing" | "never";
-export type Module = { key: string; label: string; state: ModState; detail: string };
+export type Module = { key: string; label: string; state: ModState; detail: string; /** % del sitio leído (solo crawl) */ percent?: number };
 
 export const STATE_LABEL: Record<ModState, string> = { ok: "con datos", partial: "parcial", failed: "falló", missing: "no configurado", never: "sin correr" };
 
@@ -29,11 +29,13 @@ export async function coverage(projectId: string): Promise<Module[]> {
   else {
     const st = crawl.stats as Record<string, any>;
     const opts = crawl.options as Record<string, any>;
-    if (crawl.status === "failed") out.push({ key: "crawl", label: "Auditoría (crawl)", state: "failed", detail: crawl.reason ?? "El crawl falló" });
+    const pages = st.pages ?? 0;
+    if (crawl.status === "failed") out.push({ key: "crawl", label: "Auditoría (crawl)", state: "failed", detail: crawl.reason ?? "El crawl falló", percent: 0 });
     else if (crawl.status === "cancelled") out.push({ key: "crawl", label: "Auditoría (crawl)", state: "failed", detail: "El último crawl se canceló" });
-    else if (crawl.status === "partial") out.push({ key: "crawl", label: "Auditoría (crawl)", state: "partial", detail: `${crawl.reason ?? "Parcial"} (${st.pages ?? 0} URLs, ${day(crawl.startedAt)})` });
-    else if (st.limitReached ?? (opts.maxPages && (st.pages ?? 0) - Math.min(st.orphans ?? 0, 300) >= opts.maxPages)) out.push({ key: "crawl", label: "Auditoría (crawl)", state: "partial", detail: `Llegó al máximo de ${opts.maxPages} páginas: puede faltar parte del sitio (${day(crawl.startedAt)})` });
-    else out.push({ key: "crawl", label: "Auditoría (crawl)", state: "ok", detail: `Sitio completo: ${st.pages ?? 0} URLs (${day(crawl.startedAt)})` });
+    else if (crawl.status === "partial") out.push({ key: "crawl", label: "Auditoría (crawl)", state: "partial", detail: `${crawl.reason ?? "Parcial"} (${pages} URLs, ${day(crawl.startedAt)})`, percent: pages ? Math.round(((st.ok ?? pages) / pages) * 100) : 0 });
+    else if (st.limitReached ?? (opts.maxPages && pages - Math.min(st.orphans ?? 0, 300) >= opts.maxPages))
+      out.push({ key: "crawl", label: "Auditoría (crawl)", state: "partial", detail: `Llegó al máximo de ${opts.maxPages} páginas: puede faltar parte del sitio (${day(crawl.startedAt)})`, percent: st.sitemapNotReached ? Math.min(99, Math.round((pages / (pages + st.sitemapNotReached)) * 100)) : undefined });
+    else out.push({ key: "crawl", label: "Auditoría (crawl)", state: "ok", detail: `Sitio completo: ${pages} URLs (${day(crawl.startedAt)})`, percent: 100 });
   }
 
   // Search Console
@@ -84,3 +86,16 @@ export async function coverage(projectId: string): Promise<Module[]> {
 
 /** Texto para una sección sin datos: dice si falló, si falta configurar o si nunca se corrió. */
 export const emptyText = (m: Module | undefined) => (m ? `_${m.state === "failed" ? "⚠ Falló" : STATE_LABEL[m.state].charAt(0).toUpperCase() + STATE_LABEL[m.state].slice(1)}: ${m.detail}._` : "_Sin datos._");
+
+/** Texto corto para la barra de cobertura: "Crawl 100%", "GSC conectado", "Indexación no configurada". */
+export function shortLabel(m: Module): string {
+  const S: Record<string, Partial<Record<ModState, string>>> = {
+    crawl: { ok: "Crawl 100%", partial: m.percent != null ? `Crawl ${m.percent}%` : "Crawl parcial", failed: "Crawl falló", never: "Crawl pendiente" },
+    gsc: { ok: "GSC conectado", failed: "GSC con error", missing: "GSC no conectado", never: "GSC sin sincronizar" },
+    psi: { ok: "PageSpeed con datos", failed: "PageSpeed falló", missing: "PageSpeed no configurado", never: "PageSpeed disponible" },
+    inspect: { ok: "Indexación revisada", failed: "Indexación falló", missing: "Indexación no configurada", never: "Indexación sin revisar" },
+    keywords: { ok: "Keywords al día", failed: "Keywords falló", never: "Keywords sin research" },
+    rank: { ok: "Rankings activos", failed: "Rankings falló", missing: "Rankings no configurado", never: "Rankings sin keywords" },
+  };
+  return S[m.key]?.[m.state] ?? `${m.label}: ${STATE_LABEL[m.state]}`;
+}

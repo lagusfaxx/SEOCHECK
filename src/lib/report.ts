@@ -4,25 +4,15 @@ import { ISSUE_LABELS } from "./audit/issues";
 import { ISSUE_FIX } from "./audit/fixes";
 import { hostOf, urlKey } from "./util";
 import { coverage, emptyText, STATE_LABEL } from "./coverage";
+import { buildFindings, KIND_LABEL, urlSection, type Pattern } from "./audit/insights";
+import type { Cms } from "./audit/cms";
 import { brandFromDomain, DISCREPANCY_HINT, EASE, EASE_LABEL, expectedCtrAt, isBrandQuery, isParamCanonical, makeTask, PRIVATE_PATH, psiVerdict, SEV_WEIGHT, byPriority, MINOR_ONPAGE, spellingVariants, type PsiField, type Task } from "./report-rules";
 
 const SEV_ORDER = ["critical", "warning", "info"] as const;
 const SEV_LABEL: Record<string, string> = { critical: "Crítico", warning: "Warning", info: "Info" };
 const MAX_URLS = 25;
 
-/** Agrupa por sección del sitio (/perfil/*) para que se pueda ubicar la plantilla que genera la URL. */
-export function urlSection(raw: string): string {
-  try {
-    const segs = new URL(raw).pathname.split("/").filter(Boolean);
-    if (!segs.length) return "/";
-    if (segs.length === 1) return `/${segs[0]}`;
-    // segundo segmento fijo (/catalogue/category/…) vs. slug variable (/perfil/ana-123)
-    const fixed = segs.length > 2 && !/\d/.test(segs[1]) && (segs[1].match(/-/g) ?? []).length < 2;
-    return fixed ? `/${segs[0]}/${segs[1]}/*` : `/${segs[0]}/*`;
-  } catch {
-    return raw;
-  }
-}
+export { urlSection };
 
 function topSections(urls: string[], n = 4) {
   const m = new Map<string, number>();
@@ -55,6 +45,8 @@ export async function buildReport(projectId: string): Promise<string> {
   const notes: string[] = [];
   const intentional: string[] = [];
   const trends: string[] = [];
+  const rootCauses: string[] = [];
+  const patterns: Pattern[] = [];
 
   // ---------- Tráfico por URL (GSC 28 días) y peso de plantilla (sin GSC) ----------
   const lastGsc = await db.gscRow.findFirst({ where: { projectId }, orderBy: { date: "desc" }, select: { date: true } });
@@ -178,36 +170,34 @@ export async function buildReport(projectId: string): Promise<string> {
           codes.map(([code, list]) => [SEV_LABEL[list[0].severity], ISSUE_LABELS[code] ?? code, list.length, topSections(list.map((i) => i.url)).map(([s, n]) => `${s} (${n})`).join(", ")])
         )
     );
-    // una tarea por tipo de issue × plantilla: la corrección se hace en la plantilla
-    for (const [code, list] of codes) {
-      const sev = SEV_WEIGHT[list[0].severity] ?? 1;
-      const ease = EASE[code] ?? 0.8;
-      const siteWide = code === "robots_missing" || code === "sitemap_missing";
-      const bySec = new Map<string, string[]>();
-      for (const i of list) bySec.set(siteWide ? "todo el sitio" : urlSection(i.url), [...(bySec.get(siteWide ? "todo el sitio" : urlSection(i.url)) ?? []), i.url]);
-      for (const [sec, urlsRaw] of bySec) {
-        const urls = [...new Set(urlsRaw)];
-        const tr = siteWide ? siteTraffic() : trafficOf(urls);
-        tasks.push(
-          makeTask({
-            title: `${ISSUE_LABELS[code] ?? code} · ${siteWide ? "todo el sitio" : `\`${sec}\``} (${urls.length} URL${urls.length === 1 ? "" : "s"})`,
-            fix: ISSUE_FIX[code] ?? "",
-            traffic: tr.traffic,
-            trafficLabel: tr.label,
-            sev,
-            sevLabel: SEV_LABEL[list[0].severity],
-            ease,
-            minor: MINOR_ONPAGE.has(code),
-          })
-        );
-      }
+    // hallazgos: un problema por plantilla (causa raíz), no uno por URL; misma lógica que la pantalla de Auditoría
+    const pagesFull = await db.page.findMany({ where: { crawlId: crawl.id }, select: { url: true, status: true, depth: true, inlinks: true, jsonldTypes: true, error: true, canonical: true } });
+    const ins = buildFindings(pagesFull, real, { cms: (st.cms as Cms) ?? null, hitLimit });
+    patterns.push(...ins.patterns);
+    for (const f of ins.findings) {
+      const where = f.scope === "site" || f.scope === "layout" ? "todo el sitio" : f.scope === "scattered" ? "varias secciones" : `\`${f.template}\``;
+      const tr = f.scope === "site" ? siteTraffic() : trafficOf(f.urls);
+      if (f.rootCause) rootCauses.push(`- **${f.label}** — ${f.summary}`);
+      tasks.push(
+        makeTask({
+          title: `${f.label} · ${where} (${f.urls.length} URL${f.urls.length === 1 ? "" : "s"})`,
+          fix: `${f.rootCause || f.scope === "site" ? `${f.summary} ` : ""}${f.fix}`,
+          traffic: tr.traffic,
+          trafficLabel: tr.label,
+          sev: SEV_WEIGHT[f.severity] ?? 1,
+          sevLabel: `${SEV_LABEL[f.severity]} · ${KIND_LABEL[f.kind].toLowerCase()}`,
+          ease: f.ease,
+          minor: MINOR_ONPAGE.has(f.code),
+        })
+      );
+    }
+    for (const [code, list] of codes)
       appendix.push(
         `### ${ISSUE_LABELS[code] ?? code} (${list.length})\n`,
         ...list.slice(0, MAX_URLS).map((i) => `- ${i.url}${i.detail ? ` — ${i.detail}` : ""}`),
         ...(list.length > MAX_URLS ? [`- … y ${list.length - MAX_URLS} más`] : []),
         ""
       );
-    }
   } else {
     auditOut.push(emptyText(mod("crawl")));
   }
@@ -556,6 +546,16 @@ export async function buildReport(projectId: string): Promise<string> {
     ""
   );
   if (rest.length) out.push("### Tareas menores", "", table(["Tarea", "Impacto"], rest.map((t) => [t.title, f0(t.score)])), "");
+  if (rootCauses.length || patterns.length)
+    out.push(
+      "## Causas raíz y patrones",
+      "",
+      "_Problemas que vienen de una plantilla o del layout: se corrigen una vez y arreglan todas sus URLs (el listado completo va en el anexo)._",
+      "",
+      ...rootCauses,
+      ...patterns.map((x) => `- ${x.text}`),
+      ""
+    );
   if (intentional.length) out.push("## Revisado, parece intencional", "", "_No se generan tareas para esto; confirmar si no corresponde._", "", ...intentional, "");
   out.push("## Search Console", "", ...gscOut, "");
   out.push(

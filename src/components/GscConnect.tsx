@@ -6,7 +6,7 @@ import { api, cx, Icon, Spinner, useApi } from "./ui";
 type Conn = { oauthConfigured: boolean; mode: "oauth" | "sa" | null; email: string | null; lastError: string | null; property: string | null };
 
 /** Conectar Search Console con la cuenta de Google del cliente, explicando para qué sirve. */
-export function GscConnect({ compact }: { compact?: boolean }) {
+export function GscConnect({ compact, returnTo }: { compact?: boolean; /** volver aquí después de autorizar en Google (p. ej. el wizard) */ returnTo?: string }) {
   const { id } = useProject();
   const { data: c, mutate } = useApi<Conn>(`/api/p/${id}/gsc/connection`);
   const { data: sites } = useApi<string[]>(c?.mode ? `/api/p/${id}/gsc/sites` : null);
@@ -17,10 +17,23 @@ export function GscConnect({ compact }: { compact?: boolean }) {
   // resultado del regreso desde Google (?gsc=ok o ?gsc_error=...)
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
+    // Google siempre vuelve a Ajustes: si la conexión se empezó en otra pantalla, regresar allá con el resultado
+    const key = `sc:gscReturn:${id}`;
+    let back: string | null = null;
+    try {
+      back = sessionStorage.getItem(key);
+      if (back && (q.get("gsc") || q.get("gsc_error"))) sessionStorage.removeItem(key);
+    } catch {
+      /* sin storage: se queda en Ajustes */
+    }
+    if (back && back !== window.location.pathname && (q.get("gsc") || q.get("gsc_error"))) {
+      window.location.replace(`${back}${window.location.search}`);
+      return;
+    }
     if (q.get("gsc") === "ok") setOk("Search Console conectado. Ya puedes sincronizar los datos.");
     if (q.get("gsc_error")) setErr(q.get("gsc_error")!);
     if (q.get("gsc") || q.get("gsc_error")) window.history.replaceState(null, "", window.location.pathname + window.location.hash);
-  }, []);
+  }, [id]);
 
   if (!c) return null;
   const connect = async () => {
@@ -28,6 +41,11 @@ export function GscConnect({ compact }: { compact?: boolean }) {
     setErr("");
     try {
       const r = await api<{ url: string }>(`/api/p/${id}/gsc/connect`, "POST", {});
+      try {
+        if (returnTo) sessionStorage.setItem(`sc:gscReturn:${id}`, returnTo);
+      } catch {
+        /* sin storage: vuelve a Ajustes */
+      }
       window.location.href = r.url;
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
