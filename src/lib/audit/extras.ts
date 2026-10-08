@@ -16,7 +16,7 @@ export async function runInspection(projectId: string, urls: string[]) {
   const prop = await projectGscProperty(p);
   if (!prop) throw new Error("El proyecto no tiene propiedad de GSC");
   for (const url of urls) {
-    const r = await urlInspect(prop, url, `${p.language}-${p.country.toUpperCase()}`);
+    const r = await urlInspect(prop, url, `${p.language}-${p.country.toUpperCase()}`, projectId);
     const idx = r?.indexStatusResult ?? {};
     await db.urlInspection.create({
       data: {

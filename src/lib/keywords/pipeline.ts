@@ -1,6 +1,6 @@
 import pLimit from "p-limit";
 import { db } from "../db";
-import { gscQuery } from "../providers/google";
+import { gscAvailable, gscQuery } from "../providers/google";
 import { projectGscProperty } from "../rank/gsc";
 import { expandSeed } from "../providers/autocomplete";
 import { embeddingProvider, type EmbeddingProvider } from "../providers";
@@ -63,7 +63,7 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
 
   // Queries reales del sitio en GSC (90 días)
   let gscState: "real" | "none" | "error" = "none";
-  if (opts.useGsc && p.gscProperty && env.gscCredentials) {
+  if (opts.useGsc && p.gscProperty && (await gscAvailable(p.id))) {
     await step(18, "gsc");
     try {
       const end = new Date(Date.now() - 2 * 864e5);
@@ -73,7 +73,7 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
         endDate: end.toISOString().slice(0, 10),
         dimensions: ["query"],
         rowLimit: 5000,
-      });
+      }, p.id);
       for (const r of rows) add(r.keys[0], "gsc");
       stats.gsc = rows.length;
       gscState = "real";

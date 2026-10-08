@@ -8,7 +8,7 @@ import { jobLog } from "../jobctx";
  */
 export async function projectGscProperty(p: { id: string; gscProperty: string | null }): Promise<string | null> {
   if (!p.gscProperty) return null;
-  const real = await resolveGscProperty(p.gscProperty);
+  const real = await resolveGscProperty(p.gscProperty, p.id);
   if (real !== p.gscProperty) {
     await db.project.update({ where: { id: p.id }, data: { gscProperty: real } });
     await jobLog("info", `Propiedad GSC corregida: ${p.gscProperty} → ${real}`);
@@ -36,7 +36,7 @@ export async function syncGsc(projectId: string, backfillDays = 90, onProgress?:
     const date = days[i];
     let startRow = 0;
     for (;;) {
-      const rows = await gscQuery(prop, { startDate: date, endDate: date, dimensions: ["date", "query", "page"], rowLimit: 25000, startRow, dataState: "all" });
+      const rows = await gscQuery(prop, { startDate: date, endDate: date, dimensions: ["date", "query", "page"], rowLimit: 25000, startRow, dataState: "all" }, projectId);
       if (!rows.length) break;
       const data = rows.map((r) => ({
         projectId, date: new Date(r.keys[0]), query: r.keys[1], page: r.keys[2],
@@ -55,7 +55,7 @@ export async function syncGsc(projectId: string, backfillDays = 90, onProgress?:
   // totales del sitio por día: sin dimensión de consulta/página Google sí incluye las consultas anonimizadas,
   // así que estos son los números que coinciden con el gráfico de Search Console
   const t0 = day(totalsStart), t1 = day(end);
-  const totals = await gscQuery(prop, { startDate: t0, endDate: t1, dimensions: ["date"], rowLimit: 25000, dataState: "all" });
+  const totals = await gscQuery(prop, { startDate: t0, endDate: t1, dimensions: ["date"], rowLimit: 25000, dataState: "all" }, projectId);
   if (totals.length)
     await db.$transaction([
       db.gscDay.deleteMany({ where: { projectId, date: { gte: new Date(t0), lte: new Date(t1) } } }),

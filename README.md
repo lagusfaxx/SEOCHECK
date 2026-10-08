@@ -52,6 +52,20 @@ Mapa de relaciones estilo Maltego (`/p/{id}/explore`). Cada nodo es una entidad 
 - Rate limit en login (por IP y por cuenta), recuperación, invitaciones y API; CSRF por Origin; todo id que llega por parámetro se valida contra el proyecto (404 si es de otro).
 - `BASIC_AUTH` sigue disponible como capa extra.
 
+## Conectar Search Console (OAuth por cliente)
+
+Cada proyecto conecta **su propia cuenta de Google** (Ajustes → "Conectar con Google"). SEOCHECK pide solo lectura (`webmasters.readonly`), guarda el refresh token cifrado (AES-256-GCM con `TOKEN_ENC_KEY`) y elige sola la propiedad del dominio. Desconectar revoca el acceso en Google.
+
+Configuración (una vez, en Google Cloud):
+
+1. https://console.cloud.google.com → crea un proyecto (o usa uno) y habilita **Google Search Console API**.
+2. **Pantalla de consentimiento OAuth**: tipo *Externo*, nombre de la app, email de soporte, dominio. Agrega los scopes `.../auth/webmasters.readonly`, `openid` y `email`.
+   - Mientras esté en modo *Prueba*, solo entran los emails que agregues como usuarios de prueba (máx. 100). Para abrirlo a cualquier cliente hay que **publicar** la app y pasar la verificación de Google (el scope de Search Console es "sensible").
+3. **Credenciales → Crear ID de cliente OAuth → Aplicación web**. URI de redirección autorizada: `https://TU-DOMINIO/api/oauth/google/callback` (la misma base que `APP_URL`).
+4. En Coolify: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `TOKEN_ENC_KEY` (`openssl rand -base64 32`) y `APP_URL`. No cambies `TOKEN_ENC_KEY` después: los tokens guardados dejarían de servir (habría que reconectar).
+
+La cuenta de servicio (`GSC_SERVICE_ACCOUNT_JSON`) sigue funcionando, pero **solo para los proyectos del workspace del dueño de la instancia**: así un cliente nunca puede leer una propiedad que otro cliente le compartió a esa cuenta.
+
 ## Local
 
 ```bash

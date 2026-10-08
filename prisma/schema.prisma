@@ -104,6 +104,31 @@ model Project {
   alerts      Alert[]
   contents    ContentAnalysis[]
   jobs        JobRun[]
+  gscConnection GscConnection?
+}
+
+/// Conexión OAuth de Google Search Console del proyecto (la cuenta de Google del cliente). Token cifrado.
+model GscConnection {
+  projectId       String   @id
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  googleEmail     String?
+  /// refresh token cifrado con AES-256-GCM (TOKEN_ENC_KEY)
+  refreshTokenEnc String
+  scope           String
+  connectedBy     String?
+  lastError       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/// Estado temporal del flujo OAuth (anti-CSRF + PKCE).
+model OAuthState {
+  /// hash del state
+  id           String   @id
+  userId       String
+  projectId    String
+  codeVerifier String
+  expiresAt    DateTime
 }
 
 model JobRun {

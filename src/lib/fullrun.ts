@@ -5,6 +5,7 @@ import { jobProgress } from "./queue";
 import { runCrawl } from "./audit/crawler";
 import { runInspection, runPsi } from "./audit/extras";
 import { syncGsc } from "./rank/gsc";
+import { gscAvailable } from "./providers/google";
 import { checkRank } from "./rank/rank";
 import { computeAlerts } from "./rank/alerts";
 import { runKeywordPipeline } from "./keywords/pipeline";
@@ -67,10 +68,10 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
     }
   });
 
-  const gscReady = Boolean(p.gscProperty && env.gscCredentials);
+  const gscReady = Boolean(p.gscProperty && (await gscAvailable(projectId)));
   await step("gsc", "Search Console", async () => {
     if (opts.gsc === false) return skip("gsc", "desactivado");
-    if (!gscReady) return skip("gsc", p.gscProperty ? "falta GSC_SERVICE_ACCOUNT_JSON" : "sin propiedad GSC en el proyecto");
+    if (!gscReady) return skip("gsc", p.gscProperty ? "Search Console no está conectado" : "sin propiedad GSC en el proyecto");
     await syncGsc(projectId, 90);
   });
 

@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { normDomain } from "@/lib/util";
-import { normalizeGscProperty, resolveGscProperty } from "@/lib/providers/google";
+import { normalizeGscProperty } from "@/lib/providers/google";
 import { AuthError, requireUser, requireWorkspace, userWorkspaceIds } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
         country,
         language: b.language ?? "es",
         locationCode: b.locationCode ?? LOCATIONS[country] ?? 2152,
-        gscProperty: b.gscProperty ? await resolveGscProperty(b.gscProperty) : null,
+        gscProperty: b.gscProperty ? normalizeGscProperty(b.gscProperty) : null,
       },
     });
     return Response.json(p);

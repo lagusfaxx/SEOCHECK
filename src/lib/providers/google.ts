@@ -1,6 +1,8 @@
 import { JWT } from "google-auth-library";
 import { env } from "../env";
 import { fetchT } from "../util";
+import { db } from "../db";
+import { GscNotConnected, markConnectionError, projectClient } from "../gsc-oauth";
 
 /**
  * Propiedad de Search Console: `sc-domain:dominio.cl` (propiedad de dominio) o
@@ -67,22 +69,31 @@ export function serviceAccountEmail(): string | null {
   }
 }
 
+/** Con qué cuenta se consulta Search Console (para mensajes de error). */
+type Who = { kind: "oauth"; email: string | null } | { kind: "sa"; email: string | null };
+
 /** Traduce errores de la API de GSC a mensajes accionables. */
-export function gscError(e: any, site: string): Error {
+export function gscError(e: any, site: string, who: Who = { kind: "sa", email: serviceAccountEmail() }): Error {
   const status = e?.response?.status ?? e?.status ?? e?.code;
-  const apiMsg = e?.response?.data?.error?.message ?? e?.message ?? String(e);
-  const email = serviceAccountEmail() ?? "la service account";
+  const apiMsg = e?.response?.data?.error?.message ?? e?.response?.data?.error_description ?? e?.message ?? String(e);
+  const grant = e?.response?.data?.error === "invalid_grant" || /invalid_grant/.test(String(e?.message ?? ""));
+  if (grant) return new Error("La conexión con Google venció o el cliente quitó el acceso: vuelve a conectar Search Console en Ajustes.");
   if (status === 403)
-    return new Error(`Sin acceso a ${site}: agrega ${email} como usuario (permiso Completo) en Search Console → Configuración → Usuarios y permisos. Detalle: ${apiMsg}`);
+    return new Error(
+      who.kind === "oauth"
+        ? `La cuenta de Google conectada (${who.email ?? "sin email"}) no tiene acceso a ${site}: conecta con una cuenta que sea propietaria o usuaria de esa propiedad. Detalle: ${apiMsg}`
+        : `Sin acceso a ${site}: agrega ${who.email ?? "la service account"} como usuario (permiso Completo) en Search Console → Configuración → Usuarios y permisos. Detalle: ${apiMsg}`
+    );
   if (status === 404) return new Error(`La propiedad ${site} no existe en Search Console o está mal escrita (sc-domain:dominio.cl o https://dominio.cl/). Detalle: ${apiMsg}`);
   if (status === 400) return new Error(`GSC rechazó la consulta para ${site}: ${apiMsg}`);
-  if (status === 401) return new Error(`Credenciales de GSC inválidas (GSC_SERVICE_ACCOUNT_JSON): ${apiMsg}`);
+  if (status === 401) return new Error(who.kind === "oauth" ? "La conexión con Google ya no es válida: vuelve a conectar Search Console." : `Credenciales de GSC inválidas (GSC_SERVICE_ACCOUNT_JSON): ${apiMsg}`);
+  if (status === 429) return new Error(`Search Console limitó las consultas (cuota): reintenta en unos minutos. Detalle: ${apiMsg}`);
   return new Error(`GSC ${status ?? ""}: ${apiMsg}`);
 }
 
 let jwt: JWT | null = null;
-function client() {
-  if (!env.gscCredentials) throw new Error("Falta GSC_SERVICE_ACCOUNT_JSON");
+function serviceAccount() {
+  if (!env.gscCredentials) throw new GscNotConnected();
   if (!jwt) {
     const creds = parseServiceAccount(env.gscCredentials);
     jwt = new JWT({ email: creds.client_email, key: creds.private_key, scopes: ["https://www.googleapis.com/auth/webmasters.readonly"] });
@@ -90,10 +101,38 @@ function client() {
   return jwt;
 }
 
-/** Propiedades de Search Console a las que tiene acceso la cuenta de servicio. */
-export async function gscSites(): Promise<string[]> {
-  const res = await client().request<{ siteEntry?: { siteUrl: string; permissionLevel: string }[] }>({ url: "https://searchconsole.googleapis.com/webmasters/v3/sites" });
-  return (res.data.siteEntry ?? []).filter((x) => x.permissionLevel !== "siteUnverifiedUser").map((x) => x.siteUrl);
+/**
+ * Cliente para un proyecto: su conexión OAuth (la cuenta de Google del cliente) si existe; si no, la cuenta de
+ * servicio compartida, pero SOLO para workspaces del dueño de la instancia (trusted). Así un cliente nunca puede
+ * leer una propiedad que otro cliente le dio a la cuenta de servicio.
+ */
+export async function gscClient(projectId?: string): Promise<{ client: { request: JWT["request"] }; who: Who }> {
+  if (projectId) {
+    const c = await projectClient(projectId);
+    if (c) return { client: c.client as unknown as { request: JWT["request"] }, who: { kind: "oauth", email: c.email } };
+    const p = await db.project.findUnique({ where: { id: projectId }, select: { workspace: { select: { trusted: true } } } });
+    if (!p?.workspace.trusted) throw new GscNotConnected();
+  }
+  return { client: serviceAccount(), who: { kind: "sa", email: serviceAccountEmail() } };
+}
+
+/** ¿El proyecto puede consultar GSC (OAuth propio o cuenta de servicio permitida)? */
+export async function gscAvailable(projectId: string): Promise<"oauth" | "sa" | null> {
+  if (await db.gscConnection.findUnique({ where: { projectId }, select: { projectId: true } })) return "oauth";
+  if (!env.gscCredentials) return null;
+  const p = await db.project.findUnique({ where: { id: projectId }, select: { workspace: { select: { trusted: true } } } });
+  return p?.workspace.trusted ? "sa" : null;
+}
+
+/** Propiedades de Search Console a las que tiene acceso la cuenta del proyecto. */
+export async function gscSites(projectId?: string): Promise<string[]> {
+  const { client, who } = await gscClient(projectId);
+  try {
+    const res = await client.request<{ siteEntry?: { siteUrl: string; permissionLevel: string }[] }>({ url: "https://searchconsole.googleapis.com/webmasters/v3/sites" });
+    return (res.data.siteEntry ?? []).filter((x) => x.permissionLevel !== "siteUnverifiedUser").map((x) => x.siteUrl);
+  } catch (e) {
+    throw gscError(e, "la lista de propiedades", who);
+  }
 }
 
 const hostOfProp = (p: string) => p.replace(/^sc-domain:/, "").replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "").toLowerCase();
@@ -111,21 +150,21 @@ export function matchGscProperty(input: string, sites: string[]): string | null 
   return same.sort((a, b) => rank(a) - rank(b))[0] ?? null;
 }
 
-/** Normaliza y, si hay credenciales, corrige al formato real de la propiedad en Search Console. */
-export async function resolveGscProperty(input: string): Promise<string> {
+/** Normaliza y, si el proyecto puede consultar GSC, corrige al formato real de la propiedad. */
+export async function resolveGscProperty(input: string, projectId?: string): Promise<string> {
   const norm = normalizeGscProperty(input);
-  if (!env.gscCredentials) return norm;
+  if (!projectId || !(await gscAvailable(projectId))) return norm;
   try {
-    return matchGscProperty(norm, await gscSites()) ?? norm;
+    return matchGscProperty(norm, await gscSites(projectId)) ?? norm;
   } catch {
     return norm;
   }
 }
 
 /** Agrega al error qué propiedades sí ve la cuenta (lo más útil cuando hay un 403/404). */
-async function withSitesHint(err: Error, prop: string): Promise<Error> {
+async function withSitesHint(err: Error, prop: string, projectId?: string): Promise<Error> {
   try {
-    const sites = await gscSites();
+    const sites = await gscSites(projectId);
     const alt = matchGscProperty(prop, sites);
     if (alt && alt !== prop) return new Error(`${err.message}\nLa cuenta sí tiene acceso a ${alt}: pon esa en Ajustes.`);
     return new Error(`${err.message}\nPropiedades que ve la cuenta: ${sites.length ? sites.join(", ") : "ninguna"}.`);
@@ -136,33 +175,37 @@ async function withSitesHint(err: Error, prop: string): Promise<Error> {
 
 export type GscApiRow = { keys: string[]; clicks: number; impressions: number; ctr: number; position: number };
 
-export async function gscQuery(site: string, body: Record<string, unknown>): Promise<GscApiRow[]> {
+export async function gscQuery(site: string, body: Record<string, unknown>, projectId?: string): Promise<GscApiRow[]> {
   const prop = normalizeGscProperty(site);
+  const { client, who } = await gscClient(projectId);
   try {
-    const res = await client().request<{ rows?: GscApiRow[] }>({
+    const res = await client.request<{ rows?: GscApiRow[] }>({
       url: `https://searchconsole.googleapis.com/webmasters/v3/sites/${encodeURIComponent(prop)}/searchAnalytics/query`,
       method: "POST",
       data: body,
     });
+    if (projectId && who.kind === "oauth") await markConnectionError(projectId, null);
     return res.data.rows ?? [];
   } catch (e) {
-    const err = gscError(e, prop);
+    const err = gscError(e, prop, who);
+    if (projectId && who.kind === "oauth") await markConnectionError(projectId, err.message.slice(0, 300));
     const status = (e as any)?.response?.status ?? (e as any)?.status;
-    throw status === 403 || status === 404 ? await withSitesHint(err, prop) : err;
+    throw status === 403 || status === 404 ? await withSitesHint(err, prop, projectId) : err;
   }
 }
 
-export async function urlInspect(site: string, url: string, languageCode = "es-CL") {
+export async function urlInspect(site: string, url: string, languageCode = "es-CL", projectId?: string) {
   const prop = normalizeGscProperty(site);
+  const { client, who } = await gscClient(projectId);
   try {
-    const res = await client().request<any>({
+    const res = await client.request<any>({
       url: "https://searchconsole.googleapis.com/v1/urlInspection/index:inspect",
       method: "POST",
       data: { inspectionUrl: url, siteUrl: prop, languageCode },
     });
     return res.data.inspectionResult;
   } catch (e) {
-    throw gscError(e, prop);
+    throw gscError(e, prop, who);
   }
 }
 

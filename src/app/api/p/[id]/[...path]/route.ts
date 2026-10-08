@@ -5,7 +5,8 @@ import { AuthError, memLimit, requireProject, requireUser } from "@/lib/auth";
 import { sweepStale, workerAlive } from "@/lib/jobs";
 import { refreshCluster } from "@/lib/keywords/pipeline";
 import { ISSUE_LABELS } from "@/lib/audit/issues";
-import { indexNow, resolveGscProperty } from "@/lib/providers/google";
+import { gscAvailable, gscSites, indexNow, resolveGscProperty } from "@/lib/providers/google";
+import { disconnect, GscNotConnected, oauthConfigured, startUrl } from "@/lib/gsc-oauth";
 import { gscTargetFor, makeBrief, type ContentResult } from "@/lib/content/analyze";
 import { parseKeywordPlannerCsv } from "@/lib/volume/csv";
 import { backfillVolumes, volumeChainStatus, writeCache } from "@/lib/volume/broker";
@@ -19,7 +20,7 @@ import { TRANSFORMS, type GType } from "@/lib/graph-types";
 
 export const dynamic = "force-dynamic";
 
-type Ctx = { id: string; path: string[]; url: URL; body: any };
+type Ctx = { id: string; path: string[]; url: URL; body: any; user: { id: string; email: string } };
 type H = (c: Ctx) => Promise<unknown>;
 
 const ok = (data: unknown) => Response.json(data ?? { ok: true });
@@ -86,7 +87,7 @@ const GETS: Record<string, H> = {
       volumeChain: chain,
       providers: {
         serp: Boolean(env.serpentKey), volume: chain.find((c) => c.available)?.provider ?? false, embeddings: env.embeddingsUrl ? "local" : env.openaiKey ? "openai" : "hash",
-        llm: llmStatus().available ? `${env.llmProvider}:${env.llmModel}` : false, gsc: Boolean(env.gscCredentials), psi: Boolean(env.psiKey), render: Boolean(env.browserWs), indexnow: Boolean(env.indexNowKey),
+        llm: llmStatus().available ? `${env.llmProvider}:${env.llmModel}` : false, gsc: await gscAvailable(id), psi: Boolean(env.psiKey), render: Boolean(env.browserWs), indexnow: Boolean(env.indexNowKey),
       },
     };
   },
@@ -279,6 +280,17 @@ const GETS: Record<string, H> = {
     if (!TRANSFORMS[type]?.some((x) => x.id === t)) throw new Error("transformación inválida");
     return expand(id, type, url.searchParams.get("key") ?? "", t);
   },
+  /** Estado de la conexión con Search Console del proyecto */
+  "gsc/connection": async ({ id }) => {
+    const [mode, c, p] = await Promise.all([
+      gscAvailable(id),
+      db.gscConnection.findUnique({ where: { projectId: id }, select: { googleEmail: true, lastError: true, createdAt: true } }),
+      db.project.findUniqueOrThrow({ where: { id }, select: { gscProperty: true } }),
+    ]);
+    return { oauthConfigured: oauthConfigured(), mode, email: c?.googleEmail ?? null, lastError: c?.lastError ?? null, connectedAt: c?.createdAt ?? null, property: p.gscProperty };
+  },
+  /** Propiedades que ve la cuenta conectada (para elegir) */
+  "gsc/sites": async ({ id }) => ((await gscAvailable(id)) ? gscSites(id) : []),
   "report/last": async ({ id }) => db.jobRun.findFirst({ where: { projectId: id, kind: QUEUES.full }, orderBy: { createdAt: "desc" } }),
   /** Para el formulario de Contenido: qué URL ya rankea para la keyword en Search Console. */
   "content/target": async ({ id, url }) => gscTargetFor(id, url.searchParams.get("keyword") ?? "", url.searchParams.get("url") || undefined),
@@ -398,6 +410,12 @@ const POSTS: Record<string, H> = {
 
   alerts: async ({ id }) => enqueue(id, QUEUES.alerts, {}),
 
+  /** Empieza la conexión OAuth con Google: devuelve la URL de consentimiento */
+  "gsc/connect": async ({ id, url, user }) => {
+    if (!oauthConfigured()) throw new HttpError(400, "La conexión con Google no está configurada en el servidor (GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, TOKEN_ENC_KEY)");
+    return { url: await startUrl(id, user.id, url.origin) };
+  },
+
   "jobs/cancel": async ({ id, body }) => {
     await db.jobRun.findFirstOrThrow({ where: { id: body.jobId, projectId: id } });
     return cancelJob(body.jobId);
@@ -425,7 +443,7 @@ const PATCHS: Record<string, H> = {
   "": async ({ id, body }) => {
     const data: Prisma.ProjectUpdateInput = {};
     for (const k of ["name", "domain", "country", "language", "gscProperty"] as const) if (k in body) (data as any)[k] = body[k] || (k === "gscProperty" ? null : body[k]);
-    if (body.gscProperty) data.gscProperty = await resolveGscProperty(body.gscProperty);
+    if (body.gscProperty) data.gscProperty = await resolveGscProperty(body.gscProperty, id);
     if ("locationCode" in body) data.locationCode = Number(body.locationCode);
     if (body.settings) {
       const p = await db.project.findUniqueOrThrow({ where: { id } });
@@ -494,6 +512,10 @@ const PATCHS: Record<string, H> = {
 };
 
 const DELETES: Record<string, H> = {
+  "gsc/connect": async ({ id }) => {
+    await disconnect(id);
+    return { ok: true };
+  },
   "": async ({ id }) => db.project.delete({ where: { id } }),
   rank: async ({ id, body }) => db.trackedKeyword.deleteMany({ where: { projectId: id, id: { in: body.ids ?? [] } } }),
   "keywords/run": async ({ id, body }) => db.keywordRun.deleteMany({ where: { projectId: id, id: body.runId } }),
@@ -526,10 +548,11 @@ function make(table: Record<string, H>) {
       body = ct.includes("json") || !ct ? await req.json().catch(() => ({})) : Buffer.from(await req.arrayBuffer());
     }
     try {
-      const r = await h({ id: params.id, path, url: new URL(req.url), body });
+      const r = await h({ id: params.id, path, url: new URL(req.url), body, user });
       return r instanceof Response ? r : ok(r);
     } catch (e) {
       if (e instanceof HttpError) return bad(e.message, e.status);
+      if (e instanceof GscNotConnected) return bad(e.message, 400);
       console.error(`[api] ${req.method} ${key}`, e);
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") return bad("no existe", 404);
       if (e instanceof Error && e.message.startsWith("Propiedad GSC inválida")) return bad(e.message, 400);

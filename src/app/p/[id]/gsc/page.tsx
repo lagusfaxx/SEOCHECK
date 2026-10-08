@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { Area, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useProject } from "@/components/Shell";
+import { GscConnect } from "@/components/GscConnect";
 import { api, cx, DataTable, Delta, Drawer, Empty, fmt, Icon, pct, Stat, Tabs, useApi, type Col } from "@/components/ui";
 
 type Row = { key: string; clicks: number; impressions: number; ctr: number; position: number; n: number; prevClicks: number | null; prevPosition: number | null };
@@ -42,7 +43,7 @@ export default function GscPage() {
   ];
 
   if (!project) return null;
-  if (!project.gscProperty) return <div className="p-6"><Empty>configura la propiedad GSC en ajustes</Empty></div>;
+  if (!project.gscProperty || !project.providers?.gsc) return <div className="max-w-3xl p-4 md:p-6"><GscConnect /></div>;
 
   return (
     <div className="space-y-4 p-4 md:p-6">

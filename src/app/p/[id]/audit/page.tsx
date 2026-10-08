@@ -189,9 +189,9 @@ export default function AuditPage() {
           {tab === "index" && (
             <div className="space-y-3">
               <div className="flex gap-2">
-                <button className="btn" disabled={!project?.gscProperty} onClick={() => run("audit/inspect", { urls: templates(pages) })}><Icon name="eye" />Inspeccionar plantillas</button>
-                <button className="btn" disabled={!project?.gscProperty} onClick={() => run("audit/inspect", { urls: pages.filter((p) => p.inSitemap && p.status === 200).slice(0, 100).map((p) => p.url) })}>Sitemap (100)</button>
-                {!project?.gscProperty && <span className="self-center text-xs text-ink-400">configura la propiedad GSC en ajustes</span>}
+                <button className="btn" disabled={!project?.gscProperty || !project?.providers?.gsc} onClick={() => run("audit/inspect", { urls: templates(pages) })}><Icon name="eye" />Inspeccionar plantillas</button>
+                <button className="btn" disabled={!project?.gscProperty || !project?.providers?.gsc} onClick={() => run("audit/inspect", { urls: pages.filter((p) => p.inSitemap && p.status === 200).slice(0, 100).map((p) => p.url) })}>Sitemap (100)</button>
+                {(!project?.gscProperty || !project?.providers?.gsc) && <a href={`/p/${id}/settings#gsc`} className="self-center text-xs text-acc">conecta Search Console para inspeccionar</a>}
               </div>
               <div className="card overflow-auto">
                 <DataTable
@@ -306,7 +306,7 @@ function PageDrawer({ crawlId, url, onClose, onUrl, run }: { crawlId?: string; u
         <>
           <div className="mt-3 flex flex-wrap gap-2">
             <button className="btn" onClick={() => run("audit/psi", { urls: [p.url] })}><Icon name="bolt" />PageSpeed</button>
-            <button className="btn" disabled={!project?.gscProperty} onClick={() => run("audit/inspect", { urls: [p.url] })}><Icon name="eye" />Inspección GSC</button>
+            <button className="btn" disabled={!project?.gscProperty || !project?.providers?.gsc} onClick={() => run("audit/inspect", { urls: [p.url] })}><Icon name="eye" />Inspección GSC</button>
             <button className="btn" disabled={!project?.providers?.indexnow} onClick={() => api(`/api/p/${id}/indexnow`, "POST", { urls: [p.url] })}>IndexNow</button>
           </div>
           {data.issues.length > 0 && (
