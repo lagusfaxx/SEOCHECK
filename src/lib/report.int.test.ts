@@ -189,7 +189,7 @@ test("correr todo: sigue aunque un paso falle y salta lo que no tiene credencial
   assert.deepEqual(Object.keys(by), ["crawl", "gsc", "inspect", "psi", "keywords", "rank", "alerts"]);
   // localhost no es accesible: el crawl queda fallido con motivo, sin puntaje, y el resto sigue
   assert.equal(by.crawl.status, "error");
-  assert.match(by.crawl.detail ?? "", /No se pudo acceder al sitio: la dirección resuelve a una red interna/);
+  assert.match(by.crawl.detail ?? "", /No se pudo acceder al sitio: bloqueado por seguridad: host bloqueado: localhost/);
   const c = await db.crawl.findFirstOrThrow({ where: { projectId }, orderBy: { startedAt: "desc" } });
   assert.equal(c.status, "failed");
   assert.equal((c.stats as any).health, null);
