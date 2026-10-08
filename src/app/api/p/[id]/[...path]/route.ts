@@ -12,6 +12,8 @@ import { llmStatus } from "@/lib/providers/llm";
 import { assertBudget, BudgetError, budgetLimits, est, monthStart, spentThisMonth } from "@/lib/budget";
 import { normTerm, normUrl } from "@/lib/util";
 import { buildReport } from "@/lib/report";
+import { expand, graphSearch, siteNode } from "@/lib/graph";
+import { TRANSFORMS, type GType } from "@/lib/graph-types";
 
 export const dynamic = "force-dynamic";
 
@@ -200,6 +202,14 @@ const GETS: Record<string, H> = {
     return new Response(md, {
       headers: { "content-type": "text/markdown; charset=utf-8", ...(url.searchParams.has("download") ? { "content-disposition": `attachment; filename="${name}"` } : {}) },
     });
+  },
+  "graph/root": async ({ id }) => siteNode((await db.project.findUniqueOrThrow({ where: { id }, select: { domain: true } })).domain),
+  "graph/search": async ({ id, url }) => graphSearch(id, url.searchParams.get("q") ?? ""),
+  "graph/expand": async ({ id, url }) => {
+    const type = url.searchParams.get("type") as GType;
+    const t = url.searchParams.get("t") ?? "";
+    if (!TRANSFORMS[type]?.some((x) => x.id === t)) throw new Error("transformación inválida");
+    return expand(id, type, url.searchParams.get("key") ?? "", t);
   },
   "report/last": async ({ id }) => db.jobRun.findFirst({ where: { projectId: id, kind: QUEUES.full }, orderBy: { createdAt: "desc" } }),
   "content/one": async ({ url }) => db.contentAnalysis.findUnique({ where: { id: url.searchParams.get("cid")! } }),

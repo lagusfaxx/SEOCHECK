@@ -38,6 +38,11 @@ const NAV: { group: string; items: NavItem[] }[] = [
         steps: ["Escribe 3 a 5 semillas (ej. \"masajes santiago\") y aprieta Correr.", "Revisa el tablero o el mapa: cada cluster es una página a crear u optimizar; el score ordena por oportunidad.", "Arrastra keywords entre clusters o renombra: los cambios manuales quedan con candado y se respetan al volver a correr."],
       },
       {
+        href: "/explore", icon: "map", label: "Explorar", desc: "Mapa de relaciones",
+        intro: "Mapa interactivo de cómo se conecta todo: tu sitio, sus páginas, keywords, clusters, competidores y problemas. Cada nodo se puede expandir para ver lo que tiene relacionado (quién rankea para una keyword, quién enlaza a una página, dónde aparece un competidor). Usa solo datos ya guardados: no gasta créditos.",
+        steps: ["Haz clic en un nodo y elige qué expandir en el panel de la derecha (doble clic expande lo siguiente).", "Busca arriba una keyword, página, cluster o dominio para agregarlo al mapa.", "Arrastra nodos para ordenarlos o usa Ordenar. El mapa queda guardado en este navegador."],
+      },
+      {
         href: "/content", icon: "content", label: "Contenido", desc: "Optimizar una página", jobs: ["content.analyze"],
         intro: "Compara una página tuya con el top 10 de Google para una keyword: qué términos, secciones y preguntas tienen los que rankean y a ti te faltan. Genera un brief con títulos, estructura H2/H3 y FAQ.",
         steps: ["Pega la URL de tu página y la keyword que quieres rankear.", "Mira el score y los términos marcados como faltantes.", "Usa el brief (títulos, outline, FAQ) para reescribir la página."],
@@ -230,9 +235,9 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
               ))}
             </div>
           </header>
-          <main className="min-h-0 flex-1 overflow-auto">
+          <main className="flex min-h-0 flex-1 flex-col overflow-auto">
             {current && <Intro key={current.href} item={current} />}
-            {children}
+            <div className="flex flex-1 flex-col">{children}</div>
           </main>
         </div>
       </div>

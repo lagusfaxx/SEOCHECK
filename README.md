@@ -33,6 +33,10 @@ Las cotas son estimaciones conservadoras: la caché de SERP y de volumen hace qu
 
 El informe (`GET /api/p/{id}/report`, `?download=1` para bajar el `.md`) se arma con lo último guardado de cada módulo: tareas por prioridad agrupadas por sección del sitio (`/perfil/*`) con la corrección a aplicar, auditoría, PageSpeed, indexación, oportunidades de GSC (posición 4–20, caídas, CTR bajo, canibalización), rankings, clusters sin página propia y briefs de contenido, más un anexo con las URLs de cada issue. Está escrito para pasárselo a un agente de código.
 
+## Explorar
+
+Mapa de relaciones estilo Maltego (`/p/{id}/explore`). Cada nodo es una entidad (sitio, topic, cluster, keyword, página propia o externa, dominio, problema, pregunta) y cada uno tiene transformaciones que agregan lo relacionado: top 10 de Google de una keyword, quién enlaza a una página, keywords donde aparece un competidor, páginas afectadas por un problema, consultas de Search Console, etc. Las transformaciones solo leen la base (`GET /api/p/{id}/graph/expand`), no llaman APIs pagadas. El mapa se guarda en el navegador.
+
 ## Local
 
 ```bash
