@@ -53,8 +53,11 @@ test("dificultad sube con dominios fuertes", () => {
 
 test("robots", () => {
   const r = parseRobots("User-agent: Googlebot\nDisallow: /g\n\nUser-agent: *\nDisallow: /admin\nAllow: /admin/pub\nSitemap: https://a.cl/s.xml");
-  assert.deepEqual(r.disallow, ["/admin"]);
-  assert.deepEqual(r.allow, ["/admin/pub"]);
+  // se evalúa como Googlebot: su grupo manda y no se mezcla con "*"
+  assert.deepEqual(r.disallow, ["/g"]);
+  assert.deepEqual(r.allow, []);
+  const star = parseRobots("User-agent: *\nDisallow: /admin\nAllow: /admin/pub");
+  assert.deepEqual([star.disallow, star.allow], [["/admin"], ["/admin/pub"]]);
   assert.deepEqual(r.sitemaps, ["https://a.cl/s.xml"]);
 });
 

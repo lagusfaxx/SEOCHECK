@@ -1,4 +1,5 @@
 import type { Page } from "@prisma/client";
+import { isParamCanonical } from "../report-rules";
 
 export type IssueRow = { url: string; code: string; severity: "critical" | "warning" | "info"; detail?: string };
 
@@ -88,7 +89,8 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
     if (!p.h1.length) add(p.url, "h1_missing", "warning");
     else if (p.h1.length > 1) add(p.url, "h1_multiple", "info", `${p.h1.length}`);
     if (p.canonicalType === "none") add(p.url, "canonical_missing", "info");
-    if (p.canonicalType === "other") add(p.url, "canonical_other", "info", p.canonical ?? "");
+    // canonical de una URL con parámetros hacia su versión sin parámetros (filtros, ?variant=…): es lo correcto
+    if (p.canonicalType === "other" && !isParamCanonical(p.url, p.canonical)) add(p.url, "canonical_other", "info", p.canonical ?? "");
     if (p.jsonldErrors) add(p.url, "jsonld_invalid", "warning", `${p.jsonldErrors}`);
     if (p.wordCount < 250 && !p.noindex) add(p.url, "thin_content", "info", `${p.wordCount}`);
     if (p.imgNoAlt) add(p.url, "img_no_alt", "info", `${p.imgNoAlt}`);
@@ -96,10 +98,12 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
     if (p.responseMs > 1500) add(p.url, "slow", p.responseMs > 3000 ? "warning" : "info", `${p.responseMs} ms`);
     if (!p.inlinks && p.depth !== 0 && !p.orphan) add(p.url, "no_inlinks", "warning");
     const hl = p.hreflang as { lang: string; href: string }[];
-    if (hl.length && !hl.some((h) => h.href === p.url)) add(p.url, "hreflang_no_self", "warning");
+    // el hreflang se evalúa en la versión canónica: una página con canonical a otra URL no necesita auto-referencia
+    if (hl.length && p.canonicalType !== "other" && !hl.some((h) => h.href === p.url)) add(p.url, "hreflang_no_self", "warning");
     for (const l of p.links) {
       const s = statusOf.get(l);
-      if (s != null && (s >= 400 || s === 0) && !blockedSet.has(l)) add(p.url, "broken_link", "critical", l);
+      // roto = el destino no existe (404/410…). 401/403 (privado), 429 (límite de ritmo) y fallas de conexión no son links rotos
+      if (s != null && s >= 400 && s < 500 && ![401, 403, 429].includes(s) && !blockedSet.has(l)) add(p.url, "broken_link", "critical", l);
     }
   }
   for (const g of group((p) => p.title)) for (const p of g) add(p.url, "title_dup", "warning", `${g.length}`);

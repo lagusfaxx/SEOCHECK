@@ -152,7 +152,7 @@ test("informe: priorización por impacto, falsos positivos, tendencias, GSC agru
   assert.match(tasks, /Cubrir variantes de escritura en `\/perfil\/\*`.*«masajes peñalolen»/);
   // 2. límite de páginas: huérfanas solo como aviso
   assert.doesNotMatch(tasks, /Huérfana/);
-  assert.match(sec("Avisos"), /llegó al límite de 2 páginas.*No se generan tareas de huérfanas/);
+  assert.match(sec("Avisos"), /llegó al límite de 2 páginas: 1 URL del sitemap no se alcanzaron.*No se generan tareas de huérfanas/);
   // 3. falsos positivos
   assert.doesNotMatch(tasks, /Canonical a otra URL|Bloqueada por robots/);
   const ok = sec("Revisado, parece intencional");

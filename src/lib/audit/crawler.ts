@@ -8,7 +8,7 @@ import { assertUrlAllowed, safeFetch, SsrfError } from "../net/ssrf";
 import { DEFAULT_IGNORE_PARAMS, detectWaf, PatternLimiter, stripParams } from "./guards";
 import { hostOf, normUrl } from "../util";
 import { computeIssues } from "./issues";
-import { fetchSitemapUrls, parseRobots, type Robots } from "./robots";
+import { fetchSitemapUrls, parseRobots, robotsAllows, type Robots } from "./robots";
 
 export type CrawlOptions = {
   maxPages?: number;
@@ -110,9 +110,25 @@ export function classifyCrawl(o: { pages: OutcomePage[]; start: string; wafAbort
   return { status: "completed", reason: null };
 }
 
+/** Segundos de Retry-After (número o fecha), con tope. */
+export function retryAfterMs(h: string | null, capMs = 10_000): number {
+  if (!h) return 2000;
+  const n = Number(h);
+  const ms = Number.isFinite(n) ? n * 1000 : Math.max(0, new Date(h).getTime() - Date.now());
+  return Math.min(capMs, Math.max(500, Number.isFinite(ms) ? ms : 2000));
+}
+
 async function fetchFollow(url: string, o: FetchOpts = {}) {
   const t0 = Date.now();
-  const { res, finalUrl, redirects } = await safeFetch(url, { headers: { "User-Agent": o.userAgent || env.userAgent, Accept: "text/html,*/*" }, timeoutMs: 25000 });
+  const doFetch = () => safeFetch(url, { headers: { "User-Agent": o.userAgent || env.userAgent, Accept: "text/html,*/*" }, timeoutMs: 25000 });
+  let r = await doFetch();
+  // 429/503 = el servidor pide bajar el ritmo (Shopify, Cloudflare): esperar y reintentar, no es un link roto
+  for (let i = 0; i < 2 && (r.res.status === 429 || (r.res.status === 503 && r.res.headers.get("retry-after"))); i++) {
+    await r.res.body?.cancel().catch(() => {});
+    await new Promise((ok) => setTimeout(ok, retryAfterMs(r.res.headers.get("retry-after")) * (1 + Math.random() * 0.3)));
+    r = await doFetch();
+  }
+  const { res, finalUrl, redirects } = r;
   const ct = res.headers.get("content-type");
   const isText = ct?.includes("html") || res.status === 403 || res.status === 503 || res.status === 429;
   const html = isText ? await res.text() : (await res.body?.cancel().catch(() => {}), "");
@@ -272,6 +288,29 @@ function pageSignals($: cheerio.CheerioAPI, url: string): PageSignals {
   };
 }
 
+/** Directivas de robots: "noindex" o "none" (= noindex, nofollow). */
+const robotsNoindex = (directives: string) => /(^|[\s,])(noindex|none)([\s,]|$)/i.test(directives);
+
+/**
+ * X-Robots-Tag: "noindex", "googlebot: noindex" o "bingbot: noindex, otherbot: none". Solo cuenta lo que aplica a
+ * Googlebot (sin bot o "googlebot:"); un "bingbot: noindex" no saca la página de Google.
+ */
+export function xRobotsNoindex(header: string | null | undefined): boolean {
+  if (!header) return false;
+  let agent: string | null = null;
+  for (const raw of header.split(",")) {
+    const part = raw.trim();
+    const m = part.match(/^([a-z0-9_-]+)\s*:\s*(.*)$/i);
+    let directive = part;
+    if (m && !/^(unavailable_after|max-snippet|max-image-preview|max-video-preview)$/i.test(m[1])) {
+      agent = m[1].toLowerCase();
+      directive = m[2];
+    }
+    if ((agent === null || agent === "googlebot") && robotsNoindex(directive)) return true;
+  }
+  return false;
+}
+
 /** Mensaje entendible para un error de red (DNS, timeout, TLS, SSRF). */
 export function describeFetchError(e: unknown): string {
   const err = e as { name?: string; message?: string; code?: string; cause?: { code?: string; message?: string } };
@@ -289,12 +328,13 @@ export function parseHtml(html: string, url: string) {
   const $ = cheerio.load(html);
   const canonicalRaw = $('link[rel="canonical"]').attr("href");
   const canonical = canonicalRaw ? normUrl(canonicalRaw, url) : null;
-  const robotsMeta = ($('meta[name="robots"]').attr("content") ?? "") + " " + ($('meta[name="googlebot"]').attr("content") ?? "");
+  const robotsMeta = $('meta[name="robots" i], meta[name="googlebot" i]').map((_, el) => $(el).attr("content") ?? "").get().join(" ");
   const jsonldTypes: string[] = [];
   let jsonldErrors = 0;
   $('script[type="application/ld+json"]').each((_, el) => {
     try {
-      const data = JSON.parse($(el).text());
+      // plugins de WordPress envuelven el JSON-LD en CDATA o comentarios HTML: no es un error
+      const data = JSON.parse($(el).text().trim().replace(/^(<!--|\/\/\s*<!\[CDATA\[|<!\[CDATA\[)/, "").replace(/(-->|\/\/\s*\]\]>|\]\]>)$/, "").trim());
       const walk = (n: any) => {
         if (!n || typeof n !== "object") return;
         if (Array.isArray(n)) return n.forEach(walk);
@@ -317,7 +357,15 @@ export function parseHtml(html: string, url: string) {
     const t = $(el).text().replace(/\s+/g, " ").trim();
     if (t) headings.push({ tag: el.tagName.toLowerCase(), text: t });
   });
-  const imgNoAlt = $("img").filter((_, el) => !($(el).attr("alt") ?? "").trim()).length;
+  // sin atributo alt (alt="" es correcto en imágenes decorativas); fuera píxeles de seguimiento y ocultas
+  const imgNoAlt = $("img").filter((_, el) => {
+    const $i = $(el);
+    if ($i.attr("alt") !== undefined) return false;
+    if (["0", "1"].includes($i.attr("width") ?? "") || ["0", "1"].includes($i.attr("height") ?? "")) return false;
+    if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test($i.attr("style") ?? "")) return false;
+    if ($i.attr("aria-hidden") === "true" || $i.attr("role") === "presentation" || $i.attr("role") === "none") return false;
+    return true;
+  }).length;
   // fuera: código y los textos de respaldo de medios ("tu navegador no soporta video…")
   $("script,style,noscript,svg,template,video,audio,iframe,object,embed,canvas,picture source").remove();
   const signals = pageSignals($, url);
@@ -325,12 +373,13 @@ export function parseHtml(html: string, url: string) {
   const body = $("main").length ? $("main") : $("body");
   const text = body.text().replace(/\s+/g, " ").trim();
   return {
-    title: $("title").first().text().trim() || null,
-    metaDesc: $('meta[name="description"]').attr("content")?.trim() || null,
+    // el <title> de la página, no el de un <svg> del body
+    title: $("title").filter((_, el) => !$(el).closest("svg").length).first().text().trim() || null,
+    metaDesc: $('meta[name="description" i]').attr("content")?.trim() || null,
     h1: $("h1").map((_, el) => $(el).text().replace(/\s+/g, " ").trim()).get(),
     canonical,
     canonicalType: (!canonical ? "none" : canonical === url ? "self" : "other") as PageData["canonicalType"],
-    noindex: /noindex/i.test(robotsMeta),
+    noindex: robotsNoindex(robotsMeta),
     hreflang: $('link[rel="alternate"][hreflang]').map((_, el) => ({ lang: $(el).attr("hreflang")!, href: $(el).attr("href")! })).get(),
     jsonldTypes: [...new Set(jsonldTypes)],
     jsonldErrors,
@@ -361,7 +410,7 @@ export async function fetchPage(url: string, render = false, o: FetchOpts = {}):
     h1: parsed?.h1 ?? [],
     canonical: parsed?.canonical ?? null,
     canonicalType: parsed?.canonicalType ?? "none",
-    noindex: (parsed?.noindex ?? false) || /noindex/i.test(r.xRobots ?? ""),
+    noindex: (parsed?.noindex ?? false) || xRobotsNoindex(r.xRobots),
     hreflang: parsed?.hreflang ?? [],
     jsonldTypes: parsed?.jsonldTypes ?? [],
     jsonldErrors: parsed?.jsonldErrors ?? 0,
@@ -401,7 +450,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
 
   // robots + sitemap
   await jobProgress(jobRunId, 1, "robots.txt");
-  let robots: Robots = { disallow: [], allow: [], sitemaps: [] };
+  let robots: Robots = { disallow: [], allow: [], sitemaps: [], group: "" };
   let robotsTxt: string | null = null;
   try {
     const { res: r } = await safeFetch(`${origin}/robots.txt`, { headers: { "User-Agent": ua } });
@@ -416,12 +465,8 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   await db.crawl.update({ where: { id: crawlId }, data: { robots: robotsTxt, sitemapUrls: sitemapUrls.size } });
 
   const isInternal = (u: string) => hostOf(u) === site;
-  const blocked = (u: string) => {
-    const path = new URL(u).pathname;
-    const a = robots.allow.filter((r) => path.startsWith(r)).sort((x, y) => y.length - x.length)[0] ?? "";
-    const d = robots.disallow.filter((r) => path.startsWith(r)).sort((x, y) => y.length - x.length)[0] ?? "";
-    return d.length > a.length;
-  };
+  // bloqueada para Googlebot según robots.txt (comodines, grupos y precedencia como Google)
+  const blocked = (u: string) => !robotsAllows(robots, u);
   const skipExt = /\.(jpg|jpeg|png|gif|webp|svg|pdf|zip|mp4|mp3|css|js|ico|woff2?|xml|json)(\?|$)/i;
 
   let startError: string | null = null;
@@ -489,7 +534,10 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   await jobProgress(jobRunId, 86, "huérfanas");
   const reached = new Set(pages.flatMap((p) => [p.url, p.finalUrl]));
   const orphans = [...sitemapUrls].filter((u) => !reached.has(u)).slice(0, 2000);
-  const orphanLimit = Math.min(orphans.length, 300);
+  // si el crawl ya tocó el máximo, no se baja nada más: el máximo que pidió el usuario se respeta,
+  // y esas URLs no se pueden llamar huérfanas (no se recorrió todo el sitio)
+  const linkLimitHit = pages.length >= o.maxPages!;
+  const orphanLimit = linkLimitHit ? 0 : Math.min(orphans.length, 300, Math.max(0, o.maxPages! - pages.length));
   await Promise.all(
     orphans.slice(0, orphanLimit).map((u) =>
       limit(async () => {
@@ -508,7 +556,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
 
   await jobProgress(jobRunId, 90, "guardando");
   await db.page.deleteMany({ where: { crawlId } });
-  const orphanSet = new Set(orphans);
+  const orphanSet = new Set(linkLimitHit ? [] : orphans);
   const rows = pages.map((p) => ({
     crawlId,
     url: p.url,
@@ -558,7 +606,9 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     wafAborted: wafAbort,
     trapSkipped: [...patterns.skipped.values()].reduce((a, b) => a + b, 0),
     trapPatterns: [...patterns.skipped.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([pattern, skipped]) => ({ pattern, skipped })),
-    orphans: orphans.length,
+    orphans: linkLimitHit ? 0 : orphans.length,
+    /** URLs del sitemap que no se alcanzaron porque el crawl tocó el máximo (no son huérfanas confirmadas) */
+    sitemapNotReached: linkLimitHit ? orphans.length : 0,
     sitemap: sitemapUrls.size,
     external: external.size,
     critical: sev("critical"),
@@ -567,7 +617,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     avgMs: Math.round(saved.reduce((s, p) => s + p.responseMs, 0) / Math.max(1, saved.length)),
     health: Math.max(0, Math.round(100 - (sev("critical") * 5 + sev("warning")) / Math.max(1, saved.length) * 10)) as number | null,
     /** cobertura: páginas leídas por links vs. el máximo pedido */
-    limitReached: Boolean(o.maxPages && pages.length - Math.min(orphans.length, 300) >= o.maxPages),
+    limitReached: linkLimitHit,
   };
   const outcome = classifyCrawl({
     pages: pages.map((p) => ({ url: p.url, finalUrl: p.finalUrl, status: p.status, error: p.error ?? null, contentType: p.contentType, robotsBlocked: p.status === 0 && !p.error && blocked(p.url) })),

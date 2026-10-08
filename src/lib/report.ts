@@ -121,10 +121,11 @@ export async function buildReport(projectId: string): Promise<string> {
     const opts = crawl.options as Record<string, any>;
     const issues = await db.issue.findMany({ where: { crawlId: crawl.id }, orderBy: { url: "asc" } });
     const viaLinks = (st.pages ?? 0) - Math.min(st.orphans ?? 0, 300);
-    const hitLimit = Boolean(opts.maxPages && viaLinks >= opts.maxPages);
+    const hitLimit = st.limitReached ?? Boolean(opts.maxPages && viaLinks >= opts.maxPages);
     const orphanUrls = issues.filter((i) => i.code === "orphan").map((i) => i.url);
-    if (hitLimit && orphanUrls.length)
-      notes.push(`El crawl llegó al límite de ${opts.maxPages} páginas: hay ${pl(orphanUrls.length, "\"huérfana\"", "\"huérfanas\"")} que pueden ser solo páginas que no alcanzó a recorrer. No se generan tareas de huérfanas; repetir con un máximo mayor.`);
+    const unverified = st.sitemapNotReached ?? orphanUrls.length;
+    if (hitLimit && unverified)
+      notes.push(`El crawl llegó al límite de ${opts.maxPages} páginas: ${pl(unverified, "URL")} del sitemap no se alcanzaron a recorrer, así que no se puede saber si son huérfanas. No se generan tareas de huérfanas; repetir con un máximo mayor.`);
     // menú/footer armado con JavaScript: páginas de primer nivel "huérfanas" o una home casi sin links en el HTML
     const home = pages.find((x) => x.depth === 0 && x.status === 200);
     const topLevelOrphans = orphanUrls.filter((u) => {
