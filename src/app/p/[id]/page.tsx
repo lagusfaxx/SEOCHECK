@@ -103,12 +103,12 @@ export default function Overview() {
         return [
           "Estado",
           <div key="k" className="grid grid-cols-2 gap-6 md:grid-cols-6">
-            <Stat label="Keywords" value={fmt(data?.keywords)} sub={`${fmt(data?.volume)} vol.`} />
-            <Stat label="Clusters" value={fmt(data?.clusters)} />
-            <Stat label="Trackeadas" value={fmt(data?.tracked)} sub={`${fmt(data?.top3)} top 3 · ${fmt(data?.top10)} top 10`} />
-            <Stat label="Pos. media" value={fmt(data?.avgPos, 1)} />
-            <Stat label="Clicks 90d" value={fmt(sum("clicks"))} />
-            <Stat label="Impr. 90d" value={fmt(sum("impressions"))} />
+            <Stat label="Keywords" value={fmt(data?.keywords)} sub={`${fmt(data?.volume)} vol.`} hint="Keywords del último research y la suma de su volumen mensual de búsquedas." />
+            <Stat label="Clusters" value={fmt(data?.clusters)} hint="Grupos de keywords que se atacan con una misma página." />
+            <Stat label="Trackeadas" value={fmt(data?.tracked)} sub={`${fmt(data?.top3)} top 3 · ${fmt(data?.top10)} top 10`} hint="Keywords a las que se les sigue la posición en Google, y cuántas están en el top 3 y top 10." />
+            <Stat label="Pos. media" value={fmt(data?.avgPos, 1)} hint="Posición promedio de las keywords trackeadas que aparecen en el top 100. Más bajo es mejor." />
+            <Stat label="Clicks 90d" value={fmt(sum("clicks"))} hint="Clics desde Google en los últimos 90 días (Search Console)." />
+            <Stat label="Impr. 90d" value={fmt(sum("impressions"))} hint="Veces que tu sitio apareció en resultados de Google en 90 días (Search Console)." />
           </div>,
         ];
       case "gsc":

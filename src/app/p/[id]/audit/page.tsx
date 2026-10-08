@@ -1,11 +1,23 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useProject } from "@/components/Shell";
-import { api, cx, DataTable, Drawer, Empty, fmt, Icon, Score, SEV, Stat, Tabs, useApi, type Col } from "@/components/ui";
+import { api, cx, DataTable, Drawer, Empty, fmt, Hint, Icon, Score, SEV, Stat, Tabs, useApi, type Col } from "@/components/ui";
+import { ISSUE_FIX, ISSUE_WHY } from "@/lib/audit/fixes";
+
+const SEV_HINT: Record<string, string> = {
+  critical: "Problemas que impiden que Google vea o indexe páginas. Arreglar primero.",
+  warning: "Problemas que bajan el rendimiento SEO. Arreglar después de los críticos.",
+  info: "Mejoras recomendadas. No penalizan por sí solas; revisa si aplican a tu sitio.",
+};
 
 type PageRow = { id: string; url: string; status: number; titleLen: number; metaLen: number; wordCount: number; depth: number; inlinks: number; outlinks: number; responseMs: number; canonicalType: string; noindex: boolean; inSitemap: boolean; orphan: boolean; jsonldTypes: string[]; imgNoAlt: number; title: string | null; issues: number };
 type IssueAgg = { code: string; label: string; severity: string; count: number };
 
+/** Sin el "Sin H1: " inicial, que repite el nombre del issue. */
+const short = (t: string) => {
+  const r = t.replace(/^[^:.]{1,32}:\s*/, "");
+  return r.charAt(0).toUpperCase() + r.slice(1);
+};
 const path = (u: string) => u.replace(/^https?:\/\/[^/]+/, "") || "/";
 const statusCls = (s: number) => (s === 200 ? "text-emerald-600" : s >= 300 && s < 400 ? "text-amber-600" : "text-rose-600");
 
@@ -101,14 +113,14 @@ export default function AuditPage() {
       ) : (
         <>
           <div className="card grid grid-cols-2 items-center gap-6 p-4 md:grid-cols-8">
-            <div className="row-span-2 md:row-span-1"><Score value={st.health} size={72} /></div>
-            <Stat label="URLs" value={fmt(st.pages)} />
-            <Stat label="Errores" value={fmt(st.errors)} tone={st.errors ? "bad" : undefined} />
-            <Stat label="Redirects" value={fmt(st.redirects)} />
-            <Stat label="Huérfanas" value={fmt(st.orphans)} />
-            <Stat label="Sitemap" value={fmt(st.sitemap)} />
-            <Stat label="Resp. media" value={ms(st.avgMs)} />
-            <Stat label="Externos" value={fmt(st.external)} />
+            <div className="row-span-2 flex items-start gap-1 md:row-span-1"><Score value={st.health} size={72} /><Hint text="Salud de 0 a 100: baja 5 puntos por cada crítico y 1 por cada warning, en proporción a las URLs revisadas." /></div>
+            <Stat label="URLs" value={fmt(st.pages)} hint="Páginas revisadas: las que el crawler encontró siguiendo links, más las del sitemap que no alcanzó por links." />
+            <Stat label="Errores" value={fmt(st.errors)} tone={st.errors ? "bad" : undefined} hint="Páginas que respondieron con error (404, 500) o no respondieron." />
+            <Stat label="Redirects" value={fmt(st.redirects)} hint="URLs que redirigen a otra. Normal en pocas; los links internos deberían apuntar directo a la URL final." />
+            <Stat label="Huérfanas" value={fmt(st.orphans)} hint="Están en el sitemap pero ninguna página revisada las enlaza. Si el crawl llegó al máximo, muchas pueden ser falsas: sube el máximo." />
+            <Stat label="Sitemap" value={fmt(st.sitemap)} hint="URLs listadas en tu sitemap.xml." />
+            <Stat label="Resp. media" value={ms(st.avgMs)} hint="Tiempo promedio del servidor en responder el HTML. Bajo 500 ms está bien; sobre 1,5 s es lento." />
+            <Stat label="Externos" value={fmt(st.external)} hint="Dominios externos distintos a los que enlaza tu sitio." />
           </div>
 
           <Tabs value={tab} onChange={setTab} items={[{ id: "issues", label: "Issues" }, { id: "urls", label: "URLs" }, { id: "speed", label: "Velocidad" }, { id: "index", label: "Indexación" }]} />
@@ -120,13 +132,17 @@ export default function AuditPage() {
                   <div className="mb-2 flex items-center gap-2">
                     <span className={cx("h-2.5 w-2.5 rounded-full", SEV[sev])} />
                     <span className="lbl">{sev === "critical" ? "Crítico" : sev === "warning" ? "Warning" : "Info"}</span>
+                    <Hint text={SEV_HINT[sev]} />
                     <span className="ml-auto text-sm font-semibold tabular-nums">{fmt(issues.filter((i) => i.severity === sev).reduce((s, i) => s + i.count, 0))}</span>
                   </div>
                   <div className="space-y-0.5">
                     {issues.filter((i) => i.severity === sev).sort((a, b) => b.count - a.count).map((i) => (
                       <button key={i.code} onClick={() => setIssue(i)} className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm hover:bg-ink-100 dark:hover:bg-ink-800">
-                        {i.label}
-                        <span className="ml-auto tabular-nums text-ink-500">{fmt(i.count)}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block">{i.label}</span>
+                          {ISSUE_WHY[i.code] && <span className="block truncate text-xs text-ink-400" title={ISSUE_WHY[i.code]}>{short(ISSUE_WHY[i.code])}</span>}
+                        </span>
+                        <span className="ml-3 tabular-nums text-ink-500">{fmt(i.count)}</span>
                       </button>
                     ))}
                     {!issues.some((i) => i.severity === sev) && <div className="px-2 py-1.5 text-sm text-ink-300">—</div>}
@@ -239,6 +255,12 @@ function IssueDrawer({ crawlId, issue, onClose, onUrl }: { crawlId?: string; iss
         <h2 className="text-lg font-semibold">{issue?.label}</h2>
         <span className="text-ink-400">{fmt(issue?.count)}</span>
       </div>
+      {issue && (ISSUE_WHY[issue.code] || ISSUE_FIX[issue.code]) && (
+        <div className="mt-3 space-y-2 rounded-lg bg-ink-50 p-3 text-sm dark:bg-ink-800/50">
+          {ISSUE_WHY[issue.code] && <p><b className="font-medium">Qué es: </b><span className="text-ink-600 dark:text-ink-300">{ISSUE_WHY[issue.code]}</span></p>}
+          {ISSUE_FIX[issue.code] && <p><b className="font-medium">Cómo arreglarlo: </b><span className="text-ink-600 dark:text-ink-300">{ISSUE_FIX[issue.code]}</span></p>}
+        </div>
+      )}
       <div className="mt-4 divide-y divide-ink-100 dark:divide-ink-800">
         {data?.map((r) => (
           <button key={r.id} className="block w-full py-2 text-left hover:text-acc" onClick={() => onUrl(r.url)}>

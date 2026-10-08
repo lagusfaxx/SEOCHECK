@@ -49,6 +49,9 @@ const PATHS: Record<string, string> = {
   sparkle: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z",
   lock: "M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4",
   doc: "M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7",
+  menu: "M4 6h16M4 12h16M4 18h16",
+  chevl: "M15 6l-6 6 6 6",
+  chevr: "M9 6l6 6-6 6",
 };
 
 export function Icon({ name, className = "h-4 w-4" }: { name: keyof typeof PATHS | string; className?: string }) {
@@ -59,10 +62,22 @@ export function Icon({ name, className = "h-4 w-4" }: { name: keyof typeof PATHS
   );
 }
 
-export function Stat({ label, value, sub, tone }: { label: string; value: ReactNode; sub?: ReactNode; tone?: "good" | "bad" }) {
+/** Ícono "?" con explicación al pasar el mouse (o tocar en móvil). */
+export function Hint({ text, className }: { text: string; className?: string }) {
+  return (
+    <span tabIndex={0} className={cx("group/hint relative inline-grid h-3.5 w-3.5 cursor-help place-items-center rounded-full border border-ink-300 text-[9px] font-semibold normal-case leading-none tracking-normal text-ink-400 outline-none dark:border-ink-600", className)}>
+      ?
+      <span className="pointer-events-none absolute left-1/2 top-5 z-50 w-64 -translate-x-1/2 rounded-lg bg-ink-900 px-3 py-2 text-left text-xs font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover/hint:opacity-100 group-focus/hint:opacity-100 dark:bg-ink-700">
+        {text}
+      </span>
+    </span>
+  );
+}
+
+export function Stat({ label, value, sub, tone, hint }: { label: string; value: ReactNode; sub?: ReactNode; tone?: "good" | "bad"; hint?: string }) {
   return (
     <div className="min-w-0">
-      <div className="lbl">{label}</div>
+      <div className="lbl flex items-center gap-1">{label}{hint && <Hint text={hint} />}</div>
       <div className={cx("mt-0.5 truncate text-2xl font-semibold tabular-nums", tone === "good" && "text-emerald-600", tone === "bad" && "text-rose-600")}>{value}</div>
       {sub != null && <div className="text-xs text-ink-500">{sub}</div>}
     </div>

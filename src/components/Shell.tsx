@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSWRConfig } from "swr";
 import NewProject from "./NewProject";
-import { Bar, cx, Drawer, Icon, useApi } from "./ui";
+import { Bar, cx, Drawer, Hint, Icon, useApi, useLocal } from "./ui";
 
 type Project = { id: string; name: string; domain: string; country: string; language: string; gscProperty: string | null; settings: any; providers: Record<string, any> };
 type Job = { id: string; kind: string; status: string; progress: number; message: string | null };
@@ -12,16 +12,104 @@ type Job = { id: string; kind: string; status: string; progress: number; message
 const Ctx = createContext<{ id: string; project?: Project; jobs: Job[]; refreshJobs: () => void }>({ id: "", jobs: [], refreshJobs: () => {} });
 export const useProject = () => useContext(Ctx);
 
-const NAV = [
-  { href: "", icon: "home", label: "Resumen" },
-  { href: "/keywords", icon: "key", label: "Keywords" },
-  { href: "/audit", icon: "audit", label: "Auditoría" },
-  { href: "/rank", icon: "rank", label: "Rankings" },
-  { href: "/gsc", icon: "gsc", label: "Search Console" },
-  { href: "/content", icon: "content", label: "Contenido" },
-  { href: "/report", icon: "doc", label: "Informe" },
-  { href: "/settings", icon: "gear", label: "Ajustes" },
+type NavItem = { href: string; icon: string; label: string; desc: string; jobs?: string[]; intro: string; steps?: string[] };
+
+const NAV: { group: string; items: NavItem[] }[] = [
+  {
+    group: "General",
+    items: [
+      {
+        href: "", icon: "home", label: "Resumen", desc: "Estado del proyecto",
+        intro: "Vista general: keywords, salud técnica, rankings, Search Console y gasto del mes. Arrastra los bloques para ordenarlos; el botón 1/3 de cada bloque cambia su ancho.",
+      },
+      {
+        href: "/report", icon: "doc", label: "Informe", desc: "Todo de una + informe", jobs: ["report.full"],
+        intro: "Corre todos los módulos de una vez y arma un informe con las tareas ordenadas por prioridad. Está escrito para pasárselo a tu agente de código (Claude Code) y que aplique las correcciones en el sitio.",
+        steps: ["Elige qué módulos correr. Keywords viene apagado porque gasta créditos de Serpent.", "Aprieta Correr todo. Tarda unos minutos; abajo del botón ves cada paso en verde, gris (saltado) o rojo.", "Copia el informe o descárgalo en .md y pégaselo a Claude Code."],
+      },
+    ],
+  },
+  {
+    group: "Investigar",
+    items: [
+      {
+        href: "/keywords", icon: "key", label: "Keywords", desc: "Qué busca la gente", jobs: ["keywords.run"],
+        intro: "Descubre qué busca la gente sobre tu negocio. Partes de pocas semillas; se expanden con el autocompletado de Google, las preguntas frecuentes y tu Search Console, se les agrega volumen y se agrupan en clusters. Un cluster son keywords a las que Google responde con las mismas páginas: van juntas en una sola URL. Los clusters se agrupan en topics.",
+        steps: ["Escribe 3 a 5 semillas (ej. \"masajes santiago\") y aprieta Correr.", "Revisa el tablero o el mapa: cada cluster es una página a crear u optimizar; el score ordena por oportunidad.", "Arrastra keywords entre clusters o renombra: los cambios manuales quedan con candado y se respetan al volver a correr."],
+      },
+      {
+        href: "/content", icon: "content", label: "Contenido", desc: "Optimizar una página", jobs: ["content.analyze"],
+        intro: "Compara una página tuya con el top 10 de Google para una keyword: qué términos, secciones y preguntas tienen los que rankean y a ti te faltan. Genera un brief con títulos, estructura H2/H3 y FAQ.",
+        steps: ["Pega la URL de tu página y la keyword que quieres rankear.", "Mira el score y los términos marcados como faltantes.", "Usa el brief (títulos, outline, FAQ) para reescribir la página."],
+      },
+    ],
+  },
+  {
+    group: "Monitorear",
+    items: [
+      {
+        href: "/audit", icon: "audit", label: "Auditoría", desc: "Salud técnica del sitio", jobs: ["audit.crawl", "audit.psi", "audit.inspect"],
+        intro: "Recorre tu sitio como lo haría Google y detecta problemas técnicos: errores, redirects, títulos y metas, contenido duplicado, páginas huérfanas, velocidad (PageSpeed) e indexación (Search Console).",
+        steps: ["Aprieta Crawlear con un máximo mayor que la cantidad de páginas del sitio (si no, aparecen huérfanas falsas).", "Corrige primero los Críticos, después los Warnings. Los Info son mejoras opcionales.", "Haz clic en un issue para ver qué significa, cómo se arregla y qué URLs lo tienen."],
+      },
+      {
+        href: "/rank", icon: "rank", label: "Rankings", desc: "Posiciones en Google", jobs: ["rank.check"],
+        intro: "Sigue la posición de tus keywords en Google (top 100) cada semana. Avisa cuando una keyword cae más de 3 posiciones, cuando dos páginas tuyas compiten por la misma keyword (canibalización) y cuando el CTR es bajo para la posición.",
+        steps: ["Agrega las keywords que te importan (una por línea).", "Se revisan solas cada semana; Revisar las actualiza ahora (gasta Serpent).", "Haz clic en una keyword para ver su historial y el top 10 actual."],
+      },
+      {
+        href: "/gsc", icon: "gsc", label: "Search Console", desc: "Datos reales de Google", jobs: ["gsc.sync"],
+        intro: "Clics, impresiones, CTR y posición reales por consulta y página, sacados de Google Search Console. Requiere la propiedad configurada en Ajustes y la cuenta de servicio con acceso.",
+      },
+    ],
+  },
+  {
+    group: "Configurar",
+    items: [
+      {
+        href: "/settings", icon: "gear", label: "Ajustes", desc: "Proyecto y crawler",
+        intro: "Configuración del proyecto: propiedad de Search Console, opciones del crawler (User-Agent, límites, parámetros a ignorar), expansión de keywords y frecuencia de rankings.",
+      },
+    ],
+  },
 ];
+const ALL_NAV = NAV.flatMap((g) => g.items);
+
+function Intro({ item }: { item: NavItem }) {
+  const [open, setOpen] = useLocal<boolean>(`help:${item.href || "home"}`, true);
+  if (!open)
+    return (
+      <button onClick={() => setOpen(true)} className="btn-g mx-4 mt-3 text-xs md:mx-6">
+        <Hint text={item.intro} /> ¿Para qué sirve {item.label}?
+      </button>
+    );
+  return (
+    <div className="mx-4 mt-4 rounded-xl border border-acc/20 bg-acc-soft/60 p-4 text-sm dark:border-acc/30 dark:bg-acc/10 md:mx-6">
+      <div className="flex items-start gap-3">
+        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white text-acc dark:bg-ink-900">
+          <Icon name={item.icon} className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-ink-900 dark:text-ink-100">{item.label}</div>
+          <p className="mt-0.5 max-w-3xl leading-relaxed text-ink-600 dark:text-ink-300">{item.intro}</p>
+          {item.steps && (
+            <ol className="mt-2 grid gap-1.5 md:grid-cols-3">
+              {item.steps.map((st, i) => (
+                <li key={i} className="flex gap-2 text-ink-600 dark:text-ink-300">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-acc text-[11px] font-semibold text-white">{i + 1}</span>
+                  <span className="leading-snug">{st}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+        <button onClick={() => setOpen(false)} className="btn-g shrink-0 px-1" title="ocultar">
+          <Icon name="x" className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const JOB_LABEL: Record<string, string> = {
   "keywords.run": "keywords", "audit.crawl": "crawl", "audit.psi": "pagespeed", "audit.inspect": "inspección",
@@ -49,25 +137,68 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
   }, [jobs, id, mutate]);
 
   const base = `/p/${id}`;
+  const [slim, setSlim] = useLocal<boolean>("nav:slim", false);
+  const [menu, setMenu] = useState(false);
+  // la sección más específica que coincide con la ruta (/content/xyz → Contenido)
+  const current = [...ALL_NAV].sort((a, b) => b.href.length - a.href.length).find((n) => (n.href === "" ? path === base : path.startsWith(base + n.href)));
   const active = jobs.filter((j) => j.status === "queued" || j.status === "running" || j.status === "error");
 
   return (
     <Ctx.Provider value={{ id, project, jobs, refreshJobs: () => refreshJobs() }}>
       <div className="flex h-screen">
-        <nav className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-ink-200 bg-white py-3 dark:border-ink-800 dark:bg-ink-900">
-          {NAV.map((n) => {
-            const href = base + n.href;
-            const on = n.href === "" ? path === base : path.startsWith(href);
-            return (
-              <Link key={n.href} href={href} title={n.label} className={cx("group relative grid h-10 w-10 place-items-center rounded-lg transition", on ? "bg-acc-soft text-acc dark:bg-acc/20" : "text-ink-400 hover:bg-ink-100 hover:text-ink-800 dark:hover:bg-ink-800")}>
-                <Icon name={n.icon} className="h-[18px] w-[18px]" />
-                <span className="pointer-events-none absolute left-12 z-50 whitespace-nowrap rounded-md bg-ink-900 px-2 py-1 text-xs text-white opacity-0 transition group-hover:opacity-100">{n.label}</span>
-              </Link>
-            );
-          })}
+        {menu && <div className="fixed inset-0 z-30 bg-black/30 md:hidden" onClick={() => setMenu(false)} />}
+        <nav
+          className={cx(
+            "fixed inset-y-0 left-0 z-40 flex shrink-0 flex-col border-r border-ink-200 bg-white transition-all dark:border-ink-800 dark:bg-ink-900 md:static md:translate-x-0",
+            menu ? "translate-x-0" : "-translate-x-full",
+            slim ? "w-64 md:w-16" : "w-64"
+          )}
+        >
+          <div className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
+            {NAV.map((g) => (
+              <div key={g.group}>
+                <div className={cx("lbl mb-1 px-3", slim && "md:hidden")}>{g.group}</div>
+                <div className="space-y-0.5">
+                  {g.items.map((n) => {
+                    const href = base + n.href;
+                    const on = n === current;
+                    const busy = n.jobs && jobs.some((j) => n.jobs!.includes(j.kind) && (j.status === "queued" || j.status === "running"));
+                    return (
+                      <Link
+                        key={n.href}
+                        href={href}
+                        onClick={() => setMenu(false)}
+                        title={slim ? `${n.label} · ${n.desc}` : undefined}
+                        className={cx(
+                          "group relative flex items-center gap-3 rounded-lg px-3 py-2 transition",
+                          slim && "md:justify-center md:px-0",
+                          on ? "bg-acc-soft text-acc dark:bg-acc/20" : "text-ink-600 hover:bg-ink-100 hover:text-ink-900 dark:text-ink-300 dark:hover:bg-ink-800"
+                        )}
+                      >
+                        {on && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-acc" />}
+                        <Icon name={n.icon} className="h-[18px] w-[18px] shrink-0" />
+                        <span className={cx("min-w-0 flex-1", slim && "md:hidden")}>
+                          <span className="block text-sm font-medium leading-tight">{n.label}</span>
+                          <span className={cx("block truncate text-[11px] leading-tight", on ? "text-acc/70" : "text-ink-400")}>{n.desc}</span>
+                        </span>
+                        {busy && <span className={cx("h-2 w-2 shrink-0 animate-pulse rounded-full bg-acc", slim && "md:absolute md:right-2 md:top-2")} />}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => setSlim(!slim)} className="btn-g m-2 hidden justify-center md:flex" title={slim ? "expandir menú" : "achicar menú"}>
+            <Icon name={slim ? "chevr" : "chevl"} className="h-4 w-4" />
+            {!slim && <span className="text-xs">achicar</span>}
+          </button>
         </nav>
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-12 shrink-0 items-center gap-3 border-b border-ink-200 bg-white px-4 dark:border-ink-800 dark:bg-ink-900">
+            <button className="btn-g px-1 md:hidden" onClick={() => setMenu(true)} aria-label="menú">
+              <Icon name="menu" className="h-5 w-5" />
+            </button>
             <div className="relative">
               <button className="btn-g font-medium text-ink-900 dark:text-ink-100" onClick={() => setSwitcher(!switcher)}>
                 {project?.domain ?? "…"}
@@ -99,7 +230,10 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
               ))}
             </div>
           </header>
-          <main className="min-h-0 flex-1 overflow-auto">{children}</main>
+          <main className="min-h-0 flex-1 overflow-auto">
+            {current && <Intro key={current.href} item={current} />}
+            {children}
+          </main>
         </div>
       </div>
       <Drawer open={newOpen} onClose={() => setNewOpen(false)}>

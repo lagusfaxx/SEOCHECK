@@ -1,45 +1,9 @@
 import { db } from "./db";
 import { env } from "./env";
 import { ISSUE_LABELS } from "./audit/issues";
+import { ISSUE_FIX } from "./audit/fixes";
 import { hostOf } from "./util";
 
-/** Cómo se corrige cada issue: instrucción corta para quien edita el código del sitio. */
-export const ISSUE_FIX: Record<string, string> = {
-  http_4xx: "Restaurar la página o redirigir con 301 a la URL equivalente; quitar los links internos que apuntan aquí.",
-  http_5xx: "Error del servidor: revisar el handler/logs de esa ruta.",
-  fetch_failed: "No respondió (timeout/conexión): revisar el servidor para esa ruta.",
-  blocked_by_waf: "El WAF/Cloudflare bloquea bots: permitir Googlebot y revisar las reglas de bot fight.",
-  ssrf_blocked: "La URL apunta a una IP interna: revisar el link.",
-  redirect_chain: "Apuntar el primer redirect directo al destino final y actualizar los links internos a la URL final.",
-  redirect: "La URL del sitemap redirige: poner en el sitemap la URL final.",
-  broken_link: "Link interno a una URL rota (detalle = destino): corregir el href en la página origen o en su plantilla.",
-  noindex_in_sitemap: "Página noindex dentro del sitemap: sacarla del sitemap o quitar el noindex.",
-  title_missing: "Agregar <title> único y descriptivo (≤ 60 caracteres).",
-  title_long: "Acortar el <title> a ≤ 60 caracteres (detalle = largo actual); en plantillas, recortar la parte fija/marca.",
-  title_short: "Alargar el <title> con la keyword principal y un calificador (25–60 caracteres).",
-  title_dup: "Hacer el <title> único por página (incluir el dato que diferencia: nombre, comuna, categoría, página N).",
-  meta_missing: "Agregar meta description única (140–155 caracteres).",
-  meta_long: "Recortar la meta description a ≤ 155 caracteres (detalle = largo actual).",
-  meta_short: "Ampliar la meta description a 140–155 caracteres.",
-  meta_dup: "Hacer la meta description única por página.",
-  h1_missing: "Agregar un único <h1> con el tema principal de la página.",
-  h1_multiple: "Dejar un solo <h1>; el resto como <h2>.",
-  canonical_missing: "Agregar <link rel=\"canonical\"> autorreferente con la URL absoluta.",
-  canonical_other: "Canonical apunta a otra URL (detalle = destino): confirmar que sea intencional.",
-  jsonld_invalid: "JSON-LD que no parsea: corregir la serialización (comillas, comas, caracteres sin escapar).",
-  thin_content: "Menos de 250 palabras (detalle = palabras): ampliar en páginas que deben rankear (categorías, landings); en fichas, sumar texto útil generado desde datos.",
-  dup_content: "Contenido idéntico a otras URLs (detalle): diferenciar o canonicalizar a una sola.",
-  img_no_alt: "Imágenes sin atributo alt (detalle = cantidad): agregar alt descriptivo en la plantilla.",
-  deep_page: "A más de 3 clics de la home: acercarla con links internos (menú, categorías, relacionados).",
-  orphan: "Está en el sitemap pero ninguna página la enlaza: agregar links internos desde listados/categorías/relacionados.",
-  slow: "Respuesta lenta del servidor (detalle = ms): cachear o optimizar la consulta de esa ruta.",
-  no_inlinks: "Sin links entrantes: enlazarla desde páginas relacionadas.",
-  robots_missing: "Crear /robots.txt con la URL del sitemap.",
-  sitemap_missing: "Crear sitemap.xml y declararlo en robots.txt.",
-  blocked_robots: "Bloqueada por robots.txt: confirmar que sea intencional; si debe indexarse, quitar el Disallow.",
-  hreflang_no_self: "Agregar el hreflang autorreferente.",
-  noindex: "Página con noindex: confirmar que sea intencional.",
-};
 
 const SEV_ORDER = ["critical", "warning", "info"] as const;
 const SEV_LABEL: Record<string, string> = { critical: "Crítico", warning: "Warning", info: "Info" };
