@@ -25,20 +25,36 @@ export function normalizeGscProperty(input: string): string {
  * entre comillas, o con los saltos de línea de la private_key convertidos en saltos reales.
  */
 export function parseServiceAccount(input: string): { client_email: string; private_key: string } {
-  let raw = input.trim().replace(/^'([\s\S]*)'$/, "$1");
-  if (!raw.startsWith("{") && !raw.startsWith('"')) raw = Buffer.from(raw, "base64").toString("utf8").trim();
+  let raw = input
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .replace(/^'([\s\S]*)'$/, "$1");
+  if (!/^[{"\\]/.test(raw)) raw = Buffer.from(raw, "base64").toString("utf8").trim();
+  // reparaciones para lo que suele pasar al copiar/pegar en un panel, de menos a más invasiva
+  const fixes: ((s: string) => string)[] = [
+    (s) => s,
+    // espacios "raros" (no-break, de ancho cero) y comillas tipográficas que vienen de copiar desde una web o un editor
+    (s) => s.replace(/[\u00A0\u2000-\u200B\u202F\u205F\u3000]/g, " ").replace(/[\u201C\u201D]/g, '"'),
+    // comillas escapadas por el panel: {\"type\": ...}
+    (s) => s.replace(/^"([\s\S]*)"$/, "$1").replace(/\\"/g, '"'),
+  ];
   let j: any;
-  try {
-    j = JSON.parse(raw);
-  } catch {
-    try {
-      // saltos de línea reales dentro de los strings → \n
-      j = JSON.parse(raw.replace(/\r?\n/g, "\\n"));
-    } catch {
-      throw new Error("GSC_SERVICE_ACCOUNT_JSON no es un JSON válido: pega el archivo .json completo de la cuenta de servicio (o en base64)");
+  let fixed = raw;
+  for (let i = 0; i < fixes.length && j === undefined; i++) {
+    fixed = fixes[i](fixed);
+    for (const cand of [fixed, fixed.replace(/\r?\n/g, "\\n")]) {
+      try {
+        j = JSON.parse(cand);
+        break;
+      } catch {}
     }
   }
-  if (typeof j === "string") j = JSON.parse(j);
+  if (j === undefined) {
+    const hint = `(${raw.length} caracteres, empieza con ${JSON.stringify(raw.slice(0, 12))}${raw.includes("BEGIN PRIVATE KEY") ? ", tiene la clave" : ", sin la clave privada: ¿quedó cortado?"})`;
+    throw new Error(`GSC_SERVICE_ACCOUNT_JSON no es un JSON válido ${hint}. Lo más seguro: pegarlo en base64 (ver README).`);
+  }
+  // venía como string JSON (doble serializado): repetir con su contenido
+  if (typeof j === "string") return parseServiceAccount(j);
   if (!j?.client_email || !j?.private_key) throw new Error("GSC_SERVICE_ACCOUNT_JSON no tiene client_email/private_key: ¿es el JSON de una cuenta de servicio?");
   return { client_email: j.client_email, private_key: String(j.private_key).replace(/\\n/g, "\n") };
 }

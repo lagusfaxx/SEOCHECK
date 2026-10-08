@@ -66,6 +66,14 @@ Multi-tenant: `Workspace → Project`; todo cuelga de `projectId`.
 
 GSC: crea una service account, agrega su email como usuario de la propiedad y pega el JSON (crudo o base64) en `GSC_SERVICE_ACCOUNT_JSON`. Propiedad en ajustes del proyecto (`sc-domain:dominio.cl` o `https://dominio.cl/`).
 
+Si el panel deforma el JSON (comillas, saltos de línea), pégalo en base64, que es una sola línea sin caracteres especiales:
+
+```
+base64 -w0 cuenta.json                                                   # Linux
+base64 -i cuenta.json | tr -d '\n'                                       # macOS
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\ruta\cuenta.json"))  # PowerShell
+```
+
 IndexNow: publica `https://dominio/<INDEXNOW_KEY>.txt` con la key como contenido.
 
 ## LLM

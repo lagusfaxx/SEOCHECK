@@ -72,6 +72,11 @@ test("GSC_SERVICE_ACCOUNT_JSON: tal cual, base64, entre comillas y con saltos de
   assert.deepEqual(parseServiceAccount(`'${json}'`), want);
   // el panel convirtió los \n del JSON en saltos de línea reales
   assert.deepEqual(parseServiceAccount(json.replace(/\\n/g, "\n")), want);
-  assert.throws(() => parseServiceAccount("{nope"), /no es un JSON válido/);
+  // copiado desde una web: espacios no-break entre las claves
+  assert.deepEqual(parseServiceAccount(json.replace(/,/g, ",\u00A0\u00A0\u00A0").replace("{", "{\u00A0\u00A0")), want);
+  // el panel escapó las comillas
+  assert.deepEqual(parseServiceAccount(json.replace(/"/g, '\\"')), want);
+  assert.deepEqual(parseServiceAccount(`"${json.replace(/"/g, '\\"')}"`), want);
+  assert.throws(() => parseServiceAccount("{nope"), /no es un JSON válido \(5 caracteres, empieza con "\{nope", sin la clave/);
   assert.throws(() => parseServiceAccount(JSON.stringify({ a: 1 })), /client_email/);
 });
