@@ -3,6 +3,7 @@ import { env } from "../env";
 import { fetchT } from "../util";
 import { db } from "../db";
 import { GscNotConnected, markConnectionError, projectClient } from "../gsc-oauth";
+import { httpFail, netFail, ProviderError } from "./errors";
 
 /**
  * Propiedad de Search Console: `sc-domain:dominio.cl` (propiedad de dominio) o
@@ -212,9 +213,17 @@ export async function urlInspect(site: string, url: string, languageCode = "es-C
 export async function pageSpeed(url: string, strategy: "mobile" | "desktop") {
   const p = new URLSearchParams({ url, strategy, category: "performance" });
   if (env.psiKey) p.set("key", env.psiKey);
-  const res = await fetchT(`https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${p}`, { timeoutMs: 120000 });
-  if (res.status === 429) throw new Error(`PSI 429: cuota agotada${env.psiKey ? "" : " (sin PAGESPEED_API_KEY la cuota anónima es mínima)"}`);
-  if (!res.ok) throw new Error(`PSI ${res.status}`);
+  const res = await fetchT(`https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${p}`, { timeoutMs: 120000 }).catch((e) => {
+    throw netFail("PageSpeed", e);
+  });
+  if (res.status === 429) throw new ProviderError("PageSpeed", "rate_limit", `PageSpeed: cuota agotada${env.psiKey ? "" : " (sin PAGESPEED_API_KEY la cuota anónima es mínima)"}`, 429);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    // 400/500 de Lighthouse con la URL: el sitio no se pudo medir (no es un problema de la key)
+    if ((res.status === 400 || res.status === 500) && /lighthouse|FAILED_DOCUMENT_REQUEST|ERRORED_DOCUMENT_REQUEST|NO_FCP/i.test(body))
+      throw new ProviderError("PageSpeed", "bad_request", `PageSpeed no pudo cargar ${url} (el sitio bloqueó a Lighthouse o tardó demasiado)`, res.status);
+    throw httpFail("PageSpeed", res.status, body);
+  }
   return parsePsi(await res.json());
 }
 

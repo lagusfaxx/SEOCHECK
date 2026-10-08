@@ -3,6 +3,7 @@ import { env } from "./env";
 import { ISSUE_LABELS } from "./audit/issues";
 import { ISSUE_FIX } from "./audit/fixes";
 import { hostOf, urlKey } from "./util";
+import { coverage, emptyText, STATE_LABEL } from "./coverage";
 import { brandFromDomain, DISCREPANCY_HINT, EASE, EASE_LABEL, expectedCtrAt, isBrandQuery, isParamCanonical, makeTask, PRIVATE_PATH, psiVerdict, SEV_WEIGHT, byPriority, MINOR_ONPAGE, spellingVariants, type PsiField, type Task } from "./report-rules";
 
 const SEV_ORDER = ["critical", "warning", "info"] as const;
@@ -48,6 +49,8 @@ export async function buildReport(projectId: string): Promise<string> {
   const siteHost = hostOf(`https://${site}`);
   const mine = (u: string) => hostOf(u) === siteHost || hostOf(u).endsWith(`.${siteHost}`);
   const brand = brandFromDomain(site);
+  const cov = await coverage(projectId);
+  const mod = (k: string) => cov.find((m) => m.key === k);
   const tasks: Task[] = [];
   const notes: string[] = [];
   const intentional: string[] = [];
@@ -144,7 +147,7 @@ export async function buildReport(projectId: string): Promise<string> {
     auditOut.push(
       `Crawl del ${date(crawl.startedAt)} · máx ${opts.maxPages ?? "–"} páginas${opts.render ? " · render JS" : ""}\n`,
       table(
-        ["Salud", "URLs", "Errores", "Redirects", "Huérfanas", "En sitemap", "Resp. media", "Críticos", "Warnings", "Info"],
+        ["Salud técnica", "URLs", "Errores", "Redirects", "Huérfanas", "En sitemap", "Resp. media", "Críticos", "Warnings", "Info"],
         [[st.health, st.pages, st.errors, st.redirects, st.orphans, st.sitemap, `${st.avgMs} ms`, st.critical, st.warning, st.info]]
       )
     );
@@ -206,7 +209,7 @@ export async function buildReport(projectId: string): Promise<string> {
       );
     }
   } else {
-    auditOut.push("_Sin crawl terminado._");
+    auditOut.push(emptyText(mod("crawl")));
   }
 
   // ---------- Velocidad: campo primero, laboratorio solo sin datos de campo ----------
@@ -395,7 +398,7 @@ export async function buildReport(projectId: string): Promise<string> {
       );
     }
   } else {
-    gscOut.push(p.gscProperty ? "_Sin datos sincronizados._" : "_Sin propiedad de Search Console configurada._");
+    gscOut.push(emptyText(mod("gsc")));
   }
 
   // ---------- Alertas (canibalización: marca o todas en posición ≤ 1,5 = intencional) ----------
@@ -474,7 +477,7 @@ export async function buildReport(projectId: string): Promise<string> {
       );
     }
   } else {
-    kwOut.push("_Sin research de keywords terminado._");
+    kwOut.push(emptyText(mod("keywords")));
   }
 
   // ---------- Contenido (entra en la priorización como cualquier tarea) ----------
@@ -532,6 +535,14 @@ export async function buildReport(projectId: string): Promise<string> {
     "> **Para el agente que edita el código:** este informe viene de un análisis externo del sitio en producción. Las tareas están ordenadas por impacto (tráfico afectado × severidad × facilidad). Para cada una, ubica en el repositorio la ruta/plantilla indicada (p. ej. `/perfil/*`) y corrige ahí, no URL por URL. No inventes datos de negocio; si un texto depende de datos reales, genéralo desde los campos existentes. Antes de cambiar redirects, canonicals o robots.txt, confirma que no se pierdan páginas indexadas.",
     ""
   );
+  // qué datos respaldan este informe: "sin datos" no es lo mismo que "falló"
+  out.push(
+    "## Cobertura de datos",
+    "",
+    table(["Módulo", "Estado", "Detalle"], cov.map((m) => [m.label, `${m.state === "ok" ? "✓" : m.state === "failed" ? "✗" : m.state === "partial" ? "◐" : "–"} ${STATE_LABEL[m.state]}`, m.detail])),
+    ...(cov.some((m) => m.state === "failed") ? ["", "> ⚠ Hay módulos cuyo último intento falló: lo que muestra este informe para ellos puede estar desactualizado o incompleto."] : []),
+    ""
+  );
   if (trends.length) out.push("## Tendencias", "", ...trends, "");
   if (notes.length) out.push("## Avisos", "", ...notes.map((n) => `- ${n}`), "");
   out.push(
@@ -551,7 +562,7 @@ export async function buildReport(projectId: string): Promise<string> {
     "## Velocidad (PageSpeed)",
     "",
     ...(psiOut.length ? [...psiOut, ""] : []),
-    table(
+    !psiRows.length ? emptyText(mod("psi")) : table(
       ["URL", "Estrategia", "Score lab", "LCP lab ms", "Usuarios reales (campo)"],
       psiRows.map((r) => {
         const lab = r.lab as Record<string, number | null>;
@@ -567,14 +578,14 @@ export async function buildReport(projectId: string): Promise<string> {
     "",
     inspLatest.size
       ? table(["URL", "Veredicto", "Cobertura", "Canonical Google", "Canonical declarado", "Último rastreo"], [...inspLatest.values()].map((r) => [r.url, r.verdict, r.coverageState, r.googleCanonical, r.userCanonical, r.lastCrawl?.toISOString().slice(0, 10)]))
-      : "_Sin inspecciones._",
+      : emptyText(mod("inspect")),
     ""
   );
   if (alertOut.length) out.push("## Alertas", "", ...alertOut, "");
   out.push(
     "## Rankings",
     "",
-    rankRows.length ? table(["Keyword", "Pos.", "Anterior", "URL", "Revisado"], rankRows.map((r) => [r.k, r.pos ?? (r.at ? ">100" : "–"), r.prev ?? "–", r.url, r.at?.toISOString().slice(0, 10)])) : "_Sin keywords trackeadas._",
+    rankRows.length ? table(["Keyword", "Pos.", "Anterior", "URL", "Revisado"], rankRows.map((r) => [r.k, r.pos ?? (r.at ? ">100" : "–"), r.prev ?? "–", r.url, r.at?.toISOString().slice(0, 10)])) : emptyText(mod("rank")),
     ""
   );
   out.push("## Keywords y clusters", "", ...kwOut, "");

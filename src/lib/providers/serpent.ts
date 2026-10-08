@@ -3,6 +3,7 @@ import { logCost } from "../costs";
 import { SERPENT_USD_PER_CALL } from "../pricing";
 import { jobLog } from "../jobctx";
 import { fetchT, hostOf } from "../util";
+import { httpFail, netFail, ProviderError } from "./errors";
 import type { Serp, SerpOpts, SerpProvider } from "./types";
 
 type Any = Record<string, any>;
@@ -50,15 +51,17 @@ let rawLogsLeft = Number(process.env.SERPENT_LOG_RAW ?? 3);
 
 export class SerpentProvider implements SerpProvider {
   private async call(path: "/api/search" | "/api/search/quick", q: string, params: Record<string, string>) {
-    if (!env.serpentKey) throw new Error("Falta SERPENT_API_KEY");
+    if (!env.serpentKey) throw new ProviderError("Serpent", "not_configured", "Falta SERPENT_API_KEY");
     const p = new URLSearchParams({ q, ...params });
     let last: unknown;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const res = await fetchT(`${env.serpentBase}${path}?${p}`, { headers: { "X-API-Key": env.serpentKey }, timeoutMs: 60000 });
-        if (res.status === 429 || res.status >= 500) throw new Error(`Serpent ${res.status}`);
+        const res = await fetchT(`${env.serpentBase}${path}?${p}`, { headers: { "X-API-Key": env.serpentKey }, timeoutMs: 60000 }).catch((e) => {
+          throw netFail("Serpent", e);
+        });
         const text = await res.text();
-        if (!res.ok) throw Object.assign(new Error(`Serpent ${res.status}: ${text.slice(0, 200)}`), { fatal: true });
+        // sin saldo / key inválida / consulta mala: no se reintenta. 429 y 5xx sí (con espera creciente)
+        if (!res.ok) throw httpFail("Serpent", res.status, text);
         if (rawLogsLeft > 0) {
           // Respuesta cruda de las primeras llamadas (SERPENT_LOG_RAW, def. 3): para verificar la forma real
           // de peopleAlsoAsk/relatedSearches. Queda en el log del job y en stdout.
@@ -67,8 +70,8 @@ export class SerpentProvider implements SerpProvider {
         }
         return JSON.parse(text);
       } catch (e: any) {
-        last = e;
-        if (e?.fatal) break;
+        last = e instanceof SyntaxError ? new ProviderError("Serpent", "down", "Serpent devolvió una respuesta inválida") : e;
+        if (last instanceof ProviderError && !last.transient) break;
         await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
       }
     }
