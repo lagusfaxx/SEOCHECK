@@ -19,7 +19,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: "General",
     items: [
-      { href:"/tasks",icon:"check",label:"Tareas",desc:"Qué hacer ahora",intro:"Tareas persistentes, prioridades e historial entre auditorías." },
+      { href:"/tasks",icon:"check",label:"Tareas",desc:"Seguimiento",intro:"Tareas persistentes, prioridades e historial entre auditorías." },
       {
         href: "", icon: "home", label: "Resumen", desc: "Estado del proyecto",
         intro: "Vista general: keywords, salud técnica, rankings, Search Console y gasto del mes. Arrastra los bloques para ordenarlos; el botón 1/3 de cada bloque cambia su ancho.",

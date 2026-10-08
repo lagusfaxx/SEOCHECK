@@ -97,8 +97,7 @@ export function ProjectProgress() {
       )}
       {data.experience === "beginner" && (
         <p className="text-sm text-ink-500">
-          Comienza con una auditoría. En “Qué hago ahora” verás hasta cinco
-          prioridades y el motivo de cada una.
+          Comienza con una auditoría. En el resumen verás las tareas pendientes.
         </p>
       )}
       <details className="text-sm">
