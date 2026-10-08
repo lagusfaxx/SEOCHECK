@@ -64,3 +64,5 @@ La guía GSC se abre desde la ayuda de conexión y muestra un paso a la vez. Se 
 Las auditorías existentes generan sus tareas automáticamente al consultarlas. “Verificar correcciones” ejecuta una nueva auditoría con las opciones anteriores, respetando el límite del plan. Las tareas de auditoría se solucionan al confirmar que la URL se leyó correctamente y el error desapareció en un crawl completo; un crawl parcial no confirma correcciones. Las tareas manuales conservan su gestión de estado.
 
 El PDF ejecutivo agrega problemas agrupados con impacto, corrección y ejemplos, consultas GSC, velocidad medida y alcance por fuente. El PDF técnico añade el contenido completo del Markdown con evidencia e instrucciones de implementación. Los snapshots anteriores mantienen sus datos originales; los nuevos campos estarán presentes al generar otra versión.
+
+El resumen muestra hasta tres tareas pendientes en una tabla compacta, sin colores por categoría ni controles repetidos. Los detalles se abren desde Tareas; la lista completa está paginada de doce en doce. El bloque desaparece si no hay pendientes.
