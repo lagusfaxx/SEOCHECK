@@ -42,6 +42,16 @@ El informe (`GET /api/p/{id}/report`, `?download=1` para bajar el `.md`) se arma
 
 Mapa de relaciones estilo Maltego (`/p/{id}/explore`). Cada nodo es una entidad (sitio, topic, cluster, keyword, página propia o externa, dominio, problema, pregunta) y cada uno tiene transformaciones que agregan lo relacionado: top 10 de Google de una keyword, quién enlaza a una página, keywords donde aparece un competidor, páginas afectadas por un problema, consultas de Search Console, etc. Las transformaciones solo leen la base (`GET /api/p/{id}/graph/expand`), no llaman APIs pagadas. El mapa se guarda en el navegador.
 
+## Acceso y permisos
+
+- La primera vez que se abre la instalación se crea el **dueño** en `/setup`. Los proyectos que ya existían pasan a ser suyos.
+- Cada persona entra con email y contraseña (scrypt, sesión en cookie httpOnly de 30 días; en la base solo el hash del token).
+- **Workspaces**: cada cliente/agencia ve solo sus proyectos. Roles: dueño, admin (invita y borra proyectos) y miembro. Ajustes → Equipo.
+- Registro abierto solo con `SIGNUP_ENABLED=true` (cada cuenta nueva con su propio workspace); por defecto, solo por invitación.
+- Recuperación de contraseña por correo con `RESEND_API_KEY` + `MAIL_FROM`. Sin correo, quien invita recibe el link y el administrador puede generar uno: `npm run user -- reset email@dominio.cl`.
+- Rate limit en login (por IP y por cuenta), recuperación, invitaciones y API; CSRF por Origin; todo id que llega por parámetro se valida contra el proyecto (404 si es de otro).
+- `BASIC_AUTH` sigue disponible como capa extra.
+
 ## Local
 
 ```bash

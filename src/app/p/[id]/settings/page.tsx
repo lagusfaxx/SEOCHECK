@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useSWRConfig } from "swr";
 import { useProject } from "@/components/Shell";
 import { api, cx, Icon } from "@/components/ui";
+import { AccountCard, TeamCard } from "@/components/Account";
 
 const PROVIDERS: [string, string][] = [
   ["serp", "Serpent"], ["volume", "Volumen"], ["embeddings", "Embeddings"], ["llm", "LLM"],
@@ -123,6 +124,8 @@ export default function Settings() {
           );
         })}
       </div>
+      <TeamCard />
+      <AccountCard />
     </div>
   );
 }

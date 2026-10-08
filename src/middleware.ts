@@ -1,12 +1,32 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-/** Basic auth opcional: BASIC_AUTH=usuario:clave */
+/** Rutas que se pueden ver sin sesión. */
+const PUBLIC = [/^\/login$/, /^\/setup$/, /^\/forgot$/, /^\/reset$/, /^\/api\/auth\//, /^\/api\/health$/, /^\/api\/oauth\/google\/callback$/];
+
+/**
+ * Primera barrera (edge): sin cookie de sesión no se entra; la sesión y los permisos se validan de verdad en cada
+ * ruta de la API (Node). Además: CSRF por Origin en métodos que modifican, y BASIC_AUTH opcional encima de todo.
+ */
 export function middleware(req: NextRequest) {
   const cred = process.env.BASIC_AUTH;
-  if (!cred) return NextResponse.next();
-  const h = req.headers.get("authorization");
-  if (h?.startsWith("Basic ") && atob(h.slice(6)) === cred) return NextResponse.next();
-  return new NextResponse("auth", { status: 401, headers: { "WWW-Authenticate": 'Basic realm="seo"' } });
+  if (cred) {
+    const h = req.headers.get("authorization");
+    if (!(h?.startsWith("Basic ") && atob(h.slice(6)) === cred)) return new NextResponse("auth", { status: 401, headers: { "WWW-Authenticate": 'Basic realm="seo"' } });
+  }
+  const { pathname } = req.nextUrl;
+  // CSRF: un POST/PATCH/DELETE desde otro sitio no puede usar la cookie de sesión
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    const origin = req.headers.get("origin");
+    const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+    if (origin && host && new URL(origin).host !== host) return NextResponse.json({ error: "Origen no permitido" }, { status: 403 });
+  }
+  if (PUBLIC.some((r) => r.test(pathname))) return NextResponse.next();
+  if (req.cookies.get("sc_session")?.value) return NextResponse.next();
+  if (pathname.startsWith("/api/")) return NextResponse.json({ error: "Inicia sesión" }, { status: 401 });
+  const url = req.nextUrl.clone();
+  url.pathname = "/login";
+  url.search = pathname !== "/" ? `?next=${encodeURIComponent(pathname)}` : "";
+  return NextResponse.redirect(url);
 }
 
-export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|api/health).*)"] };
+export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"] };

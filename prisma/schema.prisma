@@ -11,8 +11,70 @@ datasource db {
 model Workspace {
   id        String    @id @default(cuid())
   name      String
+  /// workspace del dueño de la instancia: puede usar la cuenta de servicio de GSC compartida
+  trusted   Boolean   @default(false)
   createdAt DateTime  @default(now())
   projects  Project[]
+  members   Membership[]
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String?
+  /// scrypt$N$r$p$salt$hash
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  lastLoginAt  DateTime?
+  memberships  Membership[]
+  sessions     Session[]
+  resets       PasswordReset[]
+}
+
+model Membership {
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// owner | admin | member
+  role        String    @default("member")
+  createdAt   DateTime  @default(now())
+
+  @@id([userId, workspaceId])
+  @@index([workspaceId])
+}
+
+/// Sesión de navegador: se guarda el hash del token, nunca el token.
+model Session {
+  id         String   @id
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  lastSeenAt DateTime @default(now())
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}
+
+model PasswordReset {
+  /// hash del token
+  id        String    @id
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+/// Contadores de rate limit (login, recuperación, API).
+model RateLimit {
+  key     String   @id
+  count   Int
+  resetAt DateTime
 }
 
 model Project {

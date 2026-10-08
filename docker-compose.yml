@@ -37,6 +37,10 @@ services:
       DATABASE_URL: postgresql://seo:${POSTGRES_PASSWORD:-seo}@db:5432/seo
       TZ: ${TZ:-America/Santiago}
       BASIC_AUTH: ${BASIC_AUTH:-}
+      APP_URL: ${APP_URL:-}
+      SIGNUP_ENABLED: ${SIGNUP_ENABLED:-false}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-}
       SERPENT_API_KEY: ${SERPENT_API_KEY:-}
       DATAFORSEO_LOGIN: ${DATAFORSEO_LOGIN:-}
       DATAFORSEO_PASSWORD: ${DATAFORSEO_PASSWORD:-}

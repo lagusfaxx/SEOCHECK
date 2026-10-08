@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { cancelJob, enqueue, QUEUES } from "@/lib/queue";
+import { AuthError, memLimit, requireProject, requireUser } from "@/lib/auth";
 import { sweepStale, workerAlive } from "@/lib/jobs";
 import { refreshCluster } from "@/lib/keywords/pipeline";
 import { ISSUE_LABELS } from "@/lib/audit/issues";
@@ -509,6 +510,16 @@ function make(table: Record<string, H>) {
     const key = path.join("/");
     const h = table[key];
     if (!h) return bad("not found", 404);
+    let user;
+    try {
+      user = await requireUser(req);
+      if (!memLimit(`api:${user.id}`, 600, 60_000)) return bad("Demasiadas solicitudes: espera un minuto", 429);
+      // borrar el proyecto: solo owner/admin del workspace; todo lo demás, cualquier miembro
+      await requireProject(user.id, params.id, req.method === "DELETE" && key === "" ? "admin" : "member");
+    } catch (e) {
+      if (e instanceof AuthError) return bad(e.message, e.status);
+      throw e;
+    }
     let body: any = {};
     if (req.method !== "GET") {
       const ct = req.headers.get("content-type") ?? "";
@@ -518,8 +529,8 @@ function make(table: Record<string, H>) {
       const r = await h({ id: params.id, path, url: new URL(req.url), body });
       return r instanceof Response ? r : ok(r);
     } catch (e) {
-      console.error(`[api] ${req.method} ${key}`, e);
       if (e instanceof HttpError) return bad(e.message, e.status);
+      console.error(`[api] ${req.method} ${key}`, e);
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") return bad("no existe", 404);
       if (e instanceof Error && e.message.startsWith("Propiedad GSC inválida")) return bad(e.message, 400);
       if (e instanceof BudgetError) return bad(e.message, 402);
