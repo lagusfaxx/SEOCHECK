@@ -16,6 +16,15 @@ model Workspace {
   createdAt DateTime  @default(now())
   projects  Project[]
   members   Membership[]
+  plan String @default("trial")
+  branding Json @default("{}")
+  billing BillingOrder[]
+  stripeCustomerId String? @unique
+  stripeSubscriptionId String? @unique
+  planValidUntil DateTime?
+  trialEndsAt DateTime @default(dbgenerated("(now() + '14 days'::interval)"))
+  reportCredits Int @default(0)
+  quotaUsage QuotaUsage[]
 }
 
 model User {
@@ -105,6 +114,10 @@ model Project {
   contents    ContentAnalysis[]
   jobs        JobRun[]
   gscConnection GscConnection?
+  tasks ProjectTask[]
+  explorations Exploration[]
+  reports ReportSnapshot[]
+  reportSchedule ReportSchedule?
 }
 
 /// Conexión OAuth de Google Search Console del proyecto (la cuenta de Google del cliente). Token cifrado.
@@ -214,6 +227,7 @@ model Cluster {
   volume    Int       @default(0)
   score     Float     @default(0)
   urls      String[]
+  targetUrl String?
   topicId   String?
   topic     Topic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
   isPillar  Boolean   @default(false)
@@ -428,6 +442,8 @@ model ContentAnalysis {
   result    Json     @default("{}")
   brief     Json     @default("{}")
   createdAt DateTime @default(now())
+  versions BriefVersion[]
+  pageKind String?
 }
 
 model CorpusTerm {
@@ -528,4 +544,120 @@ model BudgetReservation {
   createdAt DateTime @default(now())
 
   @@id([holder, provider])
+}
+
+model ProjectTask {
+  id          String      @id @default(cuid())
+  projectId   String
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fingerprint String
+  title       String
+  code        String?
+  url         String?
+  severity    String      @default("info")
+  category    String      @default("improvement")
+  reason      String
+  status      String      @default("detected")
+  source      String      @default("manual")
+  priority    Float       @default(0)
+  firstSeenAt DateTime    @default(now())
+  lastSeenAt  DateTime    @default(now())
+  lastCrawlId String?
+  resolvedAt  DateTime?
+  updatedAt   DateTime    @updatedAt
+  events      TaskEvent[]
+
+  @@unique([projectId, fingerprint])
+  @@index([projectId, status, priority])
+}
+
+model TaskEvent {
+  id        String      @id @default(cuid())
+  taskId    String
+  task      ProjectTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  status    String
+  actor     String?
+  crawlId   String?
+  note      String?
+  createdAt DateTime    @default(now())
+
+  @@index([taskId, createdAt])
+}
+
+model BriefVersion {
+  id        String          @id @default(cuid())
+  contentId String
+  content   ContentAnalysis @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  brief     Json
+  source    String
+  actor     String?
+  createdAt DateTime        @default(now())
+
+  @@index([contentId, createdAt])
+}
+
+model Exploration {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  graph     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+model ReportSnapshot {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  executive Json
+  markdown  String
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+model ReportSchedule {
+  projectId String   @id
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  frequency String
+  nextAt    DateTime
+  enabled   Boolean  @default(true)
+
+  @@index([enabled, nextAt])
+}
+
+model BillingOrder {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product     String
+  provider    String    @default("flow")
+  providerId  String?   @unique
+  amount      Int
+  currency    String    @default("CLP")
+  status      String    @default("pending")
+  createdAt   DateTime  @default(now())
+  paidAt      DateTime?
+
+  @@index([workspaceId, createdAt])
+}
+
+model StripeEvent {
+  id        String   @id
+  type      String
+  createdAt DateTime @default(now())
+}
+
+model QuotaUsage {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  resource    String
+  amount      Int       @default(1)
+  createdAt   DateTime  @default(now())
+
+  @@index([workspaceId, resource, createdAt])
 }

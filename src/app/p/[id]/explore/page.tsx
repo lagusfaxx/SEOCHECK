@@ -17,7 +17,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useProject } from "@/components/Shell";
-import { api, cx, Icon, useLocal } from "@/components/ui";
+import { api, cx, Icon, useLocal, useApi } from "@/components/ui";
 import { TRANSFORMS, TYPE_LABEL, type GNode, type GResult, type GType } from "@/lib/graph-types";
 
 type ND = GNode & { busy?: boolean; done?: string[] };
@@ -118,13 +118,20 @@ function forceLayout(nodes: GN[], edges: Edge[], iterations = 300): GN[] {
 }
 
 function Explorer() {
-  const { id } = useProject();
+  const { id, project, refreshJobs } = useProject();
   const key = `graph:${id}`;
   const [nodes, setNodes, onNodesChange] = useNodesState<GN>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [sel, setSel] = useState<string | null>(null);
   const [note, setNote] = useState<string>("");
   const [q, setQ] = useState("");
+  const [graphName,setGraphName] = useState("");
+  const [activeExploration,setActiveExploration] = useState("");
+  const [filterText,setFilterText] = useState("");
+  const [ownership,setOwnership] = useState("all");
+  const [comparison,setComparison] = useState<any>(null);
+  const {data:savedGraphs,mutate:reloadSaved} = useApi<any[]>(`/api/p/${id}/explorations`);
+  const nodeAction = async (fn:()=>Promise<void>) => { try { await fn(); setNote(""); } catch(e) { setNote((e as Error).message); } };
   const [results, setResults] = useState<GNode[]>([]);
   const loaded = useRef(false);
   const rf = useReactFlow();
@@ -291,7 +298,9 @@ function Explorer() {
 
   const [hiddenTypes, setHiddenTypes] = useLocal<GType[]>(`graph:hidden:${id}`, []);
   // el sitio nunca se oculta: es la raíz
-  const visibleNodes = useMemo(() => (hiddenTypes.length ? nodes.map((n) => (hiddenTypes.includes(n.data.type) && n.data.type !== "site" ? { ...n, hidden: true } : n)) : nodes), [nodes, hiddenTypes]);
+  const visibleNodes = useMemo(() => nodes.map(n=>({...n,hidden:n.data.type!=="site" && (hiddenTypes.includes(n.data.type) || (!!filterText&&!n.data.label.toLowerCase().includes(filterText.toLowerCase())) || (ownership!=="all" && n.data.type==="page" && (ownership==="own"?!n.data.own:!!n.data.own)))})),[nodes,hiddenTypes,filterText,ownership]);
+  const visibleIds = new Set(visibleNodes.filter(n=>!n.hidden).map(n=>n.id));
+  const visibleEdges = edges.map(e=>({...e,hidden:!visibleIds.has(e.source)||!visibleIds.has(e.target)}));
 
   const counts = useMemo(() => {
     const m = new Map<GType, number>();
@@ -303,7 +312,7 @@ function Explorer() {
     <div className="relative min-h-[520px] flex-1">
       <ReactFlow
         nodes={visibleNodes}
-        edges={edges}
+        edges={visibleEdges}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
@@ -343,6 +352,15 @@ function Explorer() {
           <button className="btn shadow-sm" onClick={relayout} title="ordenar el grafo automáticamente"><Icon name="map" />Ordenar</button>
           <button className="btn shadow-sm" onClick={() => confirm("¿Empezar de nuevo desde el sitio?") && reset()} title="empezar de nuevo"><Icon name="refresh" /></button>
         </div>
+        <div className="pointer-events-auto flex flex-wrap gap-1">
+          <input className="input w-40" placeholder="Nombre de exploración" value={graphName} maxLength={100} onChange={e=>setGraphName(e.target.value)}/>
+          <button className="btn" onClick={()=>nodeAction(async()=>{if(!graphName.trim())throw new Error("Escribe un nombre");const g=await api(`/api/p/${id}/explorations`,"POST",{name:graphName,eid:activeExploration||undefined,graph:{nodes:nodes.map(n=>({...n,data:{...n.data,busy:false}})),edges,filters:{text:filterText,ownership,hiddenTypes}}});setActiveExploration(g.id);await reloadSaved();})}>Guardar</button>
+          <select aria-label="Exploraciones guardadas" className="input w-44" value={activeExploration} onChange={e=>nodeAction(async()=>{const eid=e.target.value;setActiveExploration(eid);if(!eid){setGraphName("");return;}const g=await api(`/api/p/${id}/explorations/one?eid=${eid}`);setNodes(g.graph.nodes);setEdges(g.graph.edges);setGraphName(g.name);setFilterText(g.graph.filters?.text??"");setOwnership(g.graph.filters?.ownership??"all");setHiddenTypes(g.graph.filters?.hiddenTypes??[]);setSel(null);})}><option value="">Nueva exploración</option>{savedGraphs?.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select>
+          {activeExploration&&<button className="btn" onClick={()=>nodeAction(async()=>{await api(`/api/p/${id}/explorations`,"DELETE",{eid:activeExploration});setActiveExploration("");setGraphName("");await reloadSaved();})}>Borrar guardada</button>}
+          <input className="input w-40" placeholder="Filtrar nodos visibles" value={filterText} onChange={e=>setFilterText(e.target.value)}/>
+          <select aria-label="Filtro de propiedad" className="input w-auto" value={ownership} onChange={e=>setOwnership(e.target.value)}><option value="all">Todas las páginas</option><option value="own">Páginas propias</option><option value="external">Competidores</option></select>
+        </div>
+        {note&&!selNode&&<p className="pointer-events-auto rounded bg-amber-50 p-2 text-xs text-amber-800">{note}</p>}
         <div className="flex flex-wrap gap-1">
           {(Object.keys(STYLE) as GType[]).filter((t) => counts.get(t)).map((t) => (
             <button
@@ -376,6 +394,10 @@ function Explorer() {
             )}
           </div>
           <div className="flex-1 space-y-1 overflow-auto p-2">
+            <button className="btn mb-2 w-full" onClick={()=>nodeAction(async()=>{await api(`/api/p/${id}/tasks`,"POST",{title:selNode.data.label.slice(0,200),reason:`Revisar ${TYPE_LABEL[selNode.data.type]} desde la exploración: ${selNode.data.key}`.slice(0,2000),url:selNode.data.url});setNote("Tarea creada");})}>Crear tarea desde este nodo</button>
+            {selNode.data.type==="cluster"&&<button className="btn mb-2 w-full" onClick={()=>nodeAction(async()=>{const url=prompt("URL propia para el brief");if(!url)return;const a=await api(`/api/p/${id}/content/cluster`,"POST",{clusterId:selNode.data.key,url});refreshJobs();window.location.assign(`/p/${id}/content/${a.id}`);})}>Generar brief del cluster</button>}
+            {selNode.data.type==="page"&&!selNode.data.own&&<button className="btn mb-2 w-full" onClick={()=>nodeAction(async()=>{const ownUrl=prompt("URL propia para comparar",`https://${project?.domain}/`);if(!ownUrl)return;setComparison(await api(`/api/p/${id}/content/competitor`,"POST",{ownUrl,competitorUrl:selNode.data.url??selNode.data.key}));})}>Comparar con tu contenido</button>}
+            {comparison&&<div className="mb-2 rounded bg-ink-100 p-2 text-xs dark:bg-ink-800"><p>Comparación medida · {new Date(comparison.fetchedAt).toLocaleString("es-CL")}</p><p>Palabras editoriales: {comparison.own.words} propias / {comparison.competitor.words} competidor</p><p>H2 propios: {comparison.own.headings.filter((h:any)=>h.tag==="h2").length}; competidor: {comparison.competitor.headings.filter((h:any)=>h.tag==="h2").length}</p><p>Encabezados del competidor: {comparison.competitor.headings.map((h:any)=>h.text).join(" · ")}</p></div>}
             <div className="flex items-center px-1 pb-1">
               <span className="lbl">Expandir</span>
               {TRANSFORMS[selNode.data.type].length > 1 && (

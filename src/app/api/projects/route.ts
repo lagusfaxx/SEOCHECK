@@ -1,3 +1,4 @@
+import { createProjectWithinPlan, PlanLimitError } from "@/lib/plans";
 import { db } from "@/lib/db";
 import { normDomain } from "@/lib/util";
 import { normalizeGscProperty } from "@/lib/providers/google";
@@ -15,7 +16,7 @@ export async function GET(req: Request) {
     const projects = await db.project.findMany({ where: { workspaceId: { in: await userWorkspaceIds(u.id) } }, orderBy: { createdAt: "asc" } });
     return Response.json(projects);
   } catch (e) {
-    return e instanceof AuthError ? fail(e.message, e.status) : fail("Error interno", 500);
+    return e instanceof AuthError || e instanceof PlanLimitError ? fail(e.message, e.status) : fail("Error interno", 500);
   }
 }
 
@@ -38,8 +39,7 @@ export async function POST(req: Request) {
     const country = String(b.country ?? "cl").toLowerCase();
     const domain = normDomain(String(b.domain));
     if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)) return fail("Dominio inválido");
-    const p = await db.project.create({
-      data: {
+    const p = await createProjectWithinPlan(workspaceId, {
         workspaceId,
         name: b.name || domain,
         domain,
@@ -47,10 +47,9 @@ export async function POST(req: Request) {
         language: b.language ?? "es",
         locationCode: b.locationCode ?? LOCATIONS[country] ?? 2152,
         gscProperty: b.gscProperty ? normalizeGscProperty(b.gscProperty) : null,
-      },
     });
     return Response.json(p);
   } catch (e) {
-    return e instanceof AuthError ? fail(e.message, e.status) : fail("Error interno", 500);
+    return e instanceof AuthError || e instanceof PlanLimitError ? fail(e.message, e.status) : fail("Error interno", 500);
   }
 }

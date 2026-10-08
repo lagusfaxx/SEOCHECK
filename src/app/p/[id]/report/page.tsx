@@ -1,4 +1,5 @@
 "use client";
+import { ReportTools } from "@/components/ReportTools";
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { useProject } from "@/components/Shell";
@@ -61,6 +62,7 @@ export default function ReportPage() {
 
   return (
     <div className="space-y-4 p-4 md:p-6">
+      <ReportTools />
       <div className="card space-y-3 p-3">
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <span className="text-ink-500">https://{project?.domain}</span>

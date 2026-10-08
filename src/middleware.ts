@@ -8,6 +8,8 @@ const PUBLIC = [/^\/login$/, /^\/setup$/, /^\/forgot$/, /^\/reset$/, /^\/api\/au
  * ruta de la API (Node). Además: CSRF por Origin en métodos que modifican, y BASIC_AUTH opcional encima de todo.
  */
 export function middleware(req: NextRequest) {
+  // Stripe authenticates this exact endpoint with its signed raw payload, not browser cookies or Basic Auth.
+  if (req.nextUrl.pathname === "/api/billing/webhook" && req.method === "POST") return NextResponse.next();
   const { pathname } = req.nextUrl;
   // healthcheck de Docker/Coolify: siempre abierto. Si responde 401, el contenedor queda "unhealthy"
   // y el proxy (Traefik) deja de enrutar el sitio: se ve "404 page not found".

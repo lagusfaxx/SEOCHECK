@@ -52,7 +52,7 @@ export async function onboarding(projectId: string) {
   const status: Record<Step, "done" | "running" | "todo" | "skipped" | "failed"> = {
     site: "done",
     audit: !crawl ? "todo" : ["queued", "running"].includes(crawl.status) ? "running" : crawl.status === "failed" || crawl.status === "cancelled" ? "failed" : "done",
-    gsc: gscMode && p.gscProperty ? "done" : st.skipped?.includes("gsc") ? "skipped" : "todo",
+    gsc: gscMode && p.gscProperty ? "done" : st.skipGsc || st.skipped?.includes("gsc") ? "skipped" : "todo",
     keywords: !run ? (st.skipped?.includes("keywords") ? "skipped" : "todo") : run.status === "done" ? "done" : run.status === "error" ? "failed" : "running",
     rank: tracked ? "done" : st.skipped?.includes("rank") ? "skipped" : "todo",
   };

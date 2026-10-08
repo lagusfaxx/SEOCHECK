@@ -1,5 +1,7 @@
 "use client";
+import { ContentTools } from "@/components/ContentTools";
 import { statusLabel } from "@/lib/status";
+import { useSWRConfig } from "swr";
 import { useEffect, useRef, useState } from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -7,9 +9,10 @@ import { CSS } from "@dnd-kit/utilities";
 import { useProject } from "@/components/Shell";
 import { api, Bar, CopyBtn, cx, Empty, fmt, Hint, Icon, Score, Tabs, useApi, Spinner } from "@/components/ui";
 
-type Block = { id: string; tag: "h2" | "h3"; text: string; notes?: string };
+type Block = { id: string; tag: "h2" | "h3"; text: string; notes?: string; state?: "optional" | "required" | "removed" };
 type Brief = {
-  kind?: "article" | "listing";
+  kind?: "article" | "listing" | "landing" | "product";
+  provenance?: "ai" | "rules";
   titles: string[];
   metas: string[];
   outline: Block[];
@@ -47,6 +50,7 @@ function OutlineItem({ b, onChange, onDelete }: { b: Block; onChange: (b: Block)
         <input value={b.text} onChange={(e) => onChange({ ...b, text: e.target.value })} className="w-full bg-transparent text-sm font-medium outline-none" />
         {b.notes != null && <input value={b.notes} onChange={(e) => onChange({ ...b, notes: e.target.value })} className="w-full bg-transparent text-xs text-ink-400 outline-none" placeholder="notas" />}
       </div>
+      <select aria-label="Estado del encabezado" className="input w-auto text-xs" value={b.state??"optional"} onChange={e=>onChange({...b,state:e.target.value as Block["state"]})}><option value="optional">Opcional</option><option value="required">Obligatorio</option><option value="removed">Eliminado</option></select>
       <button onClick={onDelete} className="btn-g p-0.5 opacity-0 group-hover:opacity-100"><Icon name="x" className="h-3.5 w-3.5" /></button>
     </div>
   );
@@ -54,6 +58,8 @@ function OutlineItem({ b, onChange, onDelete }: { b: Block; onChange: (b: Block)
 
 export default function ContentDetail({ params }: { params: { cid: string } }) {
   const { id, refreshJobs } = useProject();
+  const {mutate:invalidate}=useSWRConfig();
+  const [saveError,setSaveError]=useState("");
   const { data, mutate } = useApi<any>(`/api/p/${id}/content/one?cid=${params.cid}`, { refreshInterval: (d?: any) => (d && !["done", "error"].includes(d.status) ? 2500 : 0) });
   const [brief, setBrief] = useState<Brief | null>(null);
   const [tab, setTab] = useState<"terms" | "sections" | "paa" | "comp">("terms");
@@ -74,8 +80,7 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
     if (!brief || !data) return;
     const t = setTimeout(async () => {
       setSaving(true);
-      await api(`/api/p/${id}/content`, "PATCH", { cid: data.id, brief });
-      setSaving(false);
+      try { await api(`/api/p/${id}/content`, "PATCH", { cid: data.id, brief }); setSaveError(""); await invalidate(`/api/p/${id}/content/versions?cid=${data.id}`); } catch(e) { setSaveError((e as Error).message); } finally { setSaving(false); }
     }, 800);
     return () => clearTimeout(t);
   }, [brief, data, id]);
@@ -111,7 +116,7 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
         "",
         ...(listing
           ? [brief.intro ?? "", "", "## Filtros", ...(brief.filters ?? []).map((f) => `- ${f}`), "", "## Links internos", ...(brief.links ?? []).map((l) => `- ${l.anchor} → ${l.to}`)]
-          : brief.outline.map((b) => `${b.tag === "h2" ? "##" : "###"} ${b.text}${b.notes ? `\n${b.notes}` : ""}`)),
+          : brief.outline.filter(b=>b.state!=="removed").map((b) => `${b.tag === "h2" ? "##" : "###"} ${b.text}${b.notes ? `\n${b.notes}` : ""}`)),
         "",
         "## FAQ",
         ...brief.faq.map((f) => `**${f.q}**\n${f.a}`),
@@ -120,9 +125,11 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
 
   return (
     <div className="grid gap-4 p-4 md:p-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+      <div className="xl:col-span-2"><ContentTools cid={params.cid} brief={brief} onChange={setBrief}/></div>
       {/* Análisis */}
       <div className="space-y-4">
         <div className="card flex items-center gap-5 p-4">
+          <div className="text-xs text-ink-500">Datos medidos · página propia y SERP</div>
           <Score value={r.score} size={92} />
           <div className="min-w-0 flex-1">
             <div className="truncate text-lg font-semibold">{data.keyword}</div>
@@ -263,6 +270,7 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
         </div>
       </div>
 
+      {saveError&&<p role="alert" className="text-rose-700">No se pudo guardar: {saveError}</p>}
       {/* Brief */}
       <div className="space-y-4">
         <div className="flex items-center gap-2">

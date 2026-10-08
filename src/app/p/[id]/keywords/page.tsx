@@ -1,4 +1,5 @@
 "use client";
+import { KeywordInsights } from "@/components/KeywordInsights";
 import { useState } from "react";
 import Board from "@/components/kw/Board";
 import MindMap from "@/components/kw/MindMap";
@@ -42,6 +43,7 @@ export default function KeywordsPage() {
 
   return (
     <div className="space-y-4 p-4 md:p-6">
+      <KeywordInsights runId={data?.runId} />
       <div className="card flex flex-wrap items-center gap-2 p-3">
         <div className="flex min-w-[280px] flex-1 flex-wrap items-center gap-1.5 rounded-lg border border-ink-200 px-2 py-1 focus-within:border-acc dark:border-ink-700">
           {seeds.map((s) => (

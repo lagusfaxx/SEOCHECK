@@ -1,3 +1,5 @@
+import { crawlLimit } from "../plans";
+import { syncCrawlTasks } from "../tasks";
 import { createHash } from "node:crypto";
 import * as cheerio from "cheerio";
 import pLimit from "p-limit";
@@ -440,6 +442,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     ...projectCrawler,
     ...(crawl.options as CrawlOptions),
   };
+  o.maxPages = await crawlLimit(crawl.projectId,o.maxPages ?? 500);
   const ua = o.userAgent || env.userAgent;
   const patterns = new PatternLimiter(o.maxPerPattern ?? 0);
   const clean = (u: string) => normUrl(stripParams(u, o.ignoreParams ?? []))!;
@@ -636,6 +639,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   if (note) Object.assign(stats, { health: null, healthNote: note });
   if (await cancelled()) throw new NoRetryError("Crawl cancelado");
   await db.crawl.update({ where: { id: crawlId }, data: { status: outcome.status, reason: outcome.reason, stats, finishedAt: new Date() } });
+  await syncCrawlTasks(crawlId);
   if (outcome.status === "failed") throw new NoRetryError(outcome.reason ?? "Crawl fallido");
   return { ...stats, status: outcome.status };
 }

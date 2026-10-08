@@ -1,3 +1,4 @@
+import { projectPlan, withProjectQuota } from "../plans";
 import pLimit from "p-limit";
 import { db } from "../db";
 import { gscAvailable, gscQuery } from "../providers/google";
@@ -31,6 +32,11 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   const p = run.project;
   const settings = (p.settings ?? {}) as Record<string, any>;
   const opts: Opts = { maxKeywords: 400, serpTop: 150, useGsc: true, minShared: 3, serpExpansion: 20, ...(settings.keywords ?? {}) };
+  const plan = await projectPlan(p.id);
+  const existingTerms = new Set((await db.keyword.findMany({where:{projectId:p.id},select:{term:true}})).map(k=>k.term));
+  const used = await db.keyword.count({where:{project:{workspaceId:plan.workspace.id}}});
+  const remaining = Math.max(0,plan.limits.keywords-used);
+  opts.maxKeywords = Math.min(opts.maxKeywords ?? 400,remaining+existingTerms.size);
   const brands: string[] = settings.brands ?? [p.domain.split(".")[0]];
   // Presupuesto: cota superior de lo que este research puede gastar, antes de cualquier llamada
   await assertBudget(
@@ -137,6 +143,7 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
     .map((t, i) => ({ term: t, rel: rel[i], vec: vecs[i], src: [...sources.get(t)!] }))
     .filter((k) => k.src.includes("seed") || k.rel >= run.threshold)
     .sort((a, b) => b.rel - a.rel)
+    .filter(k=>existingTerms.has(k.term) || remaining>0)
     .slice(0, opts.maxKeywords);
   stats.relevant = kept.length;
 
@@ -225,14 +232,16 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   const lockedElsewhere = new Set(
     (await db.keyword.findMany({ where: { projectId: p.id, locked: true, term: { in: rows.map((r) => r.term) } }, select: { term: true } })).map((k) => k.term)
   );
+  await withProjectQuota(p.id,"keywords",async tx => rows.length - await tx.keyword.count({where:{projectId:p.id,term:{in:rows.map(r=>r.term)}}}),async tx=>{
   for (const r of rows) {
     const locked = lockedTerms.has(r.term) || lockedElsewhere.has(r.term);
-    await db.keyword.upsert({
+    await tx.keyword.upsert({
       where: { projectId_term: { projectId: p.id, term: r.term } },
       create: { ...r, projectId: p.id, runId },
       update: locked ? r : { ...r, runId, clusterId: null },
     });
   }
+  });
   const free = rows.filter((r) => !lockedTerms.has(r.term) && !lockedElsewhere.has(r.term));
 
   // 5. Clustering por overlap (solo keywords no bloqueadas)

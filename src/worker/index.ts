@@ -1,3 +1,4 @@
+import { nextReportAt, saveReport } from "../lib/reporting";
 import type PgBoss from "pg-boss";
 import { db } from "../lib/db";
 import { env } from "../lib/env";
@@ -80,8 +81,23 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
     }
     case QUEUES.full: {
       const steps = await runFull(d.projectId, d.opts ?? {}, d.jobRunId);
+      await saveReport(d.projectId);
       return steps.map((s) => `${s.step}:${s.status}`).join(" ");
     }
+    case QUEUES.reportsDue: {
+      const now = new Date();
+      const due = await db.reportSchedule.findMany({where:{enabled:true,nextAt:{lte:now}}});
+      for (const schedule of due) {
+        const claimed = await db.reportSchedule.updateMany({where:{projectId:schedule.projectId,nextAt:schedule.nextAt,enabled:true},data:{nextAt:nextReportAt(schedule.frequency,now)}});
+        if (claimed.count) {
+          try { await enqueue(schedule.projectId,QUEUES.reportSnapshot,{}); }
+          catch (e) { await db.reportSchedule.updateMany({where:{projectId:schedule.projectId,nextAt:{gt:now}},data:{nextAt:schedule.nextAt}}); throw e; }
+        }
+      }
+      return;
+    }
+    case QUEUES.reportSnapshot:
+      return saveReport(d.projectId);
     case QUEUES.content:
       // si falla (también por presupuesto) el análisis queda "falló" con el motivo, nunca colgado en "en cola"
       try {
@@ -141,6 +157,7 @@ async function main() {
   const gscCron = process.env.GSC_CRON ?? "0 7 * * *";
   await boss.schedule(QUEUES.rankDaily, rankCron, {}, { tz: env.tz });
   await boss.schedule(QUEUES.gscDaily, gscCron, {}, { tz: env.tz });
+  await boss.schedule(QUEUES.reportsDue,"0 * * * *",{}, {tz:env.tz});
   console.log("worker listo");
 }
 
