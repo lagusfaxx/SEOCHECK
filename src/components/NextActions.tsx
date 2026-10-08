@@ -56,6 +56,7 @@ export function NextActions({ all = false }: { all?: boolean }) {
             : t.status === filter),
       )
     : (data?.actions ?? []);
+  if (!all && !rows.length) return null;
   return (
     <section className="card mb-4 space-y-3 p-4">
       <div className="flex flex-wrap items-center gap-3">
