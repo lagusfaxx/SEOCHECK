@@ -37,8 +37,9 @@ export function getBoss(): Promise<PgBoss> {
 export async function enqueue(projectId: string, name: QueueName, data: Record<string, unknown>, refId?: string) {
   const run = await db.jobRun.create({ data: { projectId, kind: name, refId } });
   const boss = await getBoss();
-  await boss.send(name, { ...data, projectId, jobRunId: run.id }, { retryLimit: 1, expireInHours: 6 });
-  return run;
+  const bossId = await boss.send(name, { ...data, projectId, jobRunId: run.id }, { retryLimit: 1, expireInHours: 6 });
+  if (bossId) await db.jobRun.update({ where: { id: run.id }, data: { bossId } }).catch(() => {});
+  return { ...run, bossId };
 }
 
 export async function jobProgress(id: string | undefined, progress: number, message?: string) {
@@ -55,4 +56,14 @@ export async function jobError(id: string | undefined, err: unknown) {
   if (!id) return;
   const message = err instanceof Error ? err.message : String(err);
   await db.jobRun.update({ where: { id }, data: { status: "error", message: message.slice(0, 500) } }).catch(() => {});
+}
+
+/** Cancela un trabajo en cola o corriendo: lo saca de pg-boss y lo deja marcado en la UI. */
+export async function cancelJob(jobRunId: string) {
+  const run = await db.jobRun.findUniqueOrThrow({ where: { id: jobRunId } });
+  if (run.bossId) {
+    const boss = await getBoss();
+    await boss.cancel(run.kind, run.bossId).catch(() => {});
+  }
+  return db.jobRun.update({ where: { id: run.id }, data: { status: "error", message: "Cancelado" } });
 }

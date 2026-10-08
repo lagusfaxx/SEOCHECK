@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSWRConfig } from "swr";
 import NewProject from "./NewProject";
-import { Bar, cx, Drawer, Hint, Icon, useApi, useLocal } from "./ui";
+import { api, Bar, cx, Drawer, Hint, Icon, useApi, useLocal } from "./ui";
 
 type Project = { id: string; name: string; domain: string; country: string; language: string; gscProperty: string | null; settings: any; providers: Record<string, any> };
 type Job = { id: string; kind: string; status: string; progress: number; message: string | null };
@@ -145,7 +145,9 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
   const [slim, setSlim] = useLocal<boolean>("nav:slim", false);
   const [menu, setMenu] = useState(false);
   const [openJob, setOpenJob] = useState<string | null>(null);
-  const [dismissed, setDismissed] = useLocal<string[]>(`jobs:dismissed:${id}`, []);
+  const [dismissedAll, setDismissedAll] = useLocal<string[]>(`jobs:dismissed:${id}`, []);
+  const dismissed = dismissedAll;
+  const setDismissed = (v: string[]) => setDismissedAll(v.slice(-50));
   // la sección más específica que coincide con la ruta (/content/xyz → Contenido)
   const current = [...ALL_NAV].sort((a, b) => b.href.length - a.href.length).find((n) => (n.href === "" ? path === base : path.startsWith(base + n.href)));
   const active = jobs.filter((j) => j.status === "queued" || j.status === "running" || j.status === "error");
@@ -225,7 +227,7 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
                 </div>
               )}
             </div>
-            <div className="ml-auto flex items-center gap-2 overflow-x-auto">
+            <div className="ml-auto flex items-center gap-2 overflow-x-auto py-1.5 pr-1.5">
               {active.filter((j) => !dismissed.includes(j.id)).map((j) => (
                 <div key={j.id} className="relative shrink-0">
                   <button
@@ -238,6 +240,15 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
                     </div>
                     {j.status !== "error" && <Bar value={j.status === "queued" ? 2 : j.progress} className="h-1 w-full" />}
                   </button>
+                  {j.status === "error" && (
+                    <button
+                      title="descartar"
+                      onClick={() => setDismissed([...dismissed, j.id])}
+                      className="absolute -right-1.5 -top-1.5 grid h-4 w-4 place-items-center rounded-full bg-rose-500 text-white shadow hover:bg-rose-600"
+                    >
+                      <Icon name="x" className="h-2.5 w-2.5" />
+                    </button>
+                  )}
                   {openJob === j.id && (
                     <div className="card fixed right-4 top-14 z-50 w-[min(420px,calc(100vw-32px))] p-3 text-sm shadow-xl">
                       <div className="flex items-center gap-2">
@@ -246,12 +257,26 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
                         <button className="btn-g ml-auto px-1" onClick={() => setOpenJob(null)}><Icon name="x" className="h-4 w-4" /></button>
                       </div>
                       <p className="mt-2 whitespace-pre-wrap break-words text-ink-700 dark:text-ink-200">{j.message || "sin mensaje"}</p>
-                      {j.status === "error" && (
-                        <div className="mt-3 flex gap-2">
-                          <button className="btn text-xs" onClick={() => navigator.clipboard?.writeText(j.message ?? "")}><Icon name="copy" />Copiar</button>
-                          <button className="btn text-xs" onClick={() => { setDismissed([...dismissed, j.id]); setOpenJob(null); }}>Descartar</button>
-                        </div>
-                      )}
+                      <div className="mt-3 flex gap-2">
+                        {j.status === "error" ? (
+                          <>
+                            <button className="btn text-xs" onClick={() => navigator.clipboard?.writeText(j.message ?? "")}><Icon name="copy" />Copiar</button>
+                            <button className="btn text-xs" onClick={() => { setDismissed([...dismissed, j.id]); setOpenJob(null); }}>Descartar</button>
+                          </>
+                        ) : (
+                          <button
+                            className="btn text-xs"
+                            onClick={async () => {
+                              if (!confirm("¿Cancelar este trabajo?")) return;
+                              await api(`/api/p/${id}/jobs/cancel`, "POST", { jobId: j.id }).catch(() => {});
+                              setOpenJob(null);
+                              refreshJobs();
+                            }}
+                          >
+                            <Icon name="x" />Cancelar
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

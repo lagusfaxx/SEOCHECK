@@ -14,6 +14,7 @@ import { assertBudget, BudgetError, est } from "../lib/budget";
 import { collectDfsQueue, flushDfsQueue } from "../lib/volume/dataforseo";
 import { backfillVolumes, writeCache } from "../lib/volume/broker";
 import { runFull } from "../lib/fullrun";
+import { beat, keepAlive, recoverInterrupted, sweepStale } from "../lib/jobs";
 
 type Data = { projectId: string; jobRunId?: string; [k: string]: any };
 
@@ -98,6 +99,13 @@ const CONCURRENCY: Partial<Record<QueueName, number>> = {
 
 async function main() {
   const boss = await getBoss();
+  const n = await recoverInterrupted();
+  if (n) console.log(`[worker] ${n} trabajos interrumpidos por el reinicio quedaron marcados`);
+  await beat();
+  setInterval(() => {
+    beat();
+    sweepStale().catch(() => {});
+  }, 30_000);
   for (const name of Object.values(QUEUES)) {
     const n = CONCURRENCY[name] ?? 1;
     for (let i = 0; i < n; i++) {
@@ -105,6 +113,7 @@ async function main() {
         for (const job of jobs) {
           const d = job.data;
           console.log(`[${name}] start ${job.id}`);
+          const stop = keepAlive(d.jobRunId);
           try {
             await jobProgress(d.jobRunId, 1);
             const r = await runWithJob(d.jobRunId, () => handle(boss, name, d), d.projectId);
@@ -115,6 +124,8 @@ async function main() {
             await jobError(d.jobRunId, e);
             if (e instanceof BudgetError) continue; // no reintentar: no se gastó nada y fallaría igual
             throw e;
+          } finally {
+            stop();
           }
         }
       });

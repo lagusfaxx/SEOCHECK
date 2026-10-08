@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { enqueue, QUEUES } from "@/lib/queue";
+import { cancelJob, enqueue, QUEUES } from "@/lib/queue";
+import { sweepStale, workerAlive } from "@/lib/jobs";
 import { refreshCluster } from "@/lib/keywords/pipeline";
 import { ISSUE_LABELS } from "@/lib/audit/issues";
 import { indexNow, normalizeGscProperty } from "@/lib/providers/google";
@@ -37,8 +38,20 @@ const GETS: Record<string, H> = {
     };
   },
 
-  jobs: async ({ id }) =>
-    db.jobRun.findMany({ where: { projectId: id, OR: [{ status: { in: ["queued", "running"] } }, { updatedAt: { gte: new Date(Date.now() - 120_000) } }] }, orderBy: { createdAt: "desc" }, take: 20 }),
+  jobs: async ({ id }) => {
+    await sweepStale(id);
+    const [jobs, alive] = await Promise.all([
+      db.jobRun.findMany({
+        where: { projectId: id, OR: [{ status: { in: ["queued", "running"] } }, { updatedAt: { gte: new Date(Date.now() - 10 * 60_000) } }] },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: { id: true, kind: true, status: true, progress: true, message: true, createdAt: true, updatedAt: true },
+      }),
+      workerAlive(),
+    ]);
+    // en cola sin worker vivo: que se note en vez de quedar "en cola" para siempre
+    return jobs.map((j) => (j.status === "queued" && !alive ? { ...j, message: "El worker no responde: revisa el servicio worker en Coolify" } : j));
+  },
 
   overview: async ({ id }) => {
     const [kw, clusters, crawl, tracked, alerts, gsc, content] = await Promise.all([
@@ -310,6 +323,11 @@ const POSTS: Record<string, H> = {
   "gsc/sync": async ({ id, body }) => enqueue(id, QUEUES.gscSync, { backfillDays: Number(body.backfillDays ?? 90) }),
 
   alerts: async ({ id }) => enqueue(id, QUEUES.alerts, {}),
+
+  "jobs/cancel": async ({ id, body }) => {
+    await db.jobRun.findFirstOrThrow({ where: { id: body.jobId, projectId: id } });
+    return cancelJob(body.jobId);
+  },
 
   content: async ({ id, body }) => {
     const u = normUrl(body.url ?? "");

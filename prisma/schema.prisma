@@ -54,6 +54,8 @@ model JobRun {
   message   String?
   /// Eventos del job (fallback de LLM, respuestas crudas de APIs, avisos): [{ at, level, msg, data? }]
   log       Json     @default("[]")
+  /// id del job en pg-boss (para cancelarlo)
+  bossId    String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -400,4 +402,10 @@ model ProviderState {
   /// Hasta cuándo se salta este proveedor antes de reintentar
   until     DateTime?
   updatedAt DateTime @updatedAt
+}
+
+/// Pulso de procesos de fondo (worker): si deja de latir, la UI avisa y los trabajos colgados se marcan.
+model Heartbeat {
+  name String   @id
+  at   DateTime @default(now())
 }
