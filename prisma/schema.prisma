@@ -38,6 +38,7 @@ model Project {
   inspections UrlInspection[]
   tracked     TrackedKeyword[]
   gscRows     GscRow[]
+  gscDays     GscDay[]
   alerts      Alert[]
   contents    ContentAnalysis[]
   jobs        JobRun[]
@@ -298,6 +299,19 @@ model GscRow {
 
   @@id([projectId, date, query, page])
   @@index([projectId, query])
+}
+
+/// Totales diarios del sitio (dimensión solo fecha): incluyen las consultas anonimizadas que GscRow no trae.
+model GscDay {
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  date        DateTime @db.Date
+  clicks      Int
+  impressions Int
+  ctr         Float
+  position    Float
+
+  @@id([projectId, date])
 }
 
 model Alert {

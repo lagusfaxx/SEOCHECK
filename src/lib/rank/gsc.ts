@@ -24,8 +24,11 @@ export async function syncGsc(projectId: string, backfillDays = 90, onProgress?:
   const prop = await projectGscProperty(p);
   if (!prop) throw new Error("El proyecto no tiene propiedad de GSC");
   const last = await db.gscRow.findFirst({ where: { projectId }, orderBy: { date: "desc" } });
+  // proyectos sincronizados antes de existir GscDay: rellenar los totales del período completo una vez
+  const needDays = last && !(await db.gscDay.findFirst({ where: { projectId } }));
   const end = new Date(Date.now() - 2 * 864e5);
   const start = last ? new Date(last.date.getTime() - 3 * 864e5) : new Date(end.getTime() - backfillDays * 864e5);
+  const totalsStart = needDays ? new Date(end.getTime() - backfillDays * 864e5) : start;
   const days: string[] = [];
   for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 864e5)) days.push(day(d));
   let total = 0;
@@ -49,5 +52,17 @@ export async function syncGsc(projectId: string, backfillDays = 90, onProgress?:
     }
     await onProgress?.(((i + 1) / days.length) * 100);
   }
+  // totales del sitio por día: sin dimensión de consulta/página Google sí incluye las consultas anonimizadas,
+  // así que estos son los números que coinciden con el gráfico de Search Console
+  const t0 = day(totalsStart), t1 = day(end);
+  const totals = await gscQuery(prop, { startDate: t0, endDate: t1, dimensions: ["date"], rowLimit: 25000, dataState: "all" });
+  if (totals.length)
+    await db.$transaction([
+      db.gscDay.deleteMany({ where: { projectId, date: { gte: new Date(t0), lte: new Date(t1) } } }),
+      db.gscDay.createMany({
+        data: totals.map((r) => ({ projectId, date: new Date(r.keys[0]), clicks: r.clicks, impressions: r.impressions, ctr: r.ctr, position: r.position })),
+        skipDuplicates: true,
+      }),
+    ]);
   return { days: days.length, rows: total };
 }

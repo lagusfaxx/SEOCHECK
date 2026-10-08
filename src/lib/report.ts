@@ -122,10 +122,13 @@ export async function buildReport(projectId: string): Promise<string> {
     const end = lastGsc.date;
     const d28 = new Date(end.getTime() - 27 * 864e5);
     const d56 = new Date(end.getTime() - 55 * 864e5);
-    const [cur, prev] = await Promise.all([
-      db.gscRow.aggregate({ where: { projectId, date: { gte: d28, lte: end } }, _sum: { clicks: true, impressions: true } }),
-      db.gscRow.aggregate({ where: { projectId, date: { gte: d56, lt: d28 } }, _sum: { clicks: true, impressions: true } }),
-    ]);
+    // totales del sitio (incluyen consultas anonimizadas); si no hay, suma de filas
+    const hasDays = Boolean(await db.gscDay.findFirst({ where: { projectId } }));
+    const agg = (where: { gte?: Date; lte?: Date; lt?: Date }) =>
+      hasDays
+        ? db.gscDay.aggregate({ where: { projectId, date: where }, _sum: { clicks: true, impressions: true } })
+        : db.gscRow.aggregate({ where: { projectId, date: where }, _sum: { clicks: true, impressions: true } });
+    const [cur, prev] = await Promise.all([agg({ gte: d28, lte: end }), agg({ gte: d56, lt: d28 })]);
     const ck = cur._sum.clicks ?? 0, im = cur._sum.impressions ?? 0, pck = prev._sum.clicks ?? 0, pim = prev._sum.impressions ?? 0;
     gscOut.push(
       `Últimos 28 días hasta ${end.toISOString().slice(0, 10)} vs 28 días anteriores\n`,

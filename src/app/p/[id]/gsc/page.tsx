@@ -68,7 +68,7 @@ export default function GscPage() {
         <>
           <div className="card p-4">
             <div className="mb-3 grid grid-cols-4 gap-4">
-              <Stat label="Clicks" value={fmt(tot.clicks)} />
+              <Stat label="Clicks" value={fmt(tot.clicks)} hint={q ? "Suma de las consultas/páginas que calzan con el filtro." : "Totales del sitio, igual que el gráfico de Search Console. La tabla de abajo suma menos porque Google oculta las consultas poco frecuentes (anonimizadas)."} />
               <Stat label="Impresiones" value={fmt(tot.impressions)} />
               <Stat label="CTR" value={pct(tot.ctr)} />
               <Stat label="Posición" value={fmt(tot.position, 1)} />

@@ -40,6 +40,13 @@ before(async () => {
       { projectId, date: day(21), query: "spa santiago", page: "https://mi-sitio.cl/", clicks: 40, impressions: 600, ctr: 0.066, position: 2.1 },
     ],
   });
+  // totales del sitio: más que la suma de filas porque incluyen consultas anonimizadas
+  await db.gscDay.createMany({
+    data: [
+      { projectId, date: day(20), clicks: 60, impressions: 900, ctr: 0.066, position: 7 },
+      { projectId, date: day(21), clicks: 50, impressions: 800, ctr: 0.062, position: 3 },
+    ],
+  });
   const run = await db.keywordRun.create({ data: { projectId, seeds: ["masajes"], status: "done" } });
   await db.cluster.createMany({
     data: [
@@ -67,6 +74,8 @@ test("informe: tareas por prioridad, secciones, oportunidades GSC y gaps de keyw
   // el crawl tocó el límite: aviso y huérfanas marcadas para verificar
   assert.match(md, /llegó al límite de 2 páginas/);
   assert.match(tasks, /Huérfana.*verificar con un crawl completo/);
+  // GSC: los totales salen de GscDay (110 clics), no de la suma de filas (43)
+  assert.match(md, /\| Actual \| 110 \| 1\.700 \|/);
   // GSC: posición 4–20 con impresiones
   assert.match(md, /\| masajes providencia \| https:\/\/mi-sitio\.cl\/providencia \| 400 \|/);
   // keywords: con URL propia (www) = optimizar; sin URL propia = crear página

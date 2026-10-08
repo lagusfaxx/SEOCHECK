@@ -24,6 +24,16 @@ type H = (c: Ctx) => Promise<unknown>;
 const ok = (data: unknown) => Response.json(data ?? { ok: true });
 const bad = (msg: string, status = 400) => Response.json({ error: msg }, { status });
 
+/** Serie diaria de Search Console: totales del sitio (GscDay) o, si aún no se sincronizan, la suma de GscRow. */
+async function gscSeries(projectId: string, since: Date) {
+  const days = await db.gscDay.findMany({ where: { projectId, date: { gte: since } }, orderBy: { date: "asc" } });
+  if (days.length) return days.map((r) => ({ d: r.date, clicks: r.clicks, impressions: r.impressions, position: r.position }));
+  return db.$queryRaw<{ d: Date; clicks: number; impressions: number; position: number }[]>`
+    SELECT date AS d, SUM(clicks)::int AS clicks, SUM(impressions)::int AS impressions,
+      SUM(position * impressions) / NULLIF(SUM(impressions), 0) AS position
+    FROM "GscRow" WHERE "projectId" = ${projectId} AND date >= ${since} GROUP BY date ORDER BY date`;
+}
+
 const GETS: Record<string, H> = {
   "": async ({ id }) => {
     const p = await db.project.findUniqueOrThrow({ where: { id } });
@@ -60,9 +70,7 @@ const GETS: Record<string, H> = {
       db.crawl.findFirst({ where: { projectId: id, status: "done" }, orderBy: { startedAt: "desc" } }),
       db.trackedKeyword.findMany({ where: { projectId: id, active: true }, include: { checks: { orderBy: { date: "desc" }, take: 2 } } }),
       db.alert.findMany({ where: { projectId: id, seen: false }, orderBy: { createdAt: "desc" }, take: 20 }),
-      db.$queryRaw<{ d: Date; clicks: number; impressions: number }[]>`
-        SELECT date AS d, SUM(clicks)::int AS clicks, SUM(impressions)::int AS impressions FROM "GscRow"
-        WHERE "projectId" = ${id} AND date >= now() - interval '90 days' GROUP BY date ORDER BY date`,
+      gscSeries(id, new Date(Date.now() - 90 * 864e5)),
       db.contentAnalysis.findMany({ where: { projectId: id }, orderBy: { createdAt: "desc" }, take: 5, select: { id: true, keyword: true, score: true, status: true } }),
     ]);
     const pos = tracked.map((t) => t.checks[0]?.position).filter((x): x is number => x != null);
@@ -161,10 +169,13 @@ const GETS: Record<string, H> = {
           SUM(position * impressions) / NULLIF(SUM(impressions), 0) AS position, COUNT(DISTINCT ${Prisma.raw(dim === "page" ? '"query"' : '"page"')})::int AS n
         FROM "GscRow" WHERE "projectId" = ${id} AND date >= ${since} AND ${col} ILIKE ${like}
         GROUP BY ${col} ORDER BY clicks DESC, impressions DESC LIMIT 1000`,
-      db.$queryRaw<any[]>`
+      // sin filtro: totales reales del sitio (GscDay); con filtro: suma de las filas que calzan
+      q
+        ? db.$queryRaw<any[]>`
         SELECT date AS d, SUM(clicks)::int AS clicks, SUM(impressions)::int AS impressions,
           SUM(position * impressions) / NULLIF(SUM(impressions), 0) AS position
-        FROM "GscRow" WHERE "projectId" = ${id} AND date >= ${since} AND ${col} ILIKE ${like} GROUP BY date ORDER BY date`,
+        FROM "GscRow" WHERE "projectId" = ${id} AND date >= ${since} AND ${col} ILIKE ${like} GROUP BY date ORDER BY date`
+        : gscSeries(id, since),
       db.$queryRaw<any[]>`
         SELECT ${col} AS key, SUM(clicks)::int AS clicks, SUM(position * impressions) / NULLIF(SUM(impressions), 0) AS position
         FROM "GscRow" WHERE "projectId" = ${id} AND date >= ${prevSince} AND date < ${since} AND ${col} ILIKE ${like} GROUP BY ${col}`,
