@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Area, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useProject } from "@/components/Shell";
 import { GscConnect } from "@/components/GscConnect";
-import { api, cx, DataTable, Delta, Drawer, Empty, fmt, Icon, pct, Stat, Tabs, useApi, type Col } from "@/components/ui";
+import { api, cx, DataTable, Delta, Drawer, Empty, fmt, Icon, jobBusy, pct, Stat, Tabs, useAction, useApi, type Col } from "@/components/ui";
 
 type Row = { key: string; clicks: number; impressions: number; ctr: number; position: number; n: number; prevClicks: number | null; prevPosition: number | null };
 
@@ -11,7 +11,10 @@ const expected = (pos: number) => [0.28, 0.15, 0.1, 0.07, 0.05, 0.04, 0.03, 0.02
 const path = (u: string) => u.replace(/^https?:\/\/[^/]+/, "") || "/";
 
 export default function GscPage() {
-  const { id, project, refreshJobs } = useProject();
+  const { id, project, jobs, refreshJobs } = useProject();
+  const syncing = jobBusy(jobs, "gsc.sync");
+  const [sync, syncBusy] = useAction(async () => { await api(`/api/p/${id}/gsc/sync`, "POST", {}); refreshJobs(); });
+  const [track, trackBusy] = useAction(async () => { await api(`/api/p/${id}/rank`, "POST", { keywords: [...rowsSel] }); setRowsSel(new Set()); refreshJobs(); });
   const [days, setDays] = useState<"7" | "28" | "90">("28");
   const [dim, setDim] = useState<"query" | "page">("query");
   const [q, setQ] = useState("");
@@ -57,9 +60,9 @@ export default function GscPage() {
         </div>
         <div className="ml-auto flex gap-2">
           {dim === "query" && rowsSel.size > 0 && (
-            <button className="btn" onClick={async () => { await api(`/api/p/${id}/rank`, "POST", { keywords: [...rowsSel] }); setRowsSel(new Set()); refreshJobs(); }}><Icon name="rank" />Trackear {rowsSel.size}</button>
+            <button className="btn" disabled={trackBusy} onClick={() => track()}><Icon name="rank" />Trackear {rowsSel.size}</button>
           )}
-          <button className="btn" onClick={async () => { await api(`/api/p/${id}/gsc/sync`, "POST", {}); refreshJobs(); }}><Icon name="refresh" />Sync</button>
+          <button className="btn" disabled={syncing || syncBusy} title={syncing ? "Ya hay una sincronización en curso" : undefined} onClick={() => sync()}><Icon name="refresh" />{syncing ? "Sincronizando…" : "Sync"}</button>
         </div>
       </div>
 

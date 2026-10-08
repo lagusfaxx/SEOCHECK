@@ -54,7 +54,8 @@ export async function jobDone(id: string | undefined, message?: string) {
 
 export async function jobError(id: string | undefined, err: unknown) {
   if (!id) return;
-  const message = err instanceof Error ? err.message : String(err);
+  // nunca un error sin mensaje en la UI
+  const message = (err instanceof Error ? err.message : String(err ?? "")).trim() || "Error sin detalle (revisa el log del worker)";
   await db.jobRun.update({ where: { id }, data: { status: "error", message: message.slice(0, 500) } }).catch(() => {});
 }
 

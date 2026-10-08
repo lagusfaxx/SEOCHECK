@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useProject } from "@/components/Shell";
-import { api, cx, DataTable, Drawer, Empty, fmt, Hint, Icon, Score, SEV, Stat, Tabs, useApi, type Col } from "@/components/ui";
+import { api, cx, DataTable, Drawer, Empty, fmt, Hint, Icon, Score, SEV, Stat, Tabs, useApi, type Col, fmtDate } from "@/components/ui";
 import { ISSUE_FIX, ISSUE_WHY } from "@/lib/audit/fixes";
 import { CRAWL_STATUS } from "@/lib/status";
 
@@ -103,7 +103,7 @@ export default function AuditPage() {
         {data?.crawls?.length > 0 && (
           <select className="input ml-auto w-auto" value={data.crawlId} onChange={(e) => setCrawl(e.target.value)}>
             {data.crawls.map((c: any) => (
-              <option key={c.id} value={c.id}>{new Date(c.startedAt).toLocaleString("es-CL")} · {CRAWL_STATUS[c.status]?.label ?? c.status}{c.stats?.pages != null ? ` · ${fmt(c.stats.pages)} URLs` : ""}</option>
+              <option key={c.id} value={c.id}>{fmtDate(c.startedAt, "datetime")} · {CRAWL_STATUS[c.status]?.label ?? c.status}{c.stats?.pages != null ? ` · ${fmt(c.stats.pages)} URLs` : ""}</option>
             ))}
           </select>
         )}
@@ -202,7 +202,7 @@ export default function AuditPage() {
                     { key: "verdict", label: "Veredicto", get: (r: any) => r.verdict, render: (r: any) => <span className={r.verdict === "PASS" ? "text-emerald-600" : "text-rose-600"}>{r.verdict}</span> },
                     { key: "cov", label: "Cobertura", get: (r: any) => r.coverageState },
                     { key: "gc", label: "Canonical Google", get: (r: any) => r.googleCanonical, render: (r: any) => <span className={cx("block max-w-[260px] truncate", r.googleCanonical && r.userCanonical && r.googleCanonical !== r.userCanonical && "text-amber-600")}>{r.googleCanonical ? path(r.googleCanonical) : "–"}</span> },
-                    { key: "lc", label: "Último crawl", get: (r: any) => r.lastCrawl, render: (r: any) => (r.lastCrawl ? new Date(r.lastCrawl).toLocaleDateString("es-CL") : "–") },
+                    { key: "lc", label: "Último crawl", get: (r: any) => r.lastCrawl, render: (r: any) => fmtDate(r.lastCrawl) },
                   ]}
                 />
               </div>

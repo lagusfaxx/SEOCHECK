@@ -53,6 +53,12 @@ async function ownOptional(model: "keywordRun" | "topic" | "cluster", projectId:
   if (!row) throw notFound();
   return row.id as string;
 }
+/** Evita trabajos duplicados (doble clic, dos pestañas): uno del mismo tipo a la vez por proyecto. */
+async function assertIdle(projectId: string, kind: string, label: string) {
+  const busy = await db.jobRun.findFirst({ where: { projectId, kind, status: { in: ["queued", "running"] } }, select: { id: true } });
+  if (busy) throw new HttpError(409, `Ya hay ${label} en curso: espera a que termine o cancélalo`);
+}
+
 /** URLs que el usuario manda (crawl, PageSpeed, contenido, IndexNow): solo del dominio del proyecto o sus subdominios. */
 async function ownUrls(projectId: string, urls: string[]) {
   const p = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { domain: true } });
@@ -304,7 +310,8 @@ const GETS: Record<string, H> = {
 const POSTS: Record<string, H> = {
   "keywords/run": async ({ id, body }) => {
     const seeds: string[] = (body.seeds ?? []).map((s: string) => normTerm(s)).filter(Boolean);
-    if (!seeds.length) throw new Error("seeds");
+    if (!seeds.length) throw new HttpError(400, "Escribe al menos una semilla");
+    await assertIdle(id, QUEUES.keywords, "un research de keywords");
     const kwOpts = { serpTop: 150, serpExpansion: 20, maxKeywords: 400, ...((((await db.project.findUniqueOrThrow({ where: { id } })).settings ?? {}) as any).keywords ?? {}) };
     await assertBudget({ serpent: est.serpCalls(seeds.length + kwOpts.serpExpansion + kwOpts.serpTop), llm: est.llmIntent(kwOpts.maxKeywords) }, "Research de keywords");
     // volumeLive: DataForSEO endpoint Live (solo si se pide explícitamente); por defecto standard queue
@@ -328,6 +335,7 @@ const POSTS: Record<string, H> = {
     }),
 
   audit: async ({ id, body }) => {
+    await assertIdle(id, QUEUES.crawl, "un crawl");
     const crawl = await db.crawl.create({
       data: {
         projectId: id,
@@ -371,9 +379,10 @@ const POSTS: Record<string, H> = {
   },
 
   "audit/psi": async ({ id, body }) =>
+    (await assertIdle(id, QUEUES.psi, "una medición de PageSpeed")) ??
     enqueue(id, QUEUES.psi, { urls: (await ownUrls(id, (body.urls ?? []).slice(0, 20))), strategies: (body.strategies ?? ["mobile", "desktop"]).filter((x: string) => x === "mobile" || x === "desktop") }),
 
-  "audit/inspect": async ({ id, body }) => enqueue(id, QUEUES.inspect, { urls: await ownUrls(id, (body.urls ?? []).slice(0, 100)) }),
+  "audit/inspect": async ({ id, body }) => (await assertIdle(id, QUEUES.inspect, "una inspección")) ?? enqueue(id, QUEUES.inspect, { urls: await ownUrls(id, (body.urls ?? []).slice(0, 100)) }),
 
   indexnow: async ({ id, body }) => {
     const p = await db.project.findUniqueOrThrow({ where: { id } });
@@ -403,11 +412,16 @@ const POSTS: Record<string, H> = {
     // solo keywords de este proyecto (antes se podían revisar —y cobrar— las de otro)
     const ids: string[] = (await db.trackedKeyword.findMany({ where: { projectId: id, active: true, ...(body.ids?.length ? { id: { in: body.ids } } : {}) }, select: { id: true } })).map((t) => t.id);
     if (!ids.length) throw new HttpError(400, "No hay keywords trackeadas para revisar");
+    await assertIdle(id, QUEUES.rankOne, "una revisión de rankings");
     await assertBudget({ serpent: est.serpCalls(ids.length) }, `Rank tracking (${ids.length} keywords)`);
     return enqueue(id, QUEUES.rankOne, { trackedIds: ids });
   },
 
-  "gsc/sync": async ({ id, body }) => enqueue(id, QUEUES.gscSync, { backfillDays: Number(body.backfillDays ?? 90) }),
+  "gsc/sync": async ({ id, body }) => {
+    await assertIdle(id, QUEUES.gscSync, "una sincronización de Search Console");
+    if (!(await gscAvailable(id))) throw new HttpError(400, "Search Console no está conectado: conéctalo en Ajustes");
+    return enqueue(id, QUEUES.gscSync, { backfillDays: Math.min(Math.max(Number(body.backfillDays ?? 90) || 90, 1), 480) });
+  },
 
   alerts: async ({ id }) => enqueue(id, QUEUES.alerts, {}),
 

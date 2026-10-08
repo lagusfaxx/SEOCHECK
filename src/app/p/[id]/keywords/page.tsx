@@ -5,8 +5,9 @@ import MindMap from "@/components/kw/MindMap";
 import KwTable from "@/components/kw/Table";
 import type { KwData, RunSources } from "@/components/kw/types";
 import { useProject } from "@/components/Shell";
-import { api, cx, Empty, fmt, Icon, Tabs, useLocal } from "@/components/ui";
-import { useApi } from "@/components/ui";
+import { api, cx, Empty, fmt, Icon, Tabs, useLocal, fmtDate } from "@/components/ui";
+import { useAction, useApi } from "@/components/ui";
+import { statusLabel } from "@/lib/status";
 
 export default function KeywordsPage() {
   const { id, refreshJobs, jobs, project } = useProject();
@@ -27,7 +28,7 @@ export default function KeywordsPage() {
     if (parts.length) setSeeds([...new Set([...seeds, ...parts])]);
     setDraft("");
   };
-  const start = async () => {
+  const [start, starting] = useAction(async () => {
     const all = draft.trim() ? [...seeds, draft.trim()] : seeds;
     if (!all.length) return;
     await api(`/api/p/${id}/keywords/run`, "POST", { seeds: all, threshold: th });
@@ -36,7 +37,7 @@ export default function KeywordsPage() {
     setRun("");
     refreshJobs();
     mutate();
-  };
+  });
   const current = data?.runs.find((r) => r.id === data.runId);
 
   return (
@@ -65,7 +66,7 @@ export default function KeywordsPage() {
           <span className="w-8 tabular-nums">{th.toFixed(2)}</span>
         </label>
         <CsvImport id={id} onDone={() => mutate()} />
-        <button className="btn-p" onClick={start} disabled={running || (!seeds.length && !draft.trim())}>
+        <button className="btn-p" onClick={() => start()} disabled={running || starting || (!seeds.length && !draft.trim())}>
           <Icon name="play" />
           {running ? "…" : "Investigar"}
         </button>
@@ -83,13 +84,13 @@ export default function KeywordsPage() {
           <Tabs value={view} onChange={setView} items={[{ id: "table", label: "Tabla", icon: "table" }, { id: "board", label: "Clusters", icon: "board" }, { id: "map", label: "Mapa", icon: "map" }]} />
           <select className="input w-auto" value={data.runId ?? ""} onChange={(e) => setRun(e.target.value)}>
             {data.runs.map((r) => (
-              <option key={r.id} value={r.id}>{r.seeds.join(", ")} · {new Date(r.createdAt).toLocaleDateString("es-CL")}</option>
+              <option key={r.id} value={r.id}>{r.seeds.join(", ")} · {fmtDate(r.createdAt)}</option>
             ))}
           </select>
           {current?.sources?.serp && <SourceBadges s={current.sources} />}
           {current && (
             <div className="flex gap-3 text-xs text-ink-500">
-              {current.status !== "done" && <span className="chip">{current.status}</span>}
+              {current.status !== "done" && <span className="chip">{statusLabel(current.status)}</span>}
               {Object.entries(current.stats ?? {}).map(([k, v]) => (
                 <span key={k}>{k} <b className="text-ink-800 dark:text-ink-200">{fmt(v)}</b></span>
               ))}

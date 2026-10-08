@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useProject } from "@/components/Shell";
-import { api, cx, DataTable, Delta, Drawer, Empty, fmt, Icon, pct, Spark, Tabs, useApi, type Col } from "@/components/ui";
+import { api, cx, DataTable, Delta, Drawer, Empty, fmt, Icon, jobBusy, pct, Spark, Tabs, useAction, useApi, type Col, fmtDate } from "@/components/ui";
 
 type Check = { id: string; date: string; position: number | null; url: string | null; features: string[]; competitors: { domain: string; position: number; url: string }[] };
 type Tracked = { id: string; keyword: string; frequency: string; active: boolean; checks: Check[] };
@@ -12,7 +12,8 @@ const FEAT: Record<string, string> = { ads: "ads", paa: "PAA", related: "rel", v
 const path = (u: string | null) => (u ? u.replace(/^https?:\/\/[^/]+/, "") || "/" : "–");
 
 export default function RankPage() {
-  const { id, refreshJobs, project } = useProject();
+  const { id, refreshJobs, project, jobs } = useProject();
+  const checking = jobBusy(jobs, "rank.check");
   const [days, setDays] = useState(30);
   const { data, mutate } = useApi<{ tracked: Tracked[]; alerts: Alert[] }>(`/api/p/${id}/rank?days=${days}`);
   const [add, setAdd] = useState("");
@@ -23,14 +24,15 @@ export default function RankPage() {
   const [atab, setAtab] = useState<"all" | "drop" | "cannibal" | "lowctr">("all");
   const [checked, setChecked] = useState<Set<string>>(new Set());
 
-  const submit = async () => {
+  const [submit, adding] = useAction(async () => {
     const kws = add.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
     if (!kws.length) return;
     await api(`/api/p/${id}/rank`, "POST", { keywords: kws, frequency: freq || undefined });
     setAdd("");
     refreshJobs();
     mutate();
-  };
+  });
+  const [recheck, recheckBusy] = useAction(async () => { await api(`/api/p/${id}/rank/check`, "POST", { ids: checked.size ? [...checked] : undefined }); refreshJobs(); });
 
   const rows = (data?.tracked ?? []).map((t) => {
     const last = t.checks.at(-1);
@@ -64,12 +66,12 @@ export default function RankPage() {
             <option value="daily">diario</option>
             <option value="weekly">semanal</option>
           </select>
-          <button className="btn-p" onClick={submit}><Icon name="plus" />Agregar</button>
+          <button className="btn-p" disabled={adding || !add.trim()} onClick={() => submit()}><Icon name="plus" />{adding ? "Agregando…" : "Agregar"}</button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Tabs value={String(days) as "7" | "30" | "90"} onChange={(v) => setDays(Number(v))} items={[{ id: "7", label: "7d" }, { id: "30", label: "30d" }, { id: "90", label: "90d" }]} />
           <Tabs value={view} onChange={setView} items={[{ id: "10", label: "≤10" }, { id: "100", label: "≤100" }]} />
-          <button className="btn" onClick={async () => { await api(`/api/p/${id}/rank/check`, "POST", { ids: checked.size ? [...checked] : undefined }); refreshJobs(); }}><Icon name="refresh" />Revisar {checked.size || "todas"}</button>
+          <button className="btn" disabled={!rows.length || checking || recheckBusy} title={checking ? "Ya hay una revisión en curso" : !rows.length ? "Primero agrega keywords" : undefined} onClick={() => recheck()}><Icon name="refresh" />{checking ? "Revisando…" : `Revisar ${checked.size || "todas"}`}</button>
           {checked.size > 0 && (
             <button className="btn" onClick={async () => { if (!confirm(`¿Dejar de trackear ${checked.size}?`)) return; await api(`/api/p/${id}/rank`, "DELETE", { ids: [...checked] }); setChecked(new Set()); mutate(); }}><Icon name="trash" /></button>
           )}
@@ -122,7 +124,7 @@ export default function RankPage() {
 
 function RankDetail({ t, onChange }: { t: Tracked; onChange: () => void }) {
   const { id } = useProject();
-  const series = t.checks.map((c) => ({ d: new Date(c.date).toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit" }), pos: c.position }));
+  const series = t.checks.map((c) => ({ d: fmtDate(c.date, "dm"), pos: c.position }));
   const last = t.checks.at(-1);
   const urls = [...new Set(t.checks.map((c) => c.url).filter(Boolean))];
   return (
@@ -153,7 +155,7 @@ function RankDetail({ t, onChange }: { t: Tracked; onChange: () => void }) {
       )}
       {last && (
         <div className="mt-4">
-          <div className="lbl mb-1">Top 10 · {new Date(last.date).toLocaleDateString("es-CL")}</div>
+          <div className="lbl mb-1">Top 10 · {fmtDate(last.date)}</div>
           <table className="tbl">
             <tbody>
               {[...last.competitors, ...(last.position && last.position <= 10 ? [{ domain: "★ tú", position: last.position, url: last.url! }] : [])]

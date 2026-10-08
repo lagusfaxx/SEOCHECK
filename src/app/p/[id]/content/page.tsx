@@ -3,7 +3,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useProject } from "@/components/Shell";
-import { api, Empty, fmt, Icon, Score, useApi } from "@/components/ui";
+import { api, Empty, fmt, Icon, Score, useAction, useApi, fmtDate } from "@/components/ui";
+
+const CONTENT_STATUS: Record<string, string> = { queued: "en cola", running: "analizando…", brief: "generando brief…", error: "falló" };
 
 export default function ContentList() {
   const { id, project, refreshJobs } = useProject();
@@ -11,6 +13,11 @@ export default function ContentList() {
   const { data, mutate } = useApi<any[]>(`/api/p/${id}/content`, { refreshInterval: (d?: any[]) => (d?.some((c) => !["done", "error"].includes(c.status)) ? 3000 : 0) });
   const [url, setUrl] = useState("");
   const [kw, setKw] = useState("");
+  const [analyze, analyzing] = useAction(async () => {
+    const a = await api(`/api/p/${id}/content`, "POST", { url, keyword: kw });
+    refreshJobs();
+    router.push(`/p/${id}/content/${a.id}`);
+  });
   const [target, setTarget] = useState<{ gscUrl: string | null; impressions: number; position: number | null; mismatch: boolean } | null>(null);
   // ¿ya hay una URL del sitio rankeando para esta keyword? (Search Console)
   useEffect(() => {
@@ -22,16 +29,14 @@ export default function ContentList() {
     <div className="space-y-4 p-4 md:p-6">
       <form
         className="card flex flex-wrap gap-2 p-3"
-        onSubmit={async (e) => {
+        onSubmit={(e) => {
           e.preventDefault();
-          const a = await api(`/api/p/${id}/content`, "POST", { url, keyword: kw });
-          refreshJobs();
-          router.push(`/p/${id}/content/${a.id}`);
+          analyze();
         }}
       >
         <input className="input min-w-[280px] flex-[2]" placeholder={`https://${project?.domain ?? ""}/…`} value={url} onChange={(e) => setUrl(e.target.value)} required />
         <input className="input min-w-[200px] flex-1" placeholder="keyword objetivo" value={kw} onChange={(e) => setKw(e.target.value)} required />
-        <button className="btn-p"><Icon name="play" />Analizar</button>
+        <button className="btn-p" disabled={analyzing}><Icon name="play" />{analyzing ? "Enviando…" : "Analizar"}</button>
         {target?.gscUrl && (
           <div className={`w-full rounded-lg px-3 py-2 text-sm ${target.mismatch && url ? "bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200" : "bg-ink-50 text-ink-700 dark:bg-ink-800 dark:text-ink-200"}`}>
             {target.mismatch && url ? "Ojo: para esta keyword Google ya muestra otra URL tuya: " : "Para esta keyword ya rankea: "}
@@ -52,7 +57,7 @@ export default function ContentList() {
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium">{c.keyword}</div>
                 <div className="truncate text-xs text-ink-400">{c.url.replace(/^https?:\/\//, "")}</div>
-                <div className="mt-1 text-xs text-ink-400">{c.status !== "done" ? c.status : new Date(c.createdAt).toLocaleDateString("es-CL")}</div>
+                <div className="mt-1 text-xs text-ink-400">{c.status !== "done" ? CONTENT_STATUS[c.status] ?? c.status : fmtDate(c.createdAt)}</div>
               </div>
               <button
                 className="btn-g opacity-0 group-hover:opacity-100"

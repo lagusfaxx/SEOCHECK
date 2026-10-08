@@ -1,11 +1,11 @@
 "use client";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import useSWR, { type SWRConfiguration } from "swr";
 
 export async function api<T = any>(path: string, method = "GET", body?: unknown): Promise<T> {
   const res = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json.error ?? res.statusText);
+  if (!res.ok) throw new Error(json.error ?? (res.status === 401 ? "Tu sesión venció: vuelve a iniciar sesión" : res.status >= 500 ? "Error del servidor: intenta de nuevo en un momento" : res.statusText || `Error ${res.status}`));
   return json as T;
 }
 
@@ -14,6 +14,77 @@ export function useApi<T = any>(path: string | null, cfg?: SWRConfiguration) {
 }
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
+
+/** Fecha segura: nunca "Invalid Date" (vacía o inválida → "–"). */
+export function fmtDate(v: string | number | Date | null | undefined, mode: "date" | "datetime" | "dm" = "date"): string {
+  if (v == null || v === "") return "–";
+  const d = v instanceof Date ? v : new Date(v);
+  if (Number.isNaN(d.getTime())) return "–";
+  if (mode === "dm") return d.toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit" });
+  return mode === "datetime" ? d.toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" }) : d.toLocaleDateString("es-CL");
+}
+
+/** Aviso flotante (errores que de otro modo no verían): lo muestra el Toaster del Shell. */
+export function toast(text: string, kind: "error" | "ok" = "error") {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("sc-toast", { detail: { text, kind } }));
+}
+
+/** Muestra los avisos y atrapa errores de acciones que nadie manejó (botones que llaman a la API). */
+export function Toaster() {
+  const [items, setItems] = useState<{ id: number; text: string; kind: "error" | "ok" }[]>([]);
+  useEffect(() => {
+    let n = 0;
+    const push = (text: string, kind: "error" | "ok") => {
+      const id = ++n;
+      setItems((xs) => [...xs.slice(-3), { id, text, kind }]);
+      setTimeout(() => setItems((xs) => xs.filter((x) => x.id !== id)), kind === "error" ? 9000 : 4000);
+    };
+    const onToast = (e: Event) => push((e as CustomEvent).detail.text, (e as CustomEvent).detail.kind);
+    const onReject = (e: PromiseRejectionEvent) => {
+      const msg = e.reason instanceof Error ? e.reason.message : typeof e.reason === "string" ? e.reason : "";
+      push(msg || "Algo falló. Intenta de nuevo.", "error");
+    };
+    window.addEventListener("sc-toast", onToast);
+    window.addEventListener("unhandledrejection", onReject);
+    return () => {
+      window.removeEventListener("sc-toast", onToast);
+      window.removeEventListener("unhandledrejection", onReject);
+    };
+  }, []);
+  if (!items.length) return null;
+  return (
+    <div className="fixed bottom-4 right-4 z-[100] flex w-[min(380px,calc(100vw-32px))] flex-col gap-2">
+      {items.map((t) => (
+        <div key={t.id} role="alert" className={cx("rounded-lg px-4 py-3 text-sm shadow-xl", t.kind === "error" ? "bg-rose-600 text-white" : "bg-emerald-600 text-white")}>
+          {t.text}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Acción de un botón: mientras corre queda `busy` (para deshabilitarlo y que no se mande dos veces)
+ * y si falla muestra el error en un aviso en vez de quedar en silencio.
+ */
+export function useAction<A extends unknown[]>(fn: (...a: A) => Promise<unknown>): [(...a: A) => Promise<void>, boolean] {
+  const [busy, setBusy] = useState(false);
+  const run = async (...a: A) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await fn(...a);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return [run, busy];
+}
+
+/** ¿Hay un job de estos tipos en cola o corriendo? */
+export const jobBusy = (jobs: { kind: string; status: string }[], ...kinds: string[]) => jobs.some((j) => kinds.includes(j.kind) && (j.status === "queued" || j.status === "running"));
 
 export const fmt = (n: number | null | undefined, d = 0) =>
   n == null || Number.isNaN(n) ? "–" : n.toLocaleString("es-CL", { maximumFractionDigits: d, minimumFractionDigits: 0 });

@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { useProject } from "@/components/Shell";
-import { api, cx, Icon, useApi } from "@/components/ui";
+import { api, cx, Icon, useApi, fmtDate } from "@/components/ui";
 
 type Step = { step: string; status: "ok" | "skipped" | "error"; detail?: string };
 type Job = { id: string; status: string; progress: number; message: string | null; createdAt: string; updatedAt: string; log: { msg: string; data?: unknown }[] };
@@ -101,7 +101,7 @@ export default function ReportPage() {
       <div className="card">
         <div className="flex items-center gap-2 border-b border-ink-100 p-3 dark:border-ink-800">
           <span className="lbl">Informe</span>
-          {last && <span className="text-xs text-ink-400">{new Date(last.updatedAt).toLocaleString("es-CL")}</span>}
+          {last && <span className="text-xs text-ink-400">{fmtDate(last.updatedAt, "datetime")}</span>}
           <button className="btn ml-auto" onClick={() => refreshMd()}><Icon name="refresh" /></button>
           <button className="btn" onClick={copy} disabled={!md}><Icon name={copied ? "check" : "copy"} />{copied ? "Copiado" : "Copiar"}</button>
           <a className="btn" href={`/api/p/${id}/report?download=1`}><Icon name="down" />.md</a>

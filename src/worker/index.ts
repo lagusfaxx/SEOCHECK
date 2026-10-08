@@ -83,11 +83,14 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
       return steps.map((s) => `${s.step}:${s.status}`).join(" ");
     }
     case QUEUES.content:
-      await assertBudget({ serpent: est.serpCalls(1), llm: est.llmBrief() }, "Optimización de contenido");
-      return analyzeContent(d.contentId, d.jobRunId).catch(async (e) => {
-        await db.contentAnalysis.update({ where: { id: d.contentId }, data: { status: "error" } });
+      // si falla (también por presupuesto) el análisis queda "falló" con el motivo, nunca colgado en "en cola"
+      try {
+        await assertBudget({ serpent: est.serpCalls(1), llm: est.llmBrief() }, "Optimización de contenido");
+        return await analyzeContent(d.contentId, d.jobRunId);
+      } catch (e) {
+        await db.contentAnalysis.updateMany({ where: { id: d.contentId }, data: { status: "error", result: { error: e instanceof Error ? e.message : String(e) } } });
         throw e;
-      });
+      }
   }
 }
 

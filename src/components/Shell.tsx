@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSWRConfig } from "swr";
 import NewProject from "./NewProject";
-import { api, Bar, cx, Drawer, Hint, Icon, useApi, useLocal } from "./ui";
+import { api, Bar, cx, Drawer, Hint, Icon, Toaster, useApi, useLocal } from "./ui";
 
 type Project = { id: string; name: string; domain: string; country: string; language: string; gscProperty: string | null; settings: any; providers: Record<string, any> };
 type Job = { id: string; kind: string; status: string; progress: number; message: string | null };
@@ -289,6 +289,7 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
           </main>
         </div>
       </div>
+      <Toaster />
       <Drawer open={newOpen} onClose={() => setNewOpen(false)}>
         <div className="mt-8">
           <NewProject onDone={() => { setNewOpen(false); refreshProjects(); }} />

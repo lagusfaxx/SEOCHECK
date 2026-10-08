@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { api, cx, Icon, useApi } from "./ui";
+import { api, cx, fmtDate, Icon, useApi } from "./ui";
 
 type Member = { id: string; email: string; name: string | null; role: string; lastLoginAt: string | null };
 const ROLE: Record<string, string> = { owner: "Dueño", admin: "Admin", member: "Miembro" };
@@ -25,7 +25,7 @@ export function TeamCard() {
           <div key={m.id} className="flex items-center gap-3 py-2 text-sm">
             <span className="min-w-0 flex-1 truncate">{m.email}</span>
             <span className="chip">{ROLE[m.role] ?? m.role}</span>
-            <span className="w-28 text-right text-xs text-ink-400">{m.lastLoginAt ? new Date(m.lastLoginAt).toLocaleDateString("es-CL") : "sin entrar aún"}</span>
+            <span className="w-28 text-right text-xs text-ink-400">{m.lastLoginAt ? fmtDate(m.lastLoginAt) : "sin entrar aún"}</span>
             {canManage && m.id !== me?.user?.id && (
               <button className="btn-g px-1" title="quitar del equipo" onClick={async () => { if (!confirm(`¿Quitar a ${m.email}?`)) return; await api(`/api/workspace/members?workspace=${ws!.id}`, "DELETE", { userId: m.id }).catch((e) => alert(e.message)); mutate(); }}>
                 <Icon name="trash" />

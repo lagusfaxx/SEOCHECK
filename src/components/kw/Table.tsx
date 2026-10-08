@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useProject } from "../Shell";
-import { api, cx, DataTable, fmt, Icon, IntentChip, INTENT, type Col } from "../ui";
+import { api, cx, DataTable, fmt, Icon, IntentChip, INTENT, type Col, fmtDate } from "../ui";
 import type { Kw, KwData } from "./types";
 
 const SRC: Record<string, string> = { seed: "seed", autocomplete: "auto", gsc: "gsc", paa: "paa", related: "rel" };
@@ -27,7 +27,7 @@ export default function KwTable({ data, reload }: { data: KwData; reload: () => 
     { key: "term", label: "Keyword", get: (k) => k.term, render: (k) => <span className={cx(k.excluded && "text-ink-400 line-through")}>{k.term}{tracked.has(k.term) && <Icon name="rank" className="ml-1 inline h-3 w-3 text-acc" />}</span> },
     { key: "intent", label: "Intent", get: (k) => k.intent, render: (k) => <IntentChip intent={k.intent} /> },
     { key: "volume", label: "Vol.", get: (k) => k.volume, render: (k) => (k.volumeMin != null && k.volumeMax != null && k.volumeMin !== k.volumeMax ? <span title={`estimado ${fmt(k.volume)}`}>{short(k.volumeMin)}–{short(k.volumeMax)}</span> : fmt(k.volume)), num: true },
-    { key: "vsrc", label: "Fuente vol.", get: (k) => k.volumeSource, render: (k) => (k.volumeSource ? <span className={cx("chip", k.volumeSource === "gsc" && "!bg-emerald-100 !text-emerald-700")} title={k.volumeAt ? `dato del ${new Date(k.volumeAt).toLocaleDateString("es-CL")}` : ""}>{VSRC[k.volumeSource] ?? k.volumeSource}</span> : <span className="text-ink-300">—</span>) },
+    { key: "vsrc", label: "Fuente vol.", get: (k) => k.volumeSource, render: (k) => (k.volumeSource ? <span className={cx("chip", k.volumeSource === "gsc" && "!bg-emerald-100 !text-emerald-700")} title={k.volumeAt ? `dato del ${fmtDate(k.volumeAt)}` : ""}>{VSRC[k.volumeSource] ?? k.volumeSource}</span> : <span className="text-ink-300">—</span>) },
     { key: "cpc", label: "CPC", get: (k) => k.cpc, render: (k) => fmt(k.cpc, 2), num: true },
     { key: "comp", label: "Comp.", get: (k) => k.competition, render: (k) => fmt(k.competition, 2), num: true },
     { key: "rel", label: "Relev.", get: (k) => k.relevance, render: (k) => fmt(k.relevance, 2), num: true },

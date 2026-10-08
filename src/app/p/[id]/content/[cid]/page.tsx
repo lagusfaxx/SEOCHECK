@@ -1,4 +1,5 @@
 "use client";
+import { statusLabel } from "@/lib/status";
 import { useEffect, useRef, useState } from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -84,7 +85,7 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
   if (data.status !== "done" && !r.terms) {
     return (
       <div className="p-6">
-        <Empty>{data.status === "error" ? "error al analizar" : `${data.status}…`}</Empty>
+        <Empty>{data.status === "error" ? `El análisis falló${data.result?.error ? `: ${data.result.error}` : ""}` : `${statusLabel(data.status)}…`}</Empty>
       </div>
     );
   }
