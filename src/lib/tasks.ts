@@ -140,6 +140,9 @@ export async function setTaskStatus(
   });
 }
 export async function projectActions(projectId: string) {
+  // Existing audits also populate tasks after upgrading; preserve manually edited states.
+  const latest = await db.crawl.findFirst({ where: { projectId, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" }, select: { id: true } });
+  if (latest && !(await db.projectTask.findFirst({ where: { projectId, source: "crawl", lastCrawlId: latest.id }, select: { id: true } }))) await syncCrawlTasks(latest.id);
   const rows = await db.projectTask.findMany({
     where: { projectId },
     orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],

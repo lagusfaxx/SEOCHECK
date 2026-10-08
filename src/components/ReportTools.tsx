@@ -34,8 +34,8 @@ export function ReportTools() {
           <option value="executive">Ejecutivo</option>
           <option value="technical">Técnico</option>
         </select>
-        <a className="btn" href={`/api/p/${id}/report/pdf`}>
-          Descargar PDF ejecutivo
+        <a className="btn-p" href={`/api/p/${id}/report/pdf?mode=${mode}`}>
+          Descargar PDF {mode === "technical" ? "técnico" : "ejecutivo"}
         </a>
         <a className="btn" href={`/api/p/${id}/report?download=1`}>
           Markdown técnico

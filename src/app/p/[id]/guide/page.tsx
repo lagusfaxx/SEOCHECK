@@ -47,113 +47,125 @@ const DNS: Record<string, string[]> = {
   ],
 };
 export default function Guide() {
-  const { id, project } = useProject();
+  const { project } = useProject();
   const [provider, setProvider] = useState("Cloudflare");
-  return (
-    <article className="mx-auto max-w-3xl space-y-5 p-6">
-      <h1 className="text-2xl font-semibold">Search Console desde cero</h1>
-      <p>
-        Search Console es gratuito y muestra cómo Google encuentra tu sitio:
-        consultas, clics, impresiones, páginas indexadas y problemas de rastreo.
-        SEOCHECK usa acceso de lectura para priorizar trabajo con datos de tu
-        sitio.
-      </p>
-      <ol className="list-decimal space-y-4 pl-5">
-        <li>
-          <b>Usa una cuenta de Google del negocio.</b> Abre{" "}
+  const [step, setStep] = useState(0);
+  const steps = [
+    {
+      title: "Crea la propiedad",
+      content: (
+        <>
           <a
-            className="text-acc underline"
+            className="btn-p inline-flex"
             href="https://search.google.com/search-console/welcome"
             target="_blank"
             rel="noreferrer"
           >
-            Search Console
+            Abrir Search Console
           </a>
-          . Asegúrate de poder administrar el DNS de{" "}
-          {project?.domain ?? "tu dominio"}.
-        </li>
-        <li>
-          <b>Agrega una propiedad de Dominio.</b> Escribe solo{" "}
-          {project?.domain ?? "ejemplo.cl"}, sin https:// ni rutas. La propiedad
-          de dominio incluye http, https y subdominios. Si no controlas DNS, la
-          alternativa es “Prefijo de URL” con la URL exacta y un método
-          compatible con tu sitio.
-        </li>
-        <li>
-          <b>Copia el TXT de verificación.</b> Google entrega un valor que
-          comienza con <code>google-site-verification=</code>. Es único para tu
-          propiedad. No uses un ejemplo ni lo recortes.
-        </li>
-        <li>
-          <b>Agrega el TXT al proveedor DNS activo.</b> Sigue la guía del panel
-          elegido debajo. No cambies nameservers, correo ni registros A/CNAME.
-        </li>
-        <li>
-          <b>Verifica.</b> Vuelve a Google y pulsa Verificar. Si aún no lo
-          detecta, espera la propagación. Conserva el TXT después: Google puede
-          volver a comprobar la propiedad.
-        </li>
-        <li>
-          <b>Envía tu sitemap.</b> En Search Console → Sitemaps, introduce su
-          URL (por ejemplo sitemap.xml). Busca la ruta real en robots.txt; no
-          todos los sitios usan el mismo nombre.
-        </li>
-        <li>
-          <b>Conecta SEOCHECK.</b> Autoriza lectura con la misma cuenta.
-          Selecciona la propiedad, sincroniza y revisa el resultado. Una
-          propiedad nueva puede tardar varios días en mostrar datos; una
-          sincronización vacía no significa que la conexión haya fallado.
-        </li>
-      </ol>
-      <section className="card space-y-3 p-4">
-        <label>
-          Proveedor de DNS{" "}
-          <select
-            className="input mt-2"
-            value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-          >
-            {Object.keys(DNS).map((k) => (
-              <option key={k}>{k}</option>
+          <p className="mt-3">
+            Elige “Dominio” y escribe <b>{project?.domain ?? "ejemplo.cl"}</b>,
+            sin https:// ni rutas.
+          </p>
+          <details className="mt-3 text-sm">
+            <summary>No tengo acceso al DNS</summary>
+            <p>
+              Elige “Prefijo de URL” y usa la dirección exacta de tu sitio.
+              Google te ofrecerá otros métodos de verificación.
+            </p>
+          </details>
+        </>
+      ),
+    },
+    {
+      title: "Verifica tu dominio",
+      content: (
+        <>
+          <p>
+            Copia el valor <code>google-site-verification=…</code> que te
+            entrega Google.
+          </p>
+          <label className="mt-3 block text-sm">
+            Proveedor DNS
+            <select
+              className="input mt-1"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+            >
+              {Object.keys(DNS).map((k) => (
+                <option key={k}>{k}</option>
+              ))}
+            </select>
+          </label>
+          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">
+            {DNS[provider].map((s) => (
+              <li key={s}>{s}</li>
             ))}
-          </select>
-        </label>
-        <ol className="list-decimal space-y-2 pl-5">
-          {DNS[provider].map((s) => (
-            <li key={s}>{s}</li>
-          ))}
-        </ol>
+          </ol>
+          <p className="mt-3 text-sm text-ink-500">
+            Vuelve a Google y pulsa Verificar. Conserva el TXT.
+          </p>
+          <details className="mt-3 text-sm">
+            <summary>Google no encuentra el registro</summary>
+            <p>
+              Comprueba el proveedor DNS activo, el host raíz (@) y el valor
+              completo. La propagación puede tardar hasta 48 horas. Conserva los
+              registros existentes.
+            </p>
+          </details>
+        </>
+      ),
+    },
+    {
+      title: "Conecta SEOCHECK",
+      content: (
+        <>
+          <GscConnect />
+          <details className="mt-3 text-sm">
+            <summary>Enviar sitemap y esperar datos</summary>
+            <p>
+              En Search Console → Sitemaps envía la ruta indicada en robots.txt.
+              Una propiedad nueva puede tardar varios días en mostrar consultas
+              y clics.
+            </p>
+          </details>
+        </>
+      ),
+    },
+  ];
+  return (
+    <article className="mx-auto max-w-2xl space-y-4 p-6">
+      <h1 className="text-xl font-semibold">Conectar Search Console</h1>
+      <nav className="flex flex-wrap gap-2" aria-label="Pasos de conexión">
+        {steps.map((s, i) => (
+          <button
+            key={s.title}
+            className={step === i ? "btn-p" : "btn"}
+            aria-current={step === i ? "step" : undefined}
+            onClick={() => setStep(i)}
+          >
+            {i + 1}. {s.title}
+          </button>
+        ))}
+      </nav>
+      <section className="card space-y-3 p-5">
+        <h2 className="font-semibold">{steps[step].title}</h2>
+        {steps[step].content}
       </section>
-      <section className="card p-4">
-        <h2 className="font-semibold">Cómo debe quedar el registro</h2>
-        <table className="tbl mt-2">
-          <thead>
-            <tr>
-              <th>Tipo</th>
-              <th>Host</th>
-              <th>Valor</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>TXT</td>
-              <td>@ (raíz)</td>
-              <td className="break-all">
-                google-site-verification=TU_VALOR_DE_GOOGLE
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <p className="mt-2 text-sm text-ink-500">
-          Ejemplo ilustrativo. Las etiquetas de cada panel pueden variar.
-        </p>
-      </section>
-      <GscConnect />
-      <p className="text-sm text-ink-500">
-        Puedes continuar sin GSC: auditoría técnica, contenido y rankings siguen
-        disponibles, pero no tendrás consultas reales, tráfico de Google ni
-        prioridades basadas en impresiones.
-      </p>
+      <div className="flex justify-between">
+        <button
+          className="btn"
+          disabled={step === 0}
+          onClick={() => setStep(step - 1)}
+        >
+          Anterior
+        </button>
+        {step < 2 && (
+          <button className="btn-p" onClick={() => setStep(step + 1)}>
+            Siguiente
+          </button>
+        )}
+      </div>
     </article>
   );
 }

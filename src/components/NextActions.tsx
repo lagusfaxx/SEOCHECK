@@ -16,8 +16,26 @@ const CATEGORY: Record<string, string> = {
   improvement: "🟡 Mejoras",
 };
 export function NextActions({ all = false }: { all?: boolean }) {
-  const { id } = useProject();
-  const { data, mutate } = useApi<any>(`/api/p/${id}/tasks`);
+  const { id, jobs, refreshJobs } = useProject();
+  const running = jobs.some(
+    (j) => j.kind === "audit.crawl" && ["queued", "running"].includes(j.status),
+  );
+  const [notice, setNotice] = useState("");
+  const { data, mutate } = useApi<any>(`/api/p/${id}/tasks`, {
+    refreshInterval: running ? 3000 : 10000,
+  });
+  const verify = async () => {
+    try {
+      await api(`/api/p/${id}/audit`, "POST", { verification: true });
+      refreshJobs();
+      setNotice(
+        "Verificación iniciada. Las tareas se actualizarán al terminar la auditoría.",
+      );
+      setError("");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("open");
   const change = async (taskId: string, status: string, group = false) => {
@@ -48,6 +66,11 @@ export function NextActions({ all = false }: { all?: boolean }) {
           <Link className="btn ml-auto" href={`/p/${id}/tasks`}>
             Ver todas las tareas
           </Link>
+        )}
+        {all && (
+          <button className="btn-p" disabled={running} onClick={verify}>
+            {running ? "Verificando…" : "Verificar correcciones"}
+          </button>
         )}
         {all && (
           <select
@@ -87,14 +110,31 @@ export function NextActions({ all = false }: { all?: boolean }) {
                   <span>{t.affected} incidencias agrupadas</span>
                 )}
               </div>
-              <p className="mt-1 text-sm text-ink-500">{t.reason}</p>
+              <details className="mt-1 text-sm text-ink-500">
+                <summary className="cursor-pointer">
+                  Motivo y cómo corregirlo
+                </summary>
+                <p className="mt-2">{t.reason}</p>
+              </details>
               {t.url && (
                 <span className="mt-1 block break-all text-xs text-ink-400">
                   {t.url}
                 </span>
               )}
               <div className="mt-2 flex flex-wrap gap-2">
-                {["pending", "resolved", "ignored"]
+                {t.source === "crawl" && (
+                  <button
+                    className="btn text-xs"
+                    disabled={running}
+                    onClick={verify}
+                  >
+                    Verificar con auditoría
+                  </button>
+                )}
+                {(t.source === "crawl"
+                  ? ["pending", "ignored"]
+                  : ["pending", "resolved", "ignored"]
+                )
                   .filter((s) => s !== t.status)
                   .map((s) => (
                     <button
@@ -131,6 +171,11 @@ export function NextActions({ all = false }: { all?: boolean }) {
             </p>
           ))}
         </details>
+      )}
+      {notice && (
+        <p role="status" className="text-sm text-ink-500">
+          {notice}
+        </p>
       )}
       {error && (
         <p className="text-rose-700" role="alert">

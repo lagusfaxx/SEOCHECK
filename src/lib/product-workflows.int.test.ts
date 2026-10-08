@@ -16,6 +16,7 @@ import {
   auditComparison,
   csvCell,
   executivePdf,
+  executiveReport,
   nextReportAt,
   saveReport,
 } from "./reporting";
@@ -193,6 +194,10 @@ test(
       improved: 0,
       traffic: { clicks: null, impressions: null },
       branding: {},
+      findings: [],
+      sources: [],
+      queries: [],
+      speed: [],
     });
     assert.equal(pdf.subarray(0, 5).toString(), "%PDF-");
     assert.ok(pdf.length > 1000);
@@ -456,3 +461,79 @@ test("El brief rechaza estructuras incorrectas de IA o edición antes de guardar
   );
   assert.doesNotThrow(() => validateBrief(brief));
 });
+
+test(
+  "Auditorías existentes crean tareas y una nueva auditoría verifica la corrección; PDF incluye impacto y evidencia",
+  { skip: !enabled },
+  async () => {
+    const project = await db.project.create({
+      data: {
+        workspaceId: wid,
+        name: "Verificación",
+        domain: "verificacion.cl",
+      },
+    });
+    const url = "https://verificacion.cl/producto";
+    const first = await db.crawl.create({
+      data: {
+        projectId: project.id,
+        status: "completed",
+        startedAt: new Date(Date.now() - 60000),
+        finishedAt: new Date(),
+        stats: { health: 80 },
+        pages: { create: { url, status: 200 } },
+        issues: {
+          create: {
+            url,
+            code: "title_missing",
+            severity: "warning",
+            detail: "Título vacío en producto",
+          },
+        },
+      },
+    });
+    assert.equal(
+      await db.projectTask.count({ where: { projectId: project.id } }),
+      0,
+    );
+    const initial = await projectActions(project.id);
+    assert.equal(initial.tasks.length, 1);
+    assert.equal(initial.tasks[0].lastCrawlId, first.id);
+    assert.equal(initial.tasks[0].status, "detected");
+    await assert.rejects(() => PRODUCT_PATCHS.tasks({ id: project.id, url: new URL("http://local/tasks"), body: { taskId: initial.tasks[0].id, status: "resolved" }, user: { id: "test", email: "test@example.test" } }), /Verifica la corrección/);
+    await setTaskStatus(project.id, initial.tasks[0].id, "pending", "test");
+    assert.equal((await projectActions(project.id)).tasks[0].status, "pending");
+    const report = await executiveReport(project.id);
+    assert.equal(report.findings[0].code, "title_missing");
+    assert.equal(report.findings[0].count, 1);
+    assert.deepEqual(report.findings[0].urls, [url]);
+    assert.ok(report.findings[0].fix.length > 20);
+    const executive = await executivePdf(report);
+    const technical = await executivePdf(
+      report,
+      "# Evidencia técnica\n## Título ausente\nURL: " +
+        url +
+        "\nTítulo vacío en producto. Añadir un título descriptivo y único.",
+    );
+    assert.equal(technical.subarray(0, 5).toString(), "%PDF-");
+    assert.ok(technical.length > executive.length);
+    const second = await db.crawl.create({
+      data: {
+        projectId: project.id,
+        status: "completed",
+        startedAt: new Date(Date.now() + 1000),
+        finishedAt: new Date(),
+        stats: { health: 91 },
+        pages: { create: { url, status: 200 } },
+      },
+    });
+    const checked = await projectActions(project.id);
+    assert.equal(checked.tasks[0].status, "resolved");
+    assert.equal(checked.tasks[0].lastCrawlId, second.id);
+    assert.ok(
+      checked.tasks[0].events.some((e) =>
+        e.note?.includes("volvió a rastrear"),
+      ),
+    );
+  },
+);

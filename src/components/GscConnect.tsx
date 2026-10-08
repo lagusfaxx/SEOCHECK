@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useProject } from "./Shell";
 import { api, cx, Icon, Spinner, useApi } from "./ui";
@@ -60,6 +61,7 @@ export function GscConnect({ compact, returnTo }: { compact?: boolean; /** volve
         </div>
         <div className="min-w-0 flex-1">
           <div className="font-semibold">{c.mode ? "Search Console conectado" : "Conecta Google Search Console"}</div>
+          {!c.mode && <Link className="text-xs text-acc underline" href={`/p/${id}/guide`}>Ayuda para crear Search Console</Link>}
           {!compact && !c.mode && (
             <p className="mt-0.5 text-sm text-ink-500">
               Descubre con qué búsquedas te encuentran, qué páginas pierden tráfico y dónde tienes oportunidades. Es gratis, de Google, y SEOCHECK solo puede <b>leer</b> los datos.
