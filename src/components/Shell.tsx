@@ -20,7 +20,6 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: "General",
     items: [
       { href:"/tasks",icon:"check",label:"Tareas",desc:"Qué hacer ahora",intro:"Tareas persistentes, prioridades e historial entre auditorías." },
-      { href:"/guide",icon:"gsc",label:"Guía GSC",desc:"Conectar desde cero",intro:"Pasos de Search Console y configuración DNS por proveedor." },
       {
         href: "", icon: "home", label: "Resumen", desc: "Estado del proyecto",
         intro: "Vista general: keywords, salud técnica, rankings, Search Console y gasto del mes. Arrastra los bloques para ordenarlos; el botón 1/3 de cada bloque cambia su ancho.",
@@ -84,7 +83,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
 const ALL_NAV = NAV.flatMap((g) => g.items);
 
 function Intro({ item }: { item: NavItem }) {
-  const [open, setOpen] = useLocal<boolean>(`help:${item.href || "home"}`, true);
+  const [open, setOpen] = useLocal<boolean>(`help:v2:${item.href || "home"}`, false);
   if (!open)
     return (
       <button onClick={() => setOpen(true)} className="btn-g mx-4 mt-3 text-xs md:mx-6">

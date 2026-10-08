@@ -123,13 +123,16 @@ export function ProjectProgress() {
 
 export function ContextGlossary({ terms }: { terms: string[] }) {
   return (
-    <div
-      className="flex flex-wrap gap-3 px-4 py-2 text-xs text-ink-500"
-      aria-label="Términos de esta pantalla"
-    >
-      {terms.map((term) => (
-        <GlossaryTerm key={term} term={term} />
-      ))}
-    </div>
+    <details className="mx-4 my-1 text-xs text-ink-500 md:mx-6">
+      <summary className="cursor-pointer">Glosario</summary>
+      <div
+        className="flex flex-wrap gap-3 py-2"
+        aria-label="Términos de esta pantalla"
+      >
+        {terms.map((term) => (
+          <GlossaryTerm key={term} term={term} />
+        ))}
+      </div>
+    </details>
   );
 }

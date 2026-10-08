@@ -360,6 +360,10 @@ const POSTS: Record<string, H> = {
 
   audit: async ({ id, body }) => {
     await assertIdle(id, QUEUES.crawl, "un crawl");
+    if (body.verification === true) {
+      const previous = await db.crawl.findFirst({ where: { projectId: id, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" } });
+      body = { ...(previous?.options as object ?? {}), ...body };
+    }
     const crawl = await db.crawl.create({
       data: {
         projectId: id,

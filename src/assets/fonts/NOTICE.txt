@@ -1,0 +1,5 @@
+Open Sans
+Digitized data copyright (c) 2010–2011, Google Corporation.
+Source: https://www.opensans.com/
+Licensed under the Apache License, Version 2.0 (LICENSE.txt).
+Fonts bundled unchanged.

@@ -56,3 +56,11 @@ Los reembolsos y disputas no cambian créditos automáticamente en esta versión
 - La comparación de implementación comprueba correspondencia textual de title/meta/H2/H3. No certifica calidad semántica, conversiones ni impacto en Google.
 - Los informes programados necesitan reiniciar el worker en cada instancia; el estado de pg-boss y los informes se conserva en PostgreSQL.
 - Las capturas de Google deben obtenerse de una cuenta de demostración con permiso, sin tokens ni datos de clientes. El entorno actual bloquea el acceso a `search.google.com`; no se sustituyeron por capturas ficticias.
+
+## Ajustes de interfaz e informes
+
+La guía GSC se abre desde la ayuda de conexión y muestra un paso a la vez. Se retiró del menú principal. El dashboard conserva el wizard pendiente sin repetir el checklist, y la cobertura se muestra en un desplegable con el número de fuentes incompletas. Auditoría abre directamente en Errores, sin la pestaña Prioridades; las explicaciones completas se consultan en el detalle.
+
+Las auditorías existentes generan sus tareas automáticamente al consultarlas. “Verificar correcciones” ejecuta una nueva auditoría con las opciones anteriores, respetando el límite del plan. Las tareas de auditoría se solucionan al confirmar que la URL se leyó correctamente y el error desapareció en un crawl completo; un crawl parcial no confirma correcciones. Las tareas manuales conservan su gestión de estado.
+
+El PDF ejecutivo agrega problemas agrupados con impacto, corrección y ejemplos, consultas GSC, velocidad medida y alcance por fuente. El PDF técnico añade el contenido completo del Markdown con evidencia e instrucciones de implementación. Los snapshots anteriores mantienen sus datos originales; los nuevos campos estarán presentes al generar otra versión.

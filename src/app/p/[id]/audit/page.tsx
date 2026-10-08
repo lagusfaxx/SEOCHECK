@@ -4,7 +4,6 @@ import { useProject } from "@/components/Shell";
 import { api, cx, DataTable, Drawer, Empty, fmt, Hint, Icon, Score, SEV, Stat, Tabs, useApi, type Col, fmtDate, Spinner, IconBadge } from "@/components/ui";
 import { ISSUE_FIX, ISSUE_WHY } from "@/lib/audit/fixes";
 import { CRAWL_STATUS } from "@/lib/status";
-import { Priorities } from "@/components/audit/Priorities";
 import { Coverage } from "@/components/Coverage";
 
 const SEV_HINT: Record<string, string> = {
@@ -52,7 +51,7 @@ export default function AuditPage() {
   const { id, project, refreshJobs, jobs } = useProject();
   const [crawl, setCrawl] = useState("");
   const { data, mutate } = useApi<any>(`/api/p/${id}/audit${crawl ? `?crawl=${crawl}` : ""}`);
-  const [tab, setTab] = useState<"prio" | "issues" | "urls" | "speed" | "index">("prio");
+  const [tab, setTab] = useState<"issues" | "urls" | "speed" | "index">("issues");
   const [opt, setOpt] = useState({ maxPages: 500, concurrency: 5, render: false });
   const [issue, setIssue] = useState<IssueAgg | null>(null);
   const [pageUrl, setPageUrl] = useState<string | null>(null);
@@ -71,7 +70,7 @@ export default function AuditPage() {
   const pageCols: Col<PageRow>[] = [
     { key: "url", label: "URL", get: (p) => p.url, render: (p) => <span className="block max-w-[420px] truncate" title={p.url}>{path(p.url)}</span> },
     { key: "status", label: "Status", get: (p) => p.status, render: (p) => <span className={statusCls(p.status)}>{p.status || "—"}</span>, num: true },
-    { key: "issues", label: "Issues", get: (p) => p.issues, num: true },
+    { key: "issues", label: "Errores", get: (p) => p.issues, num: true },
     { key: "depth", label: "Prof.", get: (p) => p.depth, render: (p) => (p.depth < 0 ? "–" : p.depth), num: true },
     { key: "in", label: "In", get: (p) => p.inlinks, num: true },
     { key: "out", label: "Out", get: (p) => p.outlinks, num: true },
@@ -145,18 +144,7 @@ export default function AuditPage() {
             <Stat label="Externos" value={fmt(st.external)} hint="Dominios externos distintos a los que enlaza tu sitio." />
           </div>
 
-          <Tabs value={tab} onChange={setTab} items={[{ id: "prio", label: "Prioridades", icon: "target" }, { id: "issues", label: "Issues", icon: "alert" }, { id: "urls", label: "URLs", icon: "table" }, { id: "speed", label: "Velocidad", icon: "bolt" }, { id: "index", label: "Indexación", icon: "search" }]} />
-
-          {tab === "prio" && (
-            <Priorities
-              projectId={id}
-              crawlId={data.crawlId}
-              onIssue={(code) => {
-                const i = issues.find((x) => x.code === code);
-                if (i) setIssue(i);
-              }}
-            />
-          )}
+          <Tabs value={tab} onChange={setTab} items={[{ id: "issues", label: "Errores", icon: "alert" }, { id: "urls", label: "URLs", icon: "table" }, { id: "speed", label: "Velocidad", icon: "bolt" }, { id: "index", label: "Indexación", icon: "search" }]} />
 
           {tab === "issues" && (
             <div className="stagger grid gap-4 md:grid-cols-3">
@@ -173,7 +161,6 @@ export default function AuditPage() {
                       <button key={i.code} onClick={() => setIssue(i)} className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm hover:bg-ink-100 dark:hover:bg-ink-800">
                         <span className="min-w-0 flex-1">
                           <span className="block">{i.label}</span>
-                          {ISSUE_WHY[i.code] && <span className="block truncate text-xs text-ink-400" title={ISSUE_WHY[i.code]}>{short(ISSUE_WHY[i.code])}</span>}
                         </span>
                         <span className="ml-3 tabular-nums text-ink-500">{fmt(i.count)}</span>
                       </button>

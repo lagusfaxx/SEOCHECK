@@ -1,5 +1,4 @@
 "use client";
-import { ProjectProgress } from "@/components/ProjectProgress";
 import { NextActions } from "@/components/NextActions";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -250,7 +249,6 @@ export default function Overview() {
   return (
     <div className="space-y-4 p-4 md:p-6">
       <SetupBanner id={id} />
-      <ProjectProgress />
       <NextActions />
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>

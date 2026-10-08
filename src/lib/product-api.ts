@@ -1,4 +1,5 @@
 import { runInlineJob } from "./inline-job";
+import { buildReport } from "./report";
 import { billingConfig, createCheckout, billingPortal } from "./billing";
 import { fetchPage } from "./audit/crawler";
 import { contentText } from "./content/clean";
@@ -100,20 +101,19 @@ export const PRODUCT_GETS: Record<string, Handler> = {
   "report/executive": async ({ id }) => executiveReport(id),
   "report/pdf": async ({ id, url }) => {
     const snapshotId = url.searchParams.get("snapshot");
+    const technical = url.searchParams.get("mode") === "technical";
+    const snapshot = snapshotId ? await db.reportSnapshot.findFirstOrThrow({ where: { id: snapshotId, projectId: id } }) : null;
     const r = snapshotId
-      ? ((
-          await db.reportSnapshot.findFirstOrThrow({
-            where: { id: snapshotId, projectId: id },
-          })
-        ).executive as unknown as Awaited<ReturnType<typeof executiveReport>>)
+      ? (snapshot!.executive as unknown as Awaited<ReturnType<typeof executiveReport>>)
       : await executiveReport(id);
     // Branding entitlement is evaluated at export time, including historical reports.
     const plan = await projectPlan(id);
     if (!plan.limits.whiteLabel) r.branding = {};
-    return new Response(new Uint8Array(await executivePdf(r)), {
+    const markdown = technical ? snapshot?.markdown ?? await buildReport(id) : undefined;
+    return new Response(new Uint8Array(await executivePdf(r, markdown)), {
       headers: {
         "content-type": "application/pdf",
-        "content-disposition": 'attachment; filename="informe-seo.pdf"',
+        "content-disposition": `attachment; filename="informe-seo-${technical ? "tecnico" : "ejecutivo"}.pdf"`,
       },
     });
   },
@@ -411,6 +411,10 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
   },
   tasks: async ({ id, body, user }) => {
     if (!TASK_STATUSES.includes(body.status)) throw invalid("Estado inválido");
+    if (body.status === "resolved") {
+      const task = await db.projectTask.findFirstOrThrow({ where: { projectId: id, id: boundedText(body.taskId) } });
+      if (task.source === "crawl") throw invalid("Verifica la corrección con una nueva auditoría.");
+    }
     return body.group === true
       ? setTaskGroupStatus(
           id,
