@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cleanKeyword, sanitizeKeywords } from "./providers/sanitize";
-import { gscError, normalizeGscProperty, parsePsi } from "./providers/google";
+import { gscError, normalizeGscProperty, parsePsi, parseServiceAccount } from "./providers/google";
 
 test("DataForSEO: limpia símbolos inválidos, emojis y respeta límites", () => {
   assert.equal(cleanKeyword("¿Qué es el SEO?"), "qué es el seo");
@@ -61,4 +61,17 @@ test("PSI: sin CrUX queda null (sin datos), nunca 0; distingue URL y origen", ()
   const url = parsePsi({ ...lighthouse, loadingExperience: { metrics: { CUMULATIVE_LAYOUT_SHIFT_SCORE: { percentile: 0, category: "FAST" } } } });
   assert.equal(url.field.source, "url");
   assert.deepEqual(url.field.cls, { p75: 0, cat: "FAST" }, "CLS de campo 0 es dato real, no 'sin datos'");
+});
+
+test("GSC_SERVICE_ACCOUNT_JSON: tal cual, base64, entre comillas y con saltos de línea reales", () => {
+  const sa = { type: "service_account", client_email: "seo@p.iam.gserviceaccount.com", private_key: "-----BEGIN PRIVATE KEY-----\nABC\n-----END PRIVATE KEY-----\n" };
+  const json = JSON.stringify(sa);
+  const want = { client_email: sa.client_email, private_key: sa.private_key };
+  assert.deepEqual(parseServiceAccount(json), want);
+  assert.deepEqual(parseServiceAccount(Buffer.from(json).toString("base64")), want);
+  assert.deepEqual(parseServiceAccount(`'${json}'`), want);
+  // el panel convirtió los \n del JSON en saltos de línea reales
+  assert.deepEqual(parseServiceAccount(json.replace(/\\n/g, "\n")), want);
+  assert.throws(() => parseServiceAccount("{nope"), /no es un JSON válido/);
+  assert.throws(() => parseServiceAccount(JSON.stringify({ a: 1 })), /client_email/);
 });

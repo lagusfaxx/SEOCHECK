@@ -144,6 +144,8 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
   const base = `/p/${id}`;
   const [slim, setSlim] = useLocal<boolean>("nav:slim", false);
   const [menu, setMenu] = useState(false);
+  const [openJob, setOpenJob] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useLocal<string[]>(`jobs:dismissed:${id}`, []);
   // la sección más específica que coincide con la ruta (/content/xyz → Contenido)
   const current = [...ALL_NAV].sort((a, b) => b.href.length - a.href.length).find((n) => (n.href === "" ? path === base : path.startsWith(base + n.href)));
   const active = jobs.filter((j) => j.status === "queued" || j.status === "running" || j.status === "error");
@@ -224,13 +226,34 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
               )}
             </div>
             <div className="ml-auto flex items-center gap-2 overflow-x-auto">
-              {active.map((j) => (
-                <div key={j.id} className={cx("flex w-40 shrink-0 flex-col gap-1 rounded-lg border px-2 py-1", j.status === "error" ? "border-rose-300 text-rose-600" : "border-ink-200 dark:border-ink-700")} title={j.message ?? ""}>
-                  <div className="flex justify-between text-[11px]">
-                    <span>{JOB_LABEL[j.kind] ?? j.kind}</span>
-                    <span className="truncate pl-2 text-ink-400">{j.status === "error" ? "error" : j.message ?? (j.status === "queued" ? "en cola" : `${j.progress}%`)}</span>
-                  </div>
-                  {j.status !== "error" && <Bar value={j.status === "queued" ? 2 : j.progress} className="h-1" />}
+              {active.filter((j) => !dismissed.includes(j.id)).map((j) => (
+                <div key={j.id} className="relative shrink-0">
+                  <button
+                    onClick={() => setOpenJob(openJob === j.id ? null : j.id)}
+                    className={cx("flex w-40 flex-col gap-1 rounded-lg border px-2 py-1 text-left", j.status === "error" ? "border-rose-300 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20" : "border-ink-200 hover:bg-ink-50 dark:border-ink-700 dark:hover:bg-ink-800")}
+                  >
+                    <div className="flex w-full justify-between text-[11px]">
+                      <span>{JOB_LABEL[j.kind] ?? j.kind}</span>
+                      <span className="truncate pl-2 text-ink-400">{j.status === "error" ? "error · ver" : j.message ?? (j.status === "queued" ? "en cola" : `${j.progress}%`)}</span>
+                    </div>
+                    {j.status !== "error" && <Bar value={j.status === "queued" ? 2 : j.progress} className="h-1 w-full" />}
+                  </button>
+                  {openJob === j.id && (
+                    <div className="card fixed right-4 top-14 z-50 w-[min(420px,calc(100vw-32px))] p-3 text-sm shadow-xl">
+                      <div className="flex items-center gap-2">
+                        <span className={cx("chip", j.status === "error" && "!bg-rose-100 !text-rose-700")}>{JOB_LABEL[j.kind] ?? j.kind}</span>
+                        <span className="text-xs text-ink-400">{j.status === "error" ? "falló" : j.status === "queued" ? "en cola" : `${j.progress}%`}</span>
+                        <button className="btn-g ml-auto px-1" onClick={() => setOpenJob(null)}><Icon name="x" className="h-4 w-4" /></button>
+                      </div>
+                      <p className="mt-2 whitespace-pre-wrap break-words text-ink-700 dark:text-ink-200">{j.message || "sin mensaje"}</p>
+                      {j.status === "error" && (
+                        <div className="mt-3 flex gap-2">
+                          <button className="btn text-xs" onClick={() => navigator.clipboard?.writeText(j.message ?? "")}><Icon name="copy" />Copiar</button>
+                          <button className="btn text-xs" onClick={() => { setDismissed([...dismissed, j.id]); setOpenJob(null); }}>Descartar</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

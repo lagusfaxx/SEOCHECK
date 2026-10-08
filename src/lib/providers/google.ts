@@ -20,10 +20,32 @@ export function normalizeGscProperty(input: string): string {
   throw new Error(`Propiedad GSC inválida "${input}": usa sc-domain:dominio.cl (propiedad de dominio) o https://dominio.cl/ (prefijo de URL)`);
 }
 
+/**
+ * Lee GSC_SERVICE_ACCOUNT_JSON tolerando cómo queda al pegarlo en un panel: JSON tal cual, en base64,
+ * entre comillas, o con los saltos de línea de la private_key convertidos en saltos reales.
+ */
+export function parseServiceAccount(input: string): { client_email: string; private_key: string } {
+  let raw = input.trim().replace(/^'([\s\S]*)'$/, "$1");
+  if (!raw.startsWith("{") && !raw.startsWith('"')) raw = Buffer.from(raw, "base64").toString("utf8").trim();
+  let j: any;
+  try {
+    j = JSON.parse(raw);
+  } catch {
+    try {
+      // saltos de línea reales dentro de los strings → \n
+      j = JSON.parse(raw.replace(/\r?\n/g, "\\n"));
+    } catch {
+      throw new Error("GSC_SERVICE_ACCOUNT_JSON no es un JSON válido: pega el archivo .json completo de la cuenta de servicio (o en base64)");
+    }
+  }
+  if (typeof j === "string") j = JSON.parse(j);
+  if (!j?.client_email || !j?.private_key) throw new Error("GSC_SERVICE_ACCOUNT_JSON no tiene client_email/private_key: ¿es el JSON de una cuenta de servicio?");
+  return { client_email: j.client_email, private_key: String(j.private_key).replace(/\\n/g, "\n") };
+}
+
 export function serviceAccountEmail(): string | null {
   try {
-    const raw = env.gscCredentials.trim().startsWith("{") ? env.gscCredentials : Buffer.from(env.gscCredentials, "base64").toString("utf8");
-    return JSON.parse(raw).client_email ?? null;
+    return parseServiceAccount(env.gscCredentials).client_email;
   } catch {
     return null;
   }
@@ -46,8 +68,7 @@ let jwt: JWT | null = null;
 function client() {
   if (!env.gscCredentials) throw new Error("Falta GSC_SERVICE_ACCOUNT_JSON");
   if (!jwt) {
-    const raw = env.gscCredentials.trim().startsWith("{") ? env.gscCredentials : Buffer.from(env.gscCredentials, "base64").toString("utf8");
-    const creds = JSON.parse(raw);
+    const creds = parseServiceAccount(env.gscCredentials);
     jwt = new JWT({ email: creds.client_email, key: creds.private_key, scopes: ["https://www.googleapis.com/auth/webmasters.readonly"] });
   }
   return jwt;
