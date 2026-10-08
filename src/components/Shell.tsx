@@ -19,12 +19,13 @@ const NAV = [
   { href: "/rank", icon: "rank", label: "Rankings" },
   { href: "/gsc", icon: "gsc", label: "Search Console" },
   { href: "/content", icon: "content", label: "Contenido" },
+  { href: "/report", icon: "doc", label: "Informe" },
   { href: "/settings", icon: "gear", label: "Ajustes" },
 ];
 
 const JOB_LABEL: Record<string, string> = {
   "keywords.run": "keywords", "audit.crawl": "crawl", "audit.psi": "pagespeed", "audit.inspect": "inspección",
-  "rank.check": "rankings", "gsc.sync": "gsc", "alerts.compute": "alertas", "content.analyze": "contenido",
+  "rank.check": "rankings", "gsc.sync": "gsc", "alerts.compute": "alertas", "content.analyze": "contenido", "report.full": "informe",
 };
 
 export default function Shell({ id, children }: { id: string; children: ReactNode }) {

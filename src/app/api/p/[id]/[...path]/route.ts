@@ -11,6 +11,7 @@ import { env } from "@/lib/env";
 import { llmStatus } from "@/lib/providers/llm";
 import { assertBudget, BudgetError, budgetLimits, est, monthStart, spentThisMonth } from "@/lib/budget";
 import { normTerm, normUrl } from "@/lib/util";
+import { buildReport } from "@/lib/report";
 
 export const dynamic = "force-dynamic";
 
@@ -192,6 +193,15 @@ const GETS: Record<string, H> = {
   content: async ({ id }) =>
     db.contentAnalysis.findMany({ where: { projectId: id }, orderBy: { createdAt: "desc" }, select: { id: true, url: true, keyword: true, score: true, status: true, createdAt: true } }),
 
+  report: async ({ id, url }) => {
+    const md = await buildReport(id);
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { domain: true } });
+    const name = `seo-${p.domain.replace(/[^a-z0-9.-]/gi, "")}-${new Date().toISOString().slice(0, 10)}.md`;
+    return new Response(md, {
+      headers: { "content-type": "text/markdown; charset=utf-8", ...(url.searchParams.has("download") ? { "content-disposition": `attachment; filename="${name}"` } : {}) },
+    });
+  },
+  "report/last": async ({ id }) => db.jobRun.findFirst({ where: { projectId: id, kind: QUEUES.full }, orderBy: { createdAt: "desc" } }),
   "content/one": async ({ url }) => db.contentAnalysis.findUnique({ where: { id: url.searchParams.get("cid")! } }),
 };
 
@@ -234,6 +244,23 @@ const POSTS: Record<string, H> = {
     await writeCache(rows, p.country, p.language, "csv");
     const updated = await backfillVolumes(p.country, p.language, rows.map((r) => r.keyword));
     return { imported: rows.length, skipped, updated, withRange: rows.filter((r) => r.volumeMin !== r.volumeMax).length };
+  },
+
+  /** Corre todos los módulos en un solo job y deja los datos listos para el informe. */
+  report: async ({ id, body }) => {
+    const running = await db.jobRun.findFirst({ where: { projectId: id, kind: QUEUES.full, status: { in: ["queued", "running"] } } });
+    if (running) throw new Error("ya hay un informe en curso");
+    const opts = {
+      maxPages: Math.min(Number(body.maxPages ?? 1000), 20000),
+      concurrency: Math.min(Number(body.concurrency ?? 3), 10),
+      render: Boolean(body.render),
+      seeds: ((body.seeds ?? []) as string[]).map((s) => normTerm(s)).filter(Boolean).slice(0, 20),
+      gsc: body.gsc !== false,
+      inspect: body.inspect !== false,
+      psi: body.psi !== false,
+      rank: body.rank !== false,
+    };
+    return enqueue(id, QUEUES.full, { opts });
   },
 
   "audit/psi": async ({ id, body }) => enqueue(id, QUEUES.psi, { urls: (body.urls ?? []).slice(0, 20), strategies: body.strategies ?? ["mobile", "desktop"] }),
@@ -384,7 +411,8 @@ function make(table: Record<string, H>) {
       body = ct.includes("json") || !ct ? await req.json().catch(() => ({})) : Buffer.from(await req.arrayBuffer());
     }
     try {
-      return ok(await h({ id: params.id, path, url: new URL(req.url), body }));
+      const r = await h({ id: params.id, path, url: new URL(req.url), body });
+      return r instanceof Response ? r : ok(r);
     } catch (e) {
       console.error(`[api] ${req.method} ${key}`, e);
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") return bad("no existe", 404);

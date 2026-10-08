@@ -14,6 +14,7 @@ export const QUEUES = {
   content: "content.analyze",
   dfsFlush: "volume.dfs.flush",
   dfsCollect: "volume.dfs.collect",
+  full: "report.full",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 

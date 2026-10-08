@@ -48,6 +48,7 @@ const PATHS: Record<string, string> = {
   search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm10 3-5-5",
   sparkle: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z",
   lock: "M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4",
+  doc: "M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7",
 };
 
 export function Icon({ name, className = "h-4 w-4" }: { name: keyof typeof PATHS | string; className?: string }) {

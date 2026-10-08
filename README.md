@@ -27,6 +27,12 @@ Límites mensuales en USD por proveedor (mes calendario en `TZ`): `SERPENT_MONTH
 
 Las cotas son estimaciones conservadoras: la caché de SERP y de volumen hace que el gasto real suela ser menor. Dos jobs simultáneos se validan por separado.
 
+## Informe completo
+
+`Informe` → **Correr todo** encola un solo job (`report.full`) que corre en orden: crawl → Search Console (90 días) → inspección de las 20 URLs más enlazadas → PageSpeed mobile de 5 URLs → keywords (si se dan semillas) → rankings de las trackeadas → alertas. Cada paso sin credenciales o sin presupuesto se salta y el resto sigue; el resultado por paso queda en el log del job.
+
+El informe (`GET /api/p/{id}/report`, `?download=1` para bajar el `.md`) se arma con lo último guardado de cada módulo: tareas por prioridad agrupadas por sección del sitio (`/perfil/*`) con la corrección a aplicar, auditoría, PageSpeed, indexación, oportunidades de GSC (posición 4–20, caídas, CTR bajo, canibalización), rankings, clusters sin página propia y briefs de contenido, más un anexo con las URLs de cada issue. Está escrito para pasárselo a un agente de código.
+
 ## Local
 
 ```bash

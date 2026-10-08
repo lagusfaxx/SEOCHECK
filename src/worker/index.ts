@@ -13,6 +13,7 @@ import { runWithJob } from "../lib/jobctx";
 import { assertBudget, BudgetError, est } from "../lib/budget";
 import { collectDfsQueue, flushDfsQueue } from "../lib/volume/dataforseo";
 import { backfillVolumes, writeCache } from "../lib/volume/broker";
+import { runFull } from "../lib/fullrun";
 
 type Data = { projectId: string; jobRunId?: string; [k: string]: any };
 
@@ -74,6 +75,10 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
       // quedan tasks en cola: volver a revisar
       if (r.waiting) await boss.send(QUEUES.dfsCollect, {}, { singletonKey: "dfs-collect", startAfter: 20 });
       return { done: r.done, waiting: r.waiting, updated };
+    }
+    case QUEUES.full: {
+      const steps = await runFull(d.projectId, d.opts ?? {}, d.jobRunId);
+      return steps.map((s) => `${s.step}:${s.status}`).join(" ");
     }
     case QUEUES.content:
       await assertBudget({ serpent: est.serpCalls(1), llm: est.llmBrief() }, "Optimización de contenido");
