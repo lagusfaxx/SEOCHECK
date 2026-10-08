@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useProject } from "@/components/Shell";
-import { api, Empty, fmt, Icon, Score, useAction, useApi, fmtDate } from "@/components/ui";
+import { api, Empty, fmt, Icon, Score, useAction, useApi, fmtDate, Spinner } from "@/components/ui";
 
 const CONTENT_STATUS: Record<string, string> = { queued: "en cola", running: "analizando…", brief: "generando brief…", error: "falló" };
 
@@ -36,7 +36,7 @@ export default function ContentList() {
       >
         <input className="input min-w-[280px] flex-[2]" placeholder={`https://${project?.domain ?? ""}/…`} value={url} onChange={(e) => setUrl(e.target.value)} required />
         <input className="input min-w-[200px] flex-1" placeholder="keyword objetivo" value={kw} onChange={(e) => setKw(e.target.value)} required />
-        <button className="btn-p" disabled={analyzing}><Icon name="play" />{analyzing ? "Enviando…" : "Analizar"}</button>
+        <button className="btn-p" disabled={analyzing}><Icon name="play" />{analyzing ? <><Spinner className="h-3.5 w-3.5" />Enviando…</> : "Analizar"}</button>
         {target?.gscUrl && (
           <div className={`w-full rounded-lg px-3 py-2 text-sm ${target.mismatch && url ? "bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200" : "bg-ink-50 text-ink-700 dark:bg-ink-800 dark:text-ink-200"}`}>
             {target.mismatch && url ? "Ojo: para esta keyword Google ya muestra otra URL tuya: " : "Para esta keyword ya rankea: "}
@@ -48,7 +48,7 @@ export default function ContentList() {
         )}
       </form>
       {!data?.length ? (
-        <Empty>—</Empty>
+        <Empty icon="wand" tone="info" title="Optimiza tu primera página">Pon la URL y la keyword objetivo: comparamos tu página con las que rankean en Google y generamos un brief.</Empty>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {data.map((c) => (

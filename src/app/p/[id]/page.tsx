@@ -6,7 +6,7 @@ import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@d
 import { CSS } from "@dnd-kit/utilities";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useProject } from "@/components/Shell";
-import { api, cx, Delta, Empty, fmt, Icon, Score, Stat, useApi, useLocal } from "@/components/ui";
+import { api, cx, Delta, Empty, fmt, Icon, IconBadge, Score, Stat, useApi, useLocal, Spinner } from "@/components/ui";
 
 type W = { id: string; w: 1 | 2 | 3 };
 const DEFAULT: W[] = [
@@ -65,6 +65,7 @@ function Block({ w, onResize, children, title }: { w: W; onResize: () => void; c
         <button {...s.attributes} {...s.listeners} className="cursor-grab text-ink-300 hover:text-ink-600 active:cursor-grabbing">
           <Icon name="grip" />
         </button>
+        {WIDGET_ICON[w.id] && <IconBadge name={WIDGET_ICON[w.id].icon} tone={WIDGET_ICON[w.id].tone} size="sm" />}
         <span className="lbl">{title}</span>
         <button onClick={onResize} className="btn-g ml-auto px-1 py-0 text-xs opacity-0 group-hover:opacity-100">{w.w}/3</button>
       </div>
@@ -72,6 +73,11 @@ function Block({ w, onResize, children, title }: { w: W; onResize: () => void; c
     </div>
   );
 }
+
+const WIDGET_ICON: Record<string, { icon: string; tone: "acc" | "good" | "bad" | "warn" | "info" | "mute" }> = {
+  kpis: { icon: "chart", tone: "acc" }, gsc: { icon: "gsc", tone: "info" }, health: { icon: "audit", tone: "good" }, movers: { icon: "trend", tone: "acc" },
+  alerts: { icon: "bell", tone: "warn" }, actions: { icon: "bolt", tone: "acc" }, spend: { icon: "coin", tone: "mute" }, content: { icon: "content", tone: "info" },
+};
 
 const ALERT_LABEL: Record<string, string> = { drop: "Caída", cannibal: "Canibalización", lowctr: "CTR bajo" };
 
@@ -102,13 +108,13 @@ export default function Overview() {
       case "kpis":
         return [
           "Estado",
-          <div key="k" className="grid grid-cols-2 gap-6 md:grid-cols-6">
-            <Stat label="Keywords" value={fmt(data?.keywords)} sub={`${fmt(data?.volume)} vol.`} hint="Keywords del último research y la suma de su volumen mensual de búsquedas." />
-            <Stat label="Clusters" value={fmt(data?.clusters)} hint="Grupos de keywords que se atacan con una misma página." />
-            <Stat label="Trackeadas" value={fmt(data?.tracked)} sub={`${fmt(data?.top3)} top 3 · ${fmt(data?.top10)} top 10`} hint="Keywords a las que se les sigue la posición en Google, y cuántas están en el top 3 y top 10." />
-            <Stat label="Pos. media" value={fmt(data?.avgPos, 1)} hint="Posición promedio de las keywords trackeadas que aparecen en el top 100. Más bajo es mejor." />
-            <Stat label="Clicks 90d" value={fmt(sum("clicks"))} hint="Clics desde Google en los últimos 90 días (Search Console)." />
-            <Stat label="Impr. 90d" value={fmt(sum("impressions"))} hint="Veces que tu sitio apareció en resultados de Google en 90 días (Search Console)." />
+          <div key="k" className="stagger grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-6">
+            <Stat icon="key" label="Keywords" value={fmt(data?.keywords)} sub={`${fmt(data?.volume)} vol.`} hint="Keywords del último research y la suma de su volumen mensual de búsquedas." />
+            <Stat icon="layers" label="Clusters" value={fmt(data?.clusters)} hint="Grupos de keywords que se atacan con una misma página." />
+            <Stat icon="target" label="Trackeadas" value={fmt(data?.tracked)} sub={`${fmt(data?.top3)} top 3 · ${fmt(data?.top10)} top 10`} hint="Keywords a las que se les sigue la posición en Google, y cuántas están en el top 3 y top 10." />
+            <Stat icon="rank" label="Pos. media" value={fmt(data?.avgPos, 1)} hint="Posición promedio de las keywords trackeadas que aparecen en el top 100. Más bajo es mejor." />
+            <Stat icon="trend" label="Clicks 90d" value={fmt(sum("clicks"))} hint="Clics desde Google en los últimos 90 días (Search Console)." />
+            <Stat icon="eye" label="Impr. 90d" value={fmt(sum("impressions"))} hint="Veces que tu sitio apareció en resultados de Google en 90 días (Search Console)." />
           </div>,
         ];
       case "gsc":
@@ -127,7 +133,7 @@ export default function Overview() {
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <Empty key="g">sin datos · <button className="ml-1 text-acc" onClick={() => run("gsc/sync")}>sincronizar</button></Empty>
+            <Empty key="g" compact icon="gsc" tone="info" title="Sin datos de Search Console"><button className="btn-p hov-spin mt-1" onClick={() => run("gsc/sync")}><Icon name="refresh" />Sincronizar</button></Empty>
           ),
         ];
       case "health":
@@ -145,7 +151,7 @@ export default function Overview() {
               </div>
             </Link>
           ) : (
-            <Empty key="h"><button className="text-acc" onClick={() => run("audit")}>crawlear</button></Empty>
+            <Empty key="h" compact icon="audit" tone="good" title="Aún no auditas el sitio"><button className="btn-p hov-nudge mt-1" onClick={() => run("audit")}><Icon name="play" />Crawlear</button></Empty>
           ),
         ];
       case "movers":
@@ -162,7 +168,7 @@ export default function Overview() {
               ))}
             </div>
           ) : (
-            <Empty key="m"><Link className="text-acc" href={`/p/${id}/rank`}>trackear keywords</Link></Empty>
+            <Empty key="m" compact icon="trend" title="Sin movimientos todavía"><Link className="btn mt-1" href={`/p/${id}/rank`}><Icon name="target" />Trackear keywords</Link></Empty>
           ),
         ];
       case "alerts":
@@ -172,23 +178,23 @@ export default function Overview() {
             <div key="a" className="space-y-1.5 text-sm">
               {data.alerts.slice(0, 8).map((a: any) => (
                 <Link key={a.id} href={`/p/${id}/rank`} className="flex items-center gap-2 hover:text-acc">
-                  <span className={cx("chip", a.type === "drop" && "!bg-rose-100 !text-rose-700", a.type === "cannibal" && "!bg-amber-100 !text-amber-700")}>{ALERT_LABEL[a.type]}</span>
+                  <span className={cx("chip", a.type === "drop" && "!bg-rose-100 !text-rose-700", a.type === "cannibal" && "!bg-amber-100 !text-amber-700")}>{a.type === "drop" && <Icon name="trend" className="h-3 w-3 -scale-y-100" />}{a.type === "cannibal" && <Icon name="alert" className="h-3 w-3" />}{ALERT_LABEL[a.type]}</span>
                   <span className="truncate">{a.key}</span>
                 </Link>
               ))}
             </div>
           ) : (
-            <Empty key="a">—</Empty>
+            <Empty key="a" compact icon="check" tone="good" title="Todo tranquilo">Sin alertas nuevas</Empty>
           ),
         ];
       case "actions":
         return [
           "Acciones",
           <div key="ac" className="grid grid-cols-2 gap-2">
-            <button className="btn justify-center" onClick={() => run("audit")}><Icon name="audit" />Crawl</button>
-            <button className="btn justify-center" onClick={() => run("rank/check")}><Icon name="rank" />Rankings</button>
-            <button className="btn justify-center" onClick={() => run("gsc/sync")}><Icon name="gsc" />GSC</button>
-            <button className="btn justify-center" onClick={() => run("alerts")}><Icon name="bell" />Alertas</button>
+            <button className="btn justify-center py-2.5" onClick={() => run("audit")}><Icon name="audit" />Crawl</button>
+            <button className="btn justify-center py-2.5" onClick={() => run("rank/check")}><Icon name="rank" />Rankings</button>
+            <button className="btn hov-spin justify-center py-2.5" onClick={() => run("gsc/sync")}><Icon name="gsc" />GSC</button>
+            <button className="btn justify-center py-2.5" onClick={() => run("alerts")}><Icon name="bell" />Alertas</button>
           </div>,
         ];
       case "spend":
@@ -201,12 +207,12 @@ export default function Overview() {
               {data.content.map((c: any) => (
                 <Link key={c.id} href={`/p/${id}/content/${c.id}`} className="flex items-center gap-2 hover:text-acc">
                   <span className="truncate">{c.keyword}</span>
-                  <span className="ml-auto tabular-nums font-semibold">{c.score ?? "…"}</span>
+                  <span className="ml-auto tabular-nums font-semibold">{c.score ?? <Spinner className="h-3.5 w-3.5 text-acc" />}</span>
                 </Link>
               ))}
             </div>
           ) : (
-            <Empty key="c"><Link className="text-acc" href={`/p/${id}/content`}>optimizar una URL</Link></Empty>
+            <Empty key="c" compact icon="wand" tone="info" title="Sin análisis de contenido"><Link className="btn mt-1" href={`/p/${id}/content`}><Icon name="sparkle" />Optimizar una URL</Link></Empty>
           ),
         ];
     }
@@ -217,7 +223,7 @@ export default function Overview() {
     <div className="p-4 md:p-6">
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="stagger-fade grid grid-cols-1 gap-4 md:grid-cols-3">
             {items.map((w) => {
               const [title, body] = render(w.id);
               return (

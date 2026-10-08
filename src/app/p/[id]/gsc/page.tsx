@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Area, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useProject } from "@/components/Shell";
 import { GscConnect } from "@/components/GscConnect";
-import { api, cx, DataTable, Delta, Drawer, Empty, fmt, Icon, jobBusy, pct, Stat, Tabs, useAction, useApi, type Col } from "@/components/ui";
+import { api, cx, DataTable, Delta, Drawer, Empty, fmt, Icon, jobBusy, pct, Stat, Tabs, useAction, useApi, type Col, Spinner } from "@/components/ui";
 
 type Row = { key: string; clicks: number; impressions: number; ctr: number; position: number; n: number; prevClicks: number | null; prevPosition: number | null };
 
@@ -62,12 +62,12 @@ export default function GscPage() {
           {dim === "query" && rowsSel.size > 0 && (
             <button className="btn" disabled={trackBusy} onClick={() => track()}><Icon name="rank" />Trackear {rowsSel.size}</button>
           )}
-          <button className="btn" disabled={syncing || syncBusy} title={syncing ? "Ya hay una sincronización en curso" : undefined} onClick={() => sync()}><Icon name="refresh" />{syncing ? "Sincronizando…" : "Sync"}</button>
+          <button className="btn hov-spin" disabled={syncing || syncBusy} title={syncing ? "Ya hay una sincronización en curso" : undefined} onClick={() => sync()}>{syncing || syncBusy ? <Spinner className="h-3.5 w-3.5" /> : <Icon name="refresh" />}{syncing ? "Sincronizando…" : "Sync"}</button>
         </div>
       </div>
 
       {!data?.total ? (
-        <Empty>sin datos · presiona sync</Empty>
+        <Empty icon="gsc" tone="info" title="Aún no hay datos de Search Console">Presiona <b>Sync</b> para traer clics, impresiones y posiciones reales de Google.</Empty>
       ) : (
         <>
           <div className="card p-4">

@@ -27,3 +27,55 @@ body { @apply bg-ink-50 text-ink-900 antialiased dark:bg-ink-950 dark:text-ink-1
 .react-flow__attribution { display: none; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: #b5b5c355; border-radius: 4px; }
+
+/* ---------- movimiento: íconos y entradas (se apaga con "reducir movimiento") ---------- */
+@keyframes sc-spin { to { transform: rotate(360deg); } }
+@keyframes sc-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@keyframes sc-ring { 0% { transform: scale(0.85); opacity: 0.55; } 100% { transform: scale(1.6); opacity: 0; } }
+@keyframes sc-pop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes sc-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes sc-slide { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+@keyframes sc-draw { from { stroke-dashoffset: var(--sc-len, 60); } to { stroke-dashoffset: 0; } }
+@keyframes sc-wiggle { 0%, 100% { transform: rotate(0); } 15% { transform: rotate(14deg); } 30% { transform: rotate(-12deg); } 45% { transform: rotate(8deg); } 60% { transform: rotate(-4deg); } }
+@keyframes sc-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+@keyframes sc-twinkle { 0%, 100% { transform: scale(1) rotate(0); opacity: 1; } 50% { transform: scale(0.8) rotate(20deg); opacity: 0.7; } }
+@keyframes sc-gauge { from { stroke-dashoffset: var(--sc-c); } }
+
+.ic-spin { animation: sc-spin 0.9s linear infinite; }
+.ic-float { animation: sc-float 3s ease-in-out infinite; }
+.ic-pop { animation: sc-pop 0.45s cubic-bezier(.2,.9,.3,1.3) both; }
+.ic-draw path { stroke-dasharray: var(--sc-len, 60); animation: sc-draw 0.9s ease-out both; }
+.ic-wiggle { animation: sc-wiggle 1.2s ease-in-out infinite; transform-origin: 50% 10%; }
+.ic-twinkle { animation: sc-twinkle 2.2s ease-in-out infinite; }
+.anim-in { animation: sc-in 0.35s ease-out both; }
+.anim-slide { animation: sc-slide 0.3s ease-out both; }
+.ring-pulse::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: currentColor; animation: sc-ring 2.2s ease-out infinite; }
+.skeleton { background: linear-gradient(90deg, rgb(0 0 0 / 0.05) 25%, rgb(0 0 0 / 0.1) 37%, rgb(0 0 0 / 0.05) 63%); background-size: 400% 100%; animation: sc-shimmer 1.4s ease infinite; }
+@media (prefers-color-scheme: dark) { .skeleton { background: linear-gradient(90deg, rgb(255 255 255 / 0.05) 25%, rgb(255 255 255 / 0.1) 37%, rgb(255 255 255 / 0.05) 63%); background-size: 400% 100%; } }
+.gauge { animation: sc-gauge 1s ease-out both; }
+
+/* hover: el ícono del botón reacciona */
+.btn svg, .btn-p svg, .btn-g svg { transition: transform 0.2s ease; }
+.btn:hover:not(:disabled) svg, .btn-p:hover:not(:disabled) svg { transform: scale(1.15); }
+.hov-spin:hover svg { transform: rotate(180deg) !important; transition: transform 0.45s ease; }
+.hov-nudge:hover svg { transform: translateX(2px) scale(1.1) !important; }
+.nav-ic { transition: transform 0.25s cubic-bezier(.2,.9,.3,1.4); }
+.group:hover .nav-ic { transform: scale(1.18) rotate(-6deg); }
+
+/* grilla de tarjetas: entran una tras otra */
+.stagger > * { animation: sc-in 0.4s ease-out both; }
+.stagger > *:nth-child(2) { animation-delay: 0.04s; } .stagger > *:nth-child(3) { animation-delay: 0.08s; }
+.stagger > *:nth-child(4) { animation-delay: 0.12s; } .stagger > *:nth-child(5) { animation-delay: 0.16s; }
+.stagger > *:nth-child(6) { animation-delay: 0.2s; } .stagger > *:nth-child(7) { animation-delay: 0.24s; }
+.stagger > *:nth-child(n+8) { animation-delay: 0.28s; }
+
+/* igual pero solo opacidad: para grillas con drag & drop (no pisa su transform) */
+@keyframes sc-fade { from { opacity: 0; } to { opacity: 1; } }
+.stagger-fade > * { animation: sc-fade 0.45s ease-out both; }
+.stagger-fade > *:nth-child(2) { animation-delay: 0.05s; } .stagger-fade > *:nth-child(3) { animation-delay: 0.1s; }
+.stagger-fade > *:nth-child(4) { animation-delay: 0.15s; } .stagger-fade > *:nth-child(5) { animation-delay: 0.2s; }
+.stagger-fade > *:nth-child(n+6) { animation-delay: 0.25s; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}

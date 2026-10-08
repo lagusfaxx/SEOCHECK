@@ -5,7 +5,7 @@ import MindMap from "@/components/kw/MindMap";
 import KwTable from "@/components/kw/Table";
 import type { KwData, RunSources } from "@/components/kw/types";
 import { useProject } from "@/components/Shell";
-import { api, cx, Empty, fmt, Icon, Tabs, useLocal, fmtDate } from "@/components/ui";
+import { api, cx, Empty, fmt, Icon, Tabs, useLocal, fmtDate, Spinner } from "@/components/ui";
 import { useAction, useApi } from "@/components/ui";
 import { statusLabel } from "@/lib/status";
 
@@ -68,7 +68,7 @@ export default function KeywordsPage() {
         <CsvImport id={id} onDone={() => mutate()} />
         <button className="btn-p" onClick={() => start()} disabled={running || starting || (!seeds.length && !draft.trim())}>
           <Icon name="play" />
-          {running ? "…" : "Investigar"}
+          {running || starting ? <><Spinner className="h-3.5 w-3.5" />Investigando…</> : "Investigar"}
         </button>
       </div>
 
@@ -110,7 +110,7 @@ export default function KeywordsPage() {
       )}
 
       {!data ? null : !data.runs.length ? (
-        <Empty>agrega seeds y presiona investigar</Empty>
+        <Empty icon="key" title="Empieza tu research">Escribe algunas palabras semilla (lo que vende o hace el sitio) y presiona <b>Investigar</b>. Agrupamos las keywords en clusters según lo que Google muestra.</Empty>
       ) : view === "table" ? (
         <KwTable data={data} reload={() => mutate()} />
       ) : view === "board" ? (
@@ -149,7 +149,7 @@ function CsvImport({ id, onDone }: { id: string; onDone: () => void }) {
   return (
     <label className={cx("btn cursor-pointer", busy && "opacity-50")} title="CSV de Keyword Planner">
       <Icon name="table" />
-      {busy ? "…" : msg ?? "CSV"}
+      {busy ? <Spinner className="h-3.5 w-3.5" /> : msg ?? "CSV"}
       <input
         type="file"
         accept=".csv,text/csv,text/tab-separated-values"

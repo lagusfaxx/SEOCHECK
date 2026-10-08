@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useProject } from "@/components/Shell";
-import { api, cx, DataTable, Drawer, Empty, fmt, Hint, Icon, Score, SEV, Stat, Tabs, useApi, type Col, fmtDate } from "@/components/ui";
+import { api, cx, DataTable, Drawer, Empty, fmt, Hint, Icon, Score, SEV, Stat, Tabs, useApi, type Col, fmtDate, Spinner, IconBadge } from "@/components/ui";
 import { ISSUE_FIX, ISSUE_WHY } from "@/lib/audit/fixes";
 import { CRAWL_STATUS } from "@/lib/status";
 
@@ -99,7 +99,7 @@ export default function AuditPage() {
         <label className={cx("flex items-center gap-1 text-xs", project?.providers?.render ? "text-ink-500" : "text-ink-300")} title={project?.providers?.render ? "" : "requiere BROWSER_WS_ENDPOINT"}>
           <input type="checkbox" disabled={!project?.providers?.render} checked={opt.render} onChange={(e) => setOpt({ ...opt, render: e.target.checked })} />render JS
         </label>
-        <button className="btn-p" disabled={running} onClick={() => run("audit", opt)}><Icon name="play" />{running ? "…" : "Crawlear"}</button>
+        <button className="btn-p hov-nudge" disabled={running} onClick={() => run("audit", opt)}>{running ? <><Spinner className="h-4 w-4" />Crawleando…</> : <><Icon name="play" />Crawlear</>}</button>
         {data?.crawls?.length > 0 && (
           <select className="input ml-auto w-auto" value={data.crawlId} onChange={(e) => setCrawl(e.target.value)}>
             {data.crawls.map((c: any) => (
@@ -110,7 +110,8 @@ export default function AuditPage() {
       </div>
 
       {cur && cur.status !== "completed" && (
-        <div className={cx("flex items-start gap-3 rounded-xl px-4 py-3 text-sm", CRAWL_STATUS[cur.status]?.cls)}>
+        <div className={cx("anim-in flex items-start gap-3 rounded-xl px-4 py-3 text-sm", CRAWL_STATUS[cur.status]?.cls)}>
+          {cur.status === "running" || cur.status === "queued" ? <Spinner className="mt-0.5 h-4 w-4 shrink-0" /> : <Icon name={cur.status === "partial" ? "info" : "alert"} anim={cur.status === "failed" ? "wiggle" : "pop"} className="mt-0.5 h-4 w-4 shrink-0" />}
           <span className="font-semibold">Crawl {CRAWL_STATUS[cur.status]?.label ?? cur.status}</span>
           <span className="flex-1">
             {cur.reason ??
@@ -122,7 +123,7 @@ export default function AuditPage() {
       )}
 
       {!data?.crawlId ? (
-        <Empty>sin crawls</Empty>
+        <Empty icon="audit" tone="good" title="Todavía no auditas este sitio">Lanza un crawl: revisamos cada página buscando errores técnicos, links rotos, títulos, indexación y velocidad.</Empty>
       ) : cur && !["completed", "partial"].includes(cur.status) ? null : (
         <>
           <div className="card grid grid-cols-2 items-center gap-6 p-4 md:grid-cols-8">
@@ -136,14 +137,14 @@ export default function AuditPage() {
             <Stat label="Externos" value={fmt(st.external)} hint="Dominios externos distintos a los que enlaza tu sitio." />
           </div>
 
-          <Tabs value={tab} onChange={setTab} items={[{ id: "issues", label: "Issues" }, { id: "urls", label: "URLs" }, { id: "speed", label: "Velocidad" }, { id: "index", label: "Indexación" }]} />
+          <Tabs value={tab} onChange={setTab} items={[{ id: "issues", label: "Issues", icon: "alert" }, { id: "urls", label: "URLs", icon: "table" }, { id: "speed", label: "Velocidad", icon: "bolt" }, { id: "index", label: "Indexación", icon: "search" }]} />
 
           {tab === "issues" && (
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="stagger grid gap-4 md:grid-cols-3">
               {sevOrder.map((sev) => (
                 <div key={sev} className="card p-3">
                   <div className="mb-2 flex items-center gap-2">
-                    <span className={cx("h-2.5 w-2.5 rounded-full", SEV[sev])} />
+                    <IconBadge name={sev === "info" ? "info" : "alert"} tone={sev === "critical" ? "bad" : sev === "warning" ? "warn" : "info"} size="sm" anim="pop" pulse={sev === "critical" && issues.some((i) => i.severity === "critical")} />
                     <span className="lbl">{sev === "critical" ? "Crítico" : sev === "warning" ? "Warning" : "Info"}</span>
                     <Hint text={SEV_HINT[sev]} />
                     <span className="ml-auto text-sm font-semibold tabular-nums">{fmt(issues.filter((i) => i.severity === sev).reduce((s, i) => s + i.count, 0))}</span>
@@ -221,7 +222,7 @@ function PsiTable({ rows }: { rows: any[] }) {
   const latest = new Map<string, any>();
   for (const r of rows) if (!latest.has(`${r.url}|${r.strategy}`)) latest.set(`${r.url}|${r.strategy}`, r);
   const list = [...latest.values()];
-  if (!list.length) return <Empty>sin mediciones</Empty>;
+  if (!list.length) return <Empty icon="bolt" tone="warn" title="Sin mediciones de velocidad">Mide con PageSpeed las páginas principales para ver Core Web Vitals.</Empty>;
   return (
     <div className="card overflow-auto">
       <table className="tbl">

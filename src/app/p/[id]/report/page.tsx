@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { useProject } from "@/components/Shell";
-import { api, cx, Icon, useApi, fmtDate } from "@/components/ui";
+import { api, cx, Icon, useApi, fmtDate, Spinner, Skeleton } from "@/components/ui";
 
 type Step = { step: string; status: "ok" | "skipped" | "error"; detail?: string };
 type Job = { id: string; status: string; progress: number; message: string | null; createdAt: string; updatedAt: string; log: { msg: string; data?: unknown }[] };
@@ -73,7 +73,7 @@ export default function ReportPage() {
             </label>
           ))}
           <button className="btn-p ml-auto" disabled={running} onClick={start}>
-            <Icon name="play" />
+            {running ? <Spinner className="h-4 w-4" /> : <Icon name="rocket" />}
             {running ? `${last?.progress ?? 0}% · ${last?.message ?? "en cola"}` : "Correr todo"}
           </button>
         </div>
@@ -102,11 +102,15 @@ export default function ReportPage() {
         <div className="flex items-center gap-2 border-b border-ink-100 p-3 dark:border-ink-800">
           <span className="lbl">Informe</span>
           {last && <span className="text-xs text-ink-400">{fmtDate(last.updatedAt, "datetime")}</span>}
-          <button className="btn ml-auto" onClick={() => refreshMd()}><Icon name="refresh" /></button>
-          <button className="btn" onClick={copy} disabled={!md}><Icon name={copied ? "check" : "copy"} />{copied ? "Copiado" : "Copiar"}</button>
+          <button className="btn hov-spin ml-auto" onClick={() => refreshMd()}><Icon name="refresh" /></button>
+          <button className="btn" onClick={copy} disabled={!md}><Icon name={copied ? "check" : "copy"} anim={copied ? "pop" : undefined} />{copied ? "Copiado" : "Copiar"}</button>
           <a className="btn" href={`/api/p/${id}/report?download=1`}><Icon name="down" />.md</a>
         </div>
-        <pre className="max-h-[calc(100vh-280px)] overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-xs leading-relaxed">{isLoading ? "…" : md}</pre>
+        {isLoading ? (
+          <div className="space-y-2 p-4">{[90, 70, 80, 50, 75, 60].map((w, i) => <div key={i} style={{ width: `${w}%` }}><Skeleton className="h-3" /></div>)}</div>
+        ) : (
+          <pre className="anim-in max-h-[calc(100vh-280px)] overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-xs leading-relaxed">{md}</pre>
+        )}
       </div>
     </div>
   );

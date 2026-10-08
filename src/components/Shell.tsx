@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSWRConfig } from "swr";
 import NewProject from "./NewProject";
-import { api, Bar, cx, Drawer, Hint, Icon, Toaster, useApi, useLocal } from "./ui";
+import { api, Bar, cx, Drawer, Hint, Icon, Spinner, Toaster, useApi, useLocal } from "./ui";
 
 type Project = { id: string; name: string; domain: string; country: string; language: string; gscProperty: string | null; settings: any; providers: Record<string, any> };
 type Job = { id: string; kind: string; status: string; progress: number; message: string | null };
@@ -89,10 +89,10 @@ function Intro({ item }: { item: NavItem }) {
       </button>
     );
   return (
-    <div className="mx-4 mt-4 rounded-xl border border-acc/20 bg-acc-soft/60 p-4 text-sm dark:border-acc/30 dark:bg-acc/10 md:mx-6">
+    <div className="anim-in mx-4 mt-4 rounded-xl border border-acc/20 bg-acc-soft/60 p-4 text-sm dark:border-acc/30 dark:bg-acc/10 md:mx-6">
       <div className="flex items-start gap-3">
-        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white text-acc dark:bg-ink-900">
-          <Icon name={item.icon} className="h-4 w-4" />
+        <div className="ic-float grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-acc shadow-sm dark:bg-ink-900">
+          <Icon name={item.icon} className="h-[18px] w-[18px]" anim="draw" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-ink-900 dark:text-ink-100">{item.label}</div>
@@ -101,7 +101,7 @@ function Intro({ item }: { item: NavItem }) {
             <ol className="mt-2 grid gap-1.5 md:grid-cols-3">
               {item.steps.map((st, i) => (
                 <li key={i} className="flex gap-2 text-ink-600 dark:text-ink-300">
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-acc text-[11px] font-semibold text-white">{i + 1}</span>
+                  <span className="ic-pop grid h-5 w-5 shrink-0 place-items-center rounded-full bg-acc text-[11px] font-semibold text-white" style={{ animationDelay: `${0.15 + i * 0.12}s` }}>{i + 1}</span>
                   <span className="leading-snug">{st}</span>
                 </li>
               ))}
@@ -185,12 +185,12 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
                         )}
                       >
                         {on && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-acc" />}
-                        <Icon name={n.icon} className="h-[18px] w-[18px] shrink-0" />
+                        <Icon name={n.icon} className={cx("nav-ic h-[18px] w-[18px] shrink-0", on && "ic-pop")} />
                         <span className={cx("min-w-0 flex-1", slim && "md:hidden")}>
                           <span className="block text-sm font-medium leading-tight">{n.label}</span>
                           <span className={cx("block truncate text-[11px] leading-tight", on ? "text-acc/70" : "text-ink-400")}>{n.desc}</span>
                         </span>
-                        {busy && <span className={cx("h-2 w-2 shrink-0 animate-pulse rounded-full bg-acc", slim && "md:absolute md:right-2 md:top-2")} />}
+                        {busy && <Spinner className={cx("h-3.5 w-3.5 shrink-0 text-acc", slim && "md:absolute md:right-1 md:top-1")} />}
                       </Link>
                     );
                   })}
@@ -232,10 +232,13 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
                 <div key={j.id} className="relative shrink-0">
                   <button
                     onClick={() => setOpenJob(openJob === j.id ? null : j.id)}
-                    className={cx("flex w-40 flex-col gap-1 rounded-lg border px-2 py-1 text-left", j.status === "error" ? "border-rose-300 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20" : "border-ink-200 hover:bg-ink-50 dark:border-ink-700 dark:hover:bg-ink-800")}
+                    className={cx("anim-slide flex w-40 flex-col gap-1 rounded-lg border px-2 py-1 text-left", j.status === "error" ? "border-rose-300 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20" : "border-ink-200 hover:bg-ink-50 dark:border-ink-700 dark:hover:bg-ink-800")}
                   >
-                    <div className="flex w-full justify-between text-[11px]">
-                      <span>{JOB_LABEL[j.kind] ?? j.kind}</span>
+                    <div className="flex w-full items-center justify-between text-[11px]">
+                      <span className="flex items-center gap-1">
+                        {j.status === "error" ? <Icon name="alert" anim="wiggle" className="h-3 w-3" /> : j.status === "queued" ? <Icon name="clock" className="h-3 w-3 text-ink-400" /> : <Spinner className="h-3 w-3 text-acc" />}
+                        {JOB_LABEL[j.kind] ?? j.kind}
+                      </span>
                       <span className="truncate pl-2 text-ink-400">{j.status === "error" ? "error · ver" : j.message ?? (j.status === "queued" ? "en cola" : `${j.progress}%`)}</span>
                     </div>
                     {j.status !== "error" && <Bar value={j.status === "queued" ? 2 : j.progress} className="h-1 w-full" />}
@@ -285,7 +288,7 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
           </header>
           <main className="flex min-h-0 flex-1 flex-col overflow-auto">
             {current && <Intro key={current.href} item={current} />}
-            <div className="flex flex-1 flex-col">{children}</div>
+            <div key={path} className="anim-in flex flex-1 flex-col">{children}</div>
           </main>
         </div>
       </div>

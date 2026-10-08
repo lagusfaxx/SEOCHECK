@@ -5,7 +5,7 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type D
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useProject } from "@/components/Shell";
-import { api, Bar, CopyBtn, cx, Empty, fmt, Hint, Icon, Score, Tabs, useApi } from "@/components/ui";
+import { api, Bar, CopyBtn, cx, Empty, fmt, Hint, Icon, Score, Tabs, useApi, Spinner } from "@/components/ui";
 
 type Block = { id: string; tag: "h2" | "h3"; text: string; notes?: string };
 type Brief = {
@@ -85,7 +85,11 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
   if (data.status !== "done" && !r.terms) {
     return (
       <div className="p-6">
-        <Empty>{data.status === "error" ? `El análisis falló${data.result?.error ? `: ${data.result.error}` : ""}` : `${statusLabel(data.status)}…`}</Empty>
+        {data.status === "error" ? (
+          <Empty icon="alert" tone="bad" title="El análisis falló">{data.result?.error ?? "Sin detalle"}</Empty>
+        ) : (
+          <Empty icon="sparkle" title={<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4 text-acc" />{statusLabel(data.status)}…</span>}>Estamos leyendo tu página y las que rankean en Google. Tarda 1 a 2 minutos.</Empty>
+        )}
       </div>
     );
   }
@@ -270,7 +274,7 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
           </div>
         </div>
         {!brief ? (
-          <Empty>generando…</Empty>
+          <Empty icon="wand" title={<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4 text-acc" />Generando brief…</span>} />
         ) : (
           <>
             <div className="card space-y-3 p-3">

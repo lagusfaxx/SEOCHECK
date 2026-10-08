@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useProject } from "@/components/Shell";
-import { api, cx, DataTable, Delta, Drawer, Empty, fmt, Icon, jobBusy, pct, Spark, Tabs, useAction, useApi, type Col, fmtDate } from "@/components/ui";
+import { api, cx, DataTable, Delta, Drawer, Empty, fmt, Icon, jobBusy, pct, Spark, Tabs, useAction, useApi, type Col, fmtDate, Spinner } from "@/components/ui";
 
 type Check = { id: string; date: string; position: number | null; url: string | null; features: string[]; competitors: { domain: string; position: number; url: string }[] };
 type Tracked = { id: string; keyword: string; frequency: string; active: boolean; checks: Check[] };
@@ -66,12 +66,12 @@ export default function RankPage() {
             <option value="daily">diario</option>
             <option value="weekly">semanal</option>
           </select>
-          <button className="btn-p" disabled={adding || !add.trim()} onClick={() => submit()}><Icon name="plus" />{adding ? "Agregando…" : "Agregar"}</button>
+          <button className="btn-p" disabled={adding || !add.trim()} onClick={() => submit()}><Icon name="plus" />{adding ? <><Spinner className="h-3.5 w-3.5" />Agregando…</> : "Agregar"}</button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Tabs value={String(days) as "7" | "30" | "90"} onChange={(v) => setDays(Number(v))} items={[{ id: "7", label: "7d" }, { id: "30", label: "30d" }, { id: "90", label: "90d" }]} />
           <Tabs value={view} onChange={setView} items={[{ id: "10", label: "≤10" }, { id: "100", label: "≤100" }]} />
-          <button className="btn" disabled={!rows.length || checking || recheckBusy} title={checking ? "Ya hay una revisión en curso" : !rows.length ? "Primero agrega keywords" : undefined} onClick={() => recheck()}><Icon name="refresh" />{checking ? "Revisando…" : `Revisar ${checked.size || "todas"}`}</button>
+          <button className="btn hov-spin" disabled={!rows.length || checking || recheckBusy} title={checking ? "Ya hay una revisión en curso" : !rows.length ? "Primero agrega keywords" : undefined} onClick={() => recheck()}><Icon name="refresh" />{checking || recheckBusy ? <><Spinner className="h-3.5 w-3.5" />Revisando…</> : `Revisar ${checked.size || "todas"}`}</button>
           {checked.size > 0 && (
             <button className="btn" onClick={async () => { if (!confirm(`¿Dejar de trackear ${checked.size}?`)) return; await api(`/api/p/${id}/rank`, "DELETE", { ids: [...checked] }); setChecked(new Set()); mutate(); }}><Icon name="trash" /></button>
           )}
@@ -81,7 +81,7 @@ export default function RankPage() {
             <DataTable rows={view === "10" ? rows.filter((r) => r.pos != null && r.pos <= 10) : rows} cols={cols} rowKey={(r) => r.t.id} initial={{ key: "pos", dir: 1 }} onRow={(r) => setSel(r.t)} />
           </div>
         ) : (
-          <Empty>sin keywords trackeadas</Empty>
+          <Empty icon="target" title="Sin keywords trackeadas">Agrega arriba las keywords que te importan y revisamos tu posición en Google cada semana (o cada día).</Empty>
         )}
       </div>
 

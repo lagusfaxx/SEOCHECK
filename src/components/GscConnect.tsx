@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useProject } from "./Shell";
-import { api, cx, Icon, useApi } from "./ui";
+import { api, cx, Icon, Spinner, useApi } from "./ui";
 
 type Conn = { oauthConfigured: boolean; mode: "oauth" | "sa" | null; email: string | null; lastError: string | null; property: string | null };
 
@@ -53,7 +53,7 @@ export function GscConnect({ compact }: { compact?: boolean }) {
         {c.mode === "oauth" ? (
           <button className="btn shrink-0" onClick={async () => { if (!confirm("¿Desconectar Search Console? Los datos ya sincronizados se mantienen.")) return; await api(`/api/p/${id}/gsc/connect`, "DELETE"); mutate(); }}>Desconectar</button>
         ) : (
-          <button className="btn-p shrink-0" disabled={busy || !c.oauthConfigured} onClick={connect}>{busy ? "…" : "Conectar con Google"}</button>
+          <button className="btn-p shrink-0" disabled={busy || !c.oauthConfigured} onClick={connect}>{busy ? <><Spinner className="h-4 w-4" />Conectando…</> : <><Icon name="globe" />Conectar con Google</>}</button>
         )}
       </div>
       {c.mode && sites && sites.length > 0 && (

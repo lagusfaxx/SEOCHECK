@@ -55,8 +55,9 @@ export function Toaster() {
   return (
     <div className="fixed bottom-4 right-4 z-[100] flex w-[min(380px,calc(100vw-32px))] flex-col gap-2">
       {items.map((t) => (
-        <div key={t.id} role="alert" className={cx("rounded-lg px-4 py-3 text-sm shadow-xl", t.kind === "error" ? "bg-rose-600 text-white" : "bg-emerald-600 text-white")}>
-          {t.text}
+        <div key={t.id} role="alert" className={cx("anim-slide flex items-start gap-2.5 rounded-lg px-4 py-3 text-sm shadow-xl", t.kind === "error" ? "bg-rose-600 text-white" : "bg-emerald-600 text-white")}>
+          <Icon name={t.kind === "error" ? "alert" : "check"} anim={t.kind === "error" ? "wiggle" : "draw"} className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="min-w-0 break-words">{t.text}</span>
         </div>
       ))}
     </div>
@@ -123,14 +124,64 @@ const PATHS: Record<string, string> = {
   menu: "M4 6h16M4 12h16M4 18h16",
   chevl: "M15 6l-6 6 6 6",
   chevr: "M9 6l6 6-6 6",
+  alert: "M12 4 2.5 20h19zM12 10v4M12 17h.01",
+  info: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01",
+  chart: "M3 3v18h18M7 15l4-4 3 3 5-6",
+  trend: "M3 17l6-6 4 4 8-8M14 7h7v7",
+  inbox: "M3 13h5l1.5 3h5L16 13h5M5 5h14l2 8v6H3v-6z",
+  globe: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3c2.5 2.8 2.5 15.2 0 18M12 3c-2.5 2.8-2.5 15.2 0 18",
+  target: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-4a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0-4a1 1 0 1 0 0-2 1 1 0 0 0 0 2z",
+  rocket: "M5 15c-1 1-1.5 4-1.5 4.5S6 19 7 18M9 12l3 3M14.5 4.5C18 3 21 3 21 3s0 3-1.5 6.5L13 16l-5-5zM8 11l-3-.5 2.5-3H11M13 16l.5 3 3-2.5V13",
+  clock: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2",
+  coin: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.7 3 2 3 .8 3 2-1.3 2-3 2c-1.4 0-2.5-.5-3-1.5M12 6v2m0 8v2",
+  wand: "M4 20 15 9M14 4v2M19 9h2M17.5 5.5l1.5-1.5M10 4l.5 1.5M19 14l1.5.5",
+  layers: "M12 3 2 8l10 5 10-5zM2 13l10 5 10-5M2 17.5l10 5 10-5",
 };
 
-export function Icon({ name, className = "h-4 w-4" }: { name: keyof typeof PATHS | string; className?: string }) {
+type Anim = "spin" | "float" | "pop" | "draw" | "wiggle" | "twinkle";
+
+/** Ícono SVG. `anim` le da movimiento: girar (cargando), flotar, aparecer, dibujarse, sacudirse (alertas) o titilar. */
+export function Icon({ name, className = "h-4 w-4", anim }: { name: keyof typeof PATHS | string; className?: string; anim?: Anim }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
-      <path d={PATHS[name] ?? ""} />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={cx(className, anim && `ic-${anim}`)} style={anim === "draw" ? ({ "--sc-len": 80 } as React.CSSProperties) : undefined} aria-hidden>
+      <path d={PATHS[name] ?? ""} pathLength={anim === "draw" ? 80 : undefined} />
     </svg>
   );
+}
+
+/** Rueda de carga. */
+export function Spinner({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={cx("ic-spin", className)} fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity={0.2} strokeWidth={2.5} />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" />
+    </svg>
+  );
+}
+
+const TONE: Record<string, string> = {
+  acc: "bg-acc-soft text-acc dark:bg-acc/20",
+  good: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400",
+  bad: "bg-rose-100 text-rose-600 dark:bg-rose-900/40 dark:text-rose-400",
+  warn: "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400",
+  info: "bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-400",
+  mute: "bg-ink-100 text-ink-500 dark:bg-ink-800 dark:text-ink-400",
+};
+
+/** Ícono dentro de un cuadrito de color; `pulse` le agrega una onda (algo está vivo o pide atención). */
+export function IconBadge({ name, tone = "acc", size = "md", anim, pulse }: { name: string; tone?: keyof typeof TONE; size?: "sm" | "md" | "lg"; anim?: Anim; pulse?: boolean }) {
+  const box = size === "lg" ? "h-14 w-14 rounded-2xl" : size === "sm" ? "h-7 w-7 rounded-lg" : "h-9 w-9 rounded-xl";
+  const ic = size === "lg" ? "h-7 w-7" : size === "sm" ? "h-3.5 w-3.5" : "h-[18px] w-[18px]";
+  return (
+    <span className={cx("relative inline-grid shrink-0 place-items-center", box, TONE[tone], pulse && "ring-pulse")}>
+      <span className="relative"><Icon name={name} className={ic} anim={anim} /></span>
+    </span>
+  );
+}
+
+/** Bloque gris animado mientras carga. */
+export function Skeleton({ className = "h-4 w-full" }: { className?: string }) {
+  return <div className={cx("skeleton rounded-md", className)} />;
 }
 
 /** Ícono "?" con explicación al pasar el mouse (o tocar en móvil). */
@@ -145,12 +196,15 @@ export function Hint({ text, className }: { text: string; className?: string }) 
   );
 }
 
-export function Stat({ label, value, sub, tone, hint }: { label: string; value: ReactNode; sub?: ReactNode; tone?: "good" | "bad"; hint?: string }) {
+export function Stat({ label, value, sub, tone, hint, icon }: { label: string; value: ReactNode; sub?: ReactNode; tone?: "good" | "bad"; hint?: string; icon?: string }) {
   return (
-    <div className="min-w-0">
-      <div className="lbl flex items-center gap-1">{label}{hint && <Hint text={hint} />}</div>
-      <div className={cx("mt-0.5 truncate text-2xl font-semibold tabular-nums", tone === "good" && "text-emerald-600", tone === "bad" && "text-rose-600")}>{value}</div>
-      {sub != null && <div className="text-xs text-ink-500">{sub}</div>}
+    <div className="flex min-w-0 items-start gap-3">
+      {icon && <IconBadge name={icon} tone={tone ?? "acc"} anim="pop" />}
+      <div className="min-w-0">
+        <div className="lbl flex items-center gap-1">{label}{hint && <Hint text={hint} />}</div>
+        <div className={cx("mt-0.5 truncate text-2xl font-semibold tabular-nums anim-in", tone === "good" && "text-emerald-600", tone === "bad" && "text-rose-600")}>{value}</div>
+        {sub != null && <div className="text-xs text-ink-500">{sub}</div>}
+      </div>
     </div>
   );
 }
@@ -171,7 +225,7 @@ export function Score({ value, size = 64 }: { value: number | null | undefined; 
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       <circle cx={size / 2} cy={size / 2} r={r} stroke="currentColor" className="text-ink-100 dark:text-ink-800" strokeWidth={5} fill="none" />
-      {value != null && <circle cx={size / 2} cy={size / 2} r={r} stroke={color} strokeWidth={5} fill="none" strokeDasharray={c} strokeDashoffset={c * (1 - v / 100)} strokeLinecap="round" transform={`rotate(-90 ${size / 2} ${size / 2})`} />}
+      {value != null && <circle key={v} className="gauge" style={{ "--sc-c": c } as React.CSSProperties} cx={size / 2} cy={size / 2} r={r} stroke={color} strokeWidth={5} fill="none" strokeDasharray={c} strokeDashoffset={c * (1 - v / 100)} strokeLinecap="round" transform={`rotate(-90 ${size / 2} ${size / 2})`} />}
       <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" className="fill-current text-sm font-semibold" style={{ fontSize: size / 3.6 }}>
         {value == null ? "–" : v}
       </text>
@@ -230,8 +284,15 @@ export function Drawer({ open, onClose, children, wide }: { open: boolean; onClo
   );
 }
 
-export function Empty({ children }: { children: ReactNode }) {
-  return <div className="grid place-items-center rounded-xl border border-dashed border-ink-200 p-10 text-sm text-ink-400 dark:border-ink-800">{children}</div>;
+/** Estado vacío: ícono flotando + título + qué hacer. */
+export function Empty({ children, icon = "inbox", title, tone = "acc", compact }: { children?: ReactNode; icon?: string; title?: ReactNode; tone?: keyof typeof TONE; compact?: boolean }) {
+  return (
+    <div className={cx("anim-in flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-ink-200 text-center text-sm text-ink-500 dark:border-ink-800", compact ? "p-5" : "p-10")}>
+      <span className="ic-float"><IconBadge name={icon} tone={tone} size={compact ? "md" : "lg"} pulse /></span>
+      {title && <div className="font-medium text-ink-800 dark:text-ink-100">{title}</div>}
+      {children != null && <div className="max-w-sm text-ink-500">{children}</div>}
+    </div>
+  );
 }
 
 export const INTENT: Record<string, { label: string; cls: string }> = {
