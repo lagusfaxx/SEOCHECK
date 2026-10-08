@@ -13,17 +13,26 @@ export function tokens(text: string): string[] {
     .filter((t) => t.length > 2 && !STOP_ES.has(t) && !/^\d+$/.test(t));
 }
 
-/** unigramas + bigramas + trigramas sin stopwords en los bordes */
-export function ngrams(text: string): string[] {
-  const words = strip(text).replace(/[^a-z0-9ñ\s]/g, " ").split(/\s+/).filter(Boolean);
+/**
+ * unigramas + bigramas + trigramas sin stopwords en los bordes.
+ * `extraStop`: palabras que tampoco pueden ir en los bordes (p. ej. de interfaz).
+ * `allowLead`: pares "artículo + nombre" que sí pueden abrir un n-grama ("las condes").
+ */
+export function ngrams(text: string, o: { extraStop?: Set<string>; allowLead?: Set<string> } = {}): string[] {
   const out: string[] = [];
-  for (let n = 1; n <= 3; n++) {
-    for (let i = 0; i + n <= words.length; i++) {
-      const g = words.slice(i, i + n);
-      if (STOP_ES.has(g[0]) || STOP_ES.has(g[n - 1])) continue;
-      if (g.some((w) => w.length < 3 && n === 1)) continue;
-      if (/^\d+$/.test(g.join(""))) continue;
-      out.push(g.join(" "));
+  const stop = (w: string) => STOP_ES.has(w) || Boolean(o.extraStop?.has(w));
+  // los saltos de línea separan bloques: un n-grama no cruza de un bloque a otro
+  for (const seg of strip(text).split(/\n+/)) {
+    const words = seg.replace(/[^a-z0-9ñ\s]/g, " ").split(/\s+/).filter(Boolean);
+    for (let n = 1; n <= 3; n++) {
+      for (let i = 0; i + n <= words.length; i++) {
+        const g = words.slice(i, i + n);
+        const leadOk = n >= 2 && Boolean(o.allowLead?.has(`${g[0]} ${g[1]}`));
+        if ((stop(g[0]) && !leadOk) || stop(g[n - 1])) continue;
+        if (g.some((w) => w.length < 3 && n === 1)) continue;
+        if (/^\d+$/.test(g.join(""))) continue;
+        out.push(g.join(" "));
+      }
     }
   }
   return out;

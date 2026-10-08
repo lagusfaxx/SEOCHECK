@@ -48,7 +48,31 @@ export type PageData = {
   contentHash: string | null;
   text: string;
   headings: { tag: string; text: string }[];
+  /** Bloques de texto (párrafos, ítems, celdas…) para separar texto editorial de navegación/tarjetas */
+  blocks: TextBlock[];
+  /** Señales para clasificar el tipo de página */
+  signals: PageSignals;
   error?: PageError;
+};
+
+export type TextBlock = {
+  t: string;
+  /** palabras */
+  w: number;
+  /** fracción del texto que está dentro de links (tarjetas/menús ≈ 1) */
+  link: number;
+  /** dentro de nav/header/footer/aside/form o similar */
+  chrome: boolean;
+  tag: string;
+};
+
+export type PageSignals = {
+  /** máx. de links internos que comparten patrón de URL (tarjetas de un listado) */
+  linkGroup: number;
+  article: boolean;
+  time: boolean;
+  cart: boolean;
+  price: boolean;
 };
 
 export type FetchOpts = { userAgent?: string };
@@ -112,6 +136,109 @@ async function renderHtml(url: string, o: FetchOpts = {}): Promise<string | null
   }
 }
 
+const BLOCK_TAGS = new Set("p,li,ul,ol,dl,h1,h2,h3,h4,h5,h6,td,th,tr,table,dd,dt,figcaption,figure,blockquote,pre,button,label,summary,details,caption,div,section,article,main,header,footer,nav,aside,form".split(","));
+const CHROME_TAGS = new Set(["nav", "header", "footer", "aside", "form", "dialog"]);
+const CHROME_ROLES = new Set(["navigation", "banner", "contentinfo", "dialog", "alertdialog"]);
+const SKIP_TAGS = new Set(["script", "style", "noscript", "svg", "template", "video", "audio", "iframe", "object", "embed", "canvas", "select", "option"]);
+const norm = (s: string) => s.replace(/\s+/g, " ").trim();
+
+type El = { type: string; name?: string; attribs?: Record<string, string>; children?: El[]; data?: string };
+const isChromeEl = (e: El) =>
+  CHROME_TAGS.has(e.name!) || CHROME_ROLES.has(e.attribs?.role ?? "") || e.attribs?.["aria-modal"] === "true" || e.attribs?.["aria-hidden"] === "true";
+
+/**
+ * Segmenta el body en bloques de texto: cada elemento de bloque corta el texto, así el texto suelto dentro de
+ * contenedores (no solo el de los bloques "hoja") también queda en algún bloque.
+ */
+export function textBlocks($: cheerio.CheerioAPI): TextBlock[] {
+  const out: TextBlock[] = [];
+  const root = $("body").get(0) as unknown as El | undefined;
+  if (!root) return out;
+  type Cur = { parts: string[]; linkLen: number; chrome: boolean; tag: string };
+  const emit = (c: Cur) => {
+    const t = norm(c.parts.join(""));
+    if (t) out.push({ t, w: t.split(" ").length, link: Math.min(1, c.linkLen / t.length), chrome: c.chrome, tag: c.tag });
+    c.parts = [];
+    c.linkLen = 0;
+  };
+  const walk = (node: El, cur: Cur, inLink: boolean) => {
+    for (const ch of node.children ?? []) {
+      if (ch.type === "text") {
+        cur.parts.push(ch.data ?? "");
+        if (inLink) cur.linkLen += norm(ch.data ?? "").length;
+        continue;
+      }
+      if (ch.type !== "tag" && ch.type !== "script" && ch.type !== "style") continue;
+      const tag = ch.name ?? "";
+      if (SKIP_TAGS.has(tag)) continue;
+      const chrome = cur.chrome || isChromeEl(ch);
+      const link = inLink || tag === "a";
+      if (BLOCK_TAGS.has(tag)) {
+        emit(cur);
+        const inner: Cur = { parts: [], linkLen: 0, chrome, tag };
+        walk(ch, inner, link);
+        emit(inner);
+      } else {
+        // inline dentro de un bloque: si abre zona de navegación (p. ej. <span role=navigation>) igual se marca
+        if (chrome && !cur.chrome) {
+          emit(cur);
+          const inner: Cur = { parts: [], linkLen: 0, chrome, tag: cur.tag };
+          walk(ch, inner, link);
+          emit(inner);
+        } else walk(ch, cur, link);
+      }
+    }
+  };
+  const top: Cur = { parts: [], linkLen: 0, chrome: false, tag: "body" };
+  walk(root, top, false);
+  emit(top);
+  return out;
+}
+
+/** Links fuera de menús/footer/sidebars: los del contenido (tarjetas, listados). */
+function contentLinks($: cheerio.CheerioAPI, url: string): string[] {
+  const out: string[] = [];
+  $("a[href]").each((_, el) => {
+    const $el = $(el);
+    if ($el.closest("nav,header,footer,aside,form,dialog,[role=navigation],[role=banner],[role=contentinfo]").length) return;
+    const u = normUrl($el.attr("href")!, url);
+    if (u) out.push(u);
+  });
+  return out;
+}
+
+/** Firma de plantilla de una URL: los segmentos variables (slugs con números, ids) pasan a "*". */
+function templateSig(u: string): string | null {
+  try {
+    const segs = new URL(u).pathname.split("/").filter(Boolean);
+    if (!segs.length) return null;
+    return segs.map((s, i) => (i === segs.length - 1 && segs.length > 1 && /^index\.\w+$/.test(s) ? s : /\d/.test(s) || (s.match(/[-_]/g) ?? []).length >= 2 ? "*" : s)).join("/");
+  } catch {
+    return null;
+  }
+}
+
+function pageSignals($: cheerio.CheerioAPI, url: string): PageSignals {
+  const host = hostOf(url);
+  const groups = new Map<string, Set<string>>();
+  for (const l of contentLinks($, url)) {
+    if (hostOf(l) !== host) continue;
+    const sig = templateSig(l);
+    // tarjetas: muchas URLs distintas con la misma plantilla (un slug variable)
+    if (!sig || !sig.includes("*")) continue;
+    if (!groups.has(sig)) groups.set(sig, new Set());
+    groups.get(sig)!.add(l);
+  }
+  const bodyText = $("body").text();
+  return {
+    linkGroup: Math.max(0, ...[...groups.values()].map((g) => g.size)),
+    article: $("article").length === 1,
+    time: $("time[datetime]").length > 0,
+    cart: /(agregar|añadir|anadir)\s+al\s+(carro|carrito)|add to (cart|basket)|comprar ahora/i.test(bodyText),
+    price: /(\$|clp|usd|us\$)\s?\d{1,3}([.,]\d{3})+|precio/i.test(bodyText),
+  };
+}
+
 export function parseHtml(html: string, url: string) {
   const $ = cheerio.load(html);
   const canonicalRaw = $('link[rel="canonical"]').attr("href");
@@ -145,7 +272,10 @@ export function parseHtml(html: string, url: string) {
     if (t) headings.push({ tag: el.tagName.toLowerCase(), text: t });
   });
   const imgNoAlt = $("img").filter((_, el) => !($(el).attr("alt") ?? "").trim()).length;
-  $("script,style,noscript,svg,template").remove();
+  // fuera: código y los textos de respaldo de medios ("tu navegador no soporta video…")
+  $("script,style,noscript,svg,template,video,audio,iframe,object,embed,canvas,picture source").remove();
+  const signals = pageSignals($, url);
+  const blocks = textBlocks($);
   const body = $("main").length ? $("main") : $("body");
   const text = body.text().replace(/\s+/g, " ").trim();
   return {
@@ -163,6 +293,8 @@ export function parseHtml(html: string, url: string) {
     links: [...links],
     text,
     headings,
+    blocks,
+    signals,
     hash: text ? createHash("sha1").update(text.toLowerCase()).digest("hex") : null,
   };
 }
@@ -194,6 +326,8 @@ export async function fetchPage(url: string, render = false, o: FetchOpts = {}):
     contentHash: parsed?.hash ?? null,
     text: parsed?.text ?? "",
     headings: parsed?.headings ?? [],
+    blocks: parsed?.blocks ?? [],
+    signals: parsed?.signals ?? { linkGroup: 0, article: false, time: false, cart: false, price: false },
     error: r.waf ? "blocked_by_waf" : undefined,
   };
 }
@@ -266,7 +400,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
           } catch (e) {
             pd = { ...emptyPage(u), error: e instanceof SsrfError ? "ssrf_blocked" : "fetch_failed" };
           }
-          pages.push(pd);
+          pages.push({ ...pd, blocks: [] }); // los bloques solo los usa Contenido: no acumularlos en crawls grandes
           // Si el WAF bloquea todo, no seguir golpeando el sitio
           wafStreak = pd.error === "blocked_by_waf" ? wafStreak + 1 : 0;
           if (wafStreak >= 15) wafAbort = true;
@@ -303,7 +437,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
       limit(async () => {
         try {
           const pd = await fetchPage(u, false, { userAgent: ua });
-          pages.push(pd);
+          pages.push({ ...pd, blocks: [] });
           seen.set(u, -1);
         } catch {}
       })
@@ -383,6 +517,7 @@ function emptyPage(url: string): PageData {
   return {
     url, finalUrl: url, status: 0, redirects: [], contentType: null, title: null, metaDesc: null, h1: [], canonical: null,
     canonicalType: "none", noindex: false, hreflang: [], jsonldTypes: [], jsonldErrors: 0, wordCount: 0, imgNoAlt: 0,
-    links: [], responseMs: 0, contentHash: null, text: "", headings: [],
+    links: [], responseMs: 0, contentHash: null, text: "", headings: [], blocks: [],
+    signals: { linkGroup: 0, article: false, time: false, cart: false, price: false },
   };
 }

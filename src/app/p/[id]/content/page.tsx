@@ -1,9 +1,9 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useProject } from "@/components/Shell";
-import { api, Empty, Icon, Score, useApi } from "@/components/ui";
+import { api, Empty, fmt, Icon, Score, useApi } from "@/components/ui";
 
 export default function ContentList() {
   const { id, project, refreshJobs } = useProject();
@@ -11,6 +11,13 @@ export default function ContentList() {
   const { data, mutate } = useApi<any[]>(`/api/p/${id}/content`, { refreshInterval: (d?: any[]) => (d?.some((c) => !["done", "error"].includes(c.status)) ? 3000 : 0) });
   const [url, setUrl] = useState("");
   const [kw, setKw] = useState("");
+  const [target, setTarget] = useState<{ gscUrl: string | null; impressions: number; position: number | null; mismatch: boolean } | null>(null);
+  // ¿ya hay una URL del sitio rankeando para esta keyword? (Search Console)
+  useEffect(() => {
+    if (kw.trim().length < 3) return setTarget(null);
+    const t = setTimeout(() => api(`/api/p/${id}/content/target?keyword=${encodeURIComponent(kw.trim())}&url=${encodeURIComponent(url)}`).then(setTarget).catch(() => setTarget(null)), 400);
+    return () => clearTimeout(t);
+  }, [kw, url, id]);
   return (
     <div className="space-y-4 p-4 md:p-6">
       <form
@@ -25,6 +32,15 @@ export default function ContentList() {
         <input className="input min-w-[280px] flex-[2]" placeholder={`https://${project?.domain ?? ""}/…`} value={url} onChange={(e) => setUrl(e.target.value)} required />
         <input className="input min-w-[200px] flex-1" placeholder="keyword objetivo" value={kw} onChange={(e) => setKw(e.target.value)} required />
         <button className="btn-p"><Icon name="play" />Analizar</button>
+        {target?.gscUrl && (
+          <div className={`w-full rounded-lg px-3 py-2 text-sm ${target.mismatch && url ? "bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200" : "bg-ink-50 text-ink-700 dark:bg-ink-800 dark:text-ink-200"}`}>
+            {target.mismatch && url ? "Ojo: para esta keyword Google ya muestra otra URL tuya: " : "Para esta keyword ya rankea: "}
+            <b className="break-all">{target.gscUrl}</b> ({fmt(target.impressions)} impr · pos {fmt(target.position, 1)})
+            {url !== target.gscUrl && (
+              <button type="button" className="btn-g ml-2 text-xs text-acc" onClick={() => setUrl(target.gscUrl!)}>usar esta</button>
+            )}
+          </div>
+        )}
       </form>
       {!data?.length ? (
         <Empty>—</Empty>

@@ -5,7 +5,7 @@ import { sweepStale, workerAlive } from "@/lib/jobs";
 import { refreshCluster } from "@/lib/keywords/pipeline";
 import { ISSUE_LABELS } from "@/lib/audit/issues";
 import { indexNow, resolveGscProperty } from "@/lib/providers/google";
-import { makeBrief, type ContentResult } from "@/lib/content/analyze";
+import { gscTargetFor, makeBrief, type ContentResult } from "@/lib/content/analyze";
 import { parseKeywordPlannerCsv } from "@/lib/volume/csv";
 import { backfillVolumes, volumeChainStatus, writeCache } from "@/lib/volume/broker";
 import { env } from "@/lib/env";
@@ -236,6 +236,8 @@ const GETS: Record<string, H> = {
     return expand(id, type, url.searchParams.get("key") ?? "", t);
   },
   "report/last": async ({ id }) => db.jobRun.findFirst({ where: { projectId: id, kind: QUEUES.full }, orderBy: { createdAt: "desc" } }),
+  /** Para el formulario de Contenido: qué URL ya rankea para la keyword en Search Console. */
+  "content/target": async ({ id, url }) => gscTargetFor(id, url.searchParams.get("keyword") ?? "", url.searchParams.get("url") || undefined),
   "content/one": async ({ url }) => db.contentAnalysis.findUnique({ where: { id: url.searchParams.get("cid")! } }),
 };
 

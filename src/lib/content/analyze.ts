@@ -5,22 +5,47 @@ import { fetchPage, type PageData } from "../audit/crawler";
 import { llmProvider } from "../providers";
 import { getSerp } from "../serp";
 import { ngrams, tf, tokens } from "../text";
-import { hostOf, median } from "../util";
+import { hostOf, median, urlKey } from "../util";
+import { boilerplateOf, brandOf, classifyPage, cleanTitle, contentText, detectLocation, editorialWords, majorityType, PAGE_TYPE_LABEL, polishTitle, properNounLeads, STOP_UI, type PageType } from "./clean";
 import { jobProgress } from "../queue";
 import { jobLog } from "../jobctx";
 
 export type Section = { label: string; count: number; covered: boolean; variants: string[] };
 export type Term = { term: string; weight: number; coverage: number; target: number; mine: number; missing: boolean };
-export type Competitor = { url: string; domain: string; position: number; title: string | null; words: number; h2: number; h3: number; schema: string[]; questions: number };
+export type Competitor = {
+  url: string; domain: string; position: number; title: string | null; words: number; h2: number; h3: number; schema: string[]; questions: number;
+  /** palabras editoriales (sin navegación, tarjetas ni boilerplate) */
+  editorial?: number;
+  type?: PageType;
+};
+
+/** URL del sitio que ya rankea para la keyword según Search Console. */
+export type TargetCheck = {
+  gscUrl: string | null;
+  clicks: number;
+  impressions: number;
+  position: number | null;
+  /** la URL elegida no es la que rankea: riesgo de canibalización */
+  mismatch: boolean;
+  /** otras URLs propias con impresiones para la misma consulta */
+  others: { url: string; impressions: number; position: number | null }[];
+};
 
 export type ContentResult = {
   keyword: string;
   url: string;
   score: number;
   breakdown: { terms: number; length: number; sections: number; paa: number; schema: number };
-  mine: { words: number; title: string | null; meta: string | null; h1: string[]; headings: { tag: string; text: string }[]; schema: string[] };
+  mine: { words: number; editorial?: number; type?: PageType; title: string | null; meta: string | null; h1: string[]; headings: { tag: string; text: string }[]; schema: string[] };
   competitors: Competitor[];
+  /** palabras editoriales objetivo: mediana del top 10 del mismo tipo de página */
   targetWords: number;
+  /** tipo de página que domina el top 10 */
+  pageType?: PageType;
+  typeCounts?: Partial<Record<PageType, number>>;
+  location?: string | null;
+  brand?: string;
+  target?: TargetCheck;
   terms: Term[];
   sections: Section[];
   paa: { q: string; answered: boolean }[];
@@ -29,9 +54,14 @@ export type ContentResult = {
 };
 
 export type Brief = {
+  /** "listing": intro corta + filtros + links internos + FAQ breve, sin outline de artículo */
+  kind?: "article" | "listing";
   titles: string[];
   metas: string[];
   outline: { id: string; tag: "h2" | "h3"; text: string; notes?: string }[];
+  intro?: string;
+  filters?: string[];
+  links?: { anchor: string; to: string }[];
   faq: { q: string; a: string }[];
   notes?: string[];
 };
@@ -74,6 +104,83 @@ async function addToCorpus(lang: string, docs: Set<string>[]) {
   await db.corpusMeta.upsert({ where: { lang }, create: { lang, docs: docs.length }, update: { docs: { increment: docs.length } } });
 }
 
+/**
+ * Páginas del mismo dominio para muestrear su boilerplate: la home y páginas de OTRAS secciones.
+ * Las de la misma plantilla comparten contenido legítimo (tarjetas, citas) y lo harían pasar por boilerplate.
+ */
+function siblingsOf(p: PageData, n = 3): string[] {
+  const base = p.finalUrl || p.url;
+  const host = hostOf(base);
+  const seg = (u: string) => {
+    try {
+      return new URL(u).pathname.split("/").filter(Boolean)[0] ?? "";
+    } catch {
+      return "";
+    }
+  };
+  const first = seg(base);
+  const same = p.links.filter((l) => hostOf(l) === host && l !== p.url && l !== base && !/\.(jpe?g|png|gif|webp|svg|pdf|zip|mp4)$/i.test(l));
+  let home = "";
+  try {
+    home = new URL("/", base).toString();
+  } catch {}
+  const other = [...new Set(same.filter((l) => seg(l) !== first && seg(l) !== ""))];
+  // una por sección distinta
+  const bySection = new Map<string, string>();
+  for (const l of other) if (!bySection.has(seg(l))) bySection.set(seg(l), l);
+  const picks = [...(first && home ? [home] : []), ...bySection.values()];
+  return [...new Set(picks)].filter((u) => u !== base).slice(0, n);
+}
+
+/** Lee la página y otras del mismo dominio (otras secciones) para detectar su boilerplate. */
+async function fetchWithBoiler(url: string, limit: ReturnType<typeof pLimit>) {
+  const pd = await limit(() => fetchPage(url).catch(() => null));
+  if (!pd || pd.status !== 200) return { pd, boiler: new Set<string>(), title: pd?.title ?? "" };
+  const sibs = (await Promise.all(siblingsOf(pd).map((u) => limit(() => fetchPage(u).catch(() => null))))).filter((x): x is PageData => Boolean(x && x.status === 200));
+  return { pd, boiler: boilerplateOf(sibs), title: cleanTitle(pd.title, sibs.map((x) => x.title)) };
+}
+
+/** Página del sitio que ya rankea para la keyword (Search Console, 90 días). */
+export async function gscTargetFor(projectId: string, keyword: string, chosenUrl?: string): Promise<TargetCheck | null> {
+  const q = keyword.trim().toLowerCase();
+  const rows = await db.gscRow.groupBy({
+    by: ["page"],
+    where: { projectId, query: q, date: { gte: new Date(Date.now() - 90 * 864e5) } },
+    _sum: { clicks: true, impressions: true },
+    _avg: { position: true },
+  });
+  if (!rows.length) return null;
+  const sorted = rows.sort((a, b) => (b._sum.clicks ?? 0) - (a._sum.clicks ?? 0) || (b._sum.impressions ?? 0) - (a._sum.impressions ?? 0));
+  const best = sorted[0];
+  return {
+    gscUrl: best.page,
+    clicks: best._sum.clicks ?? 0,
+    impressions: best._sum.impressions ?? 0,
+    position: best._avg.position,
+    mismatch: Boolean(chosenUrl && urlKey(chosenUrl) !== urlKey(best.page)),
+    others: sorted.slice(1, 6).filter((r) => (r._sum.impressions ?? 0) > 0).map((r) => ({ url: r.page, impressions: r._sum.impressions ?? 0, position: r._avg.position })),
+  };
+}
+
+/**
+ * No emitir un n-grama si casi siempre aparece dentro de uno más largo que también quedó como candidato
+ * ("condes" dentro de "las condes"): se queda el n-grama completo.
+ */
+export function dropContained<T extends { term: string }>(cands: T[], totals: Map<string, number>, ratio = 0.6): T[] {
+  const kept = new Set(cands.map((c) => c.term));
+  const longer = [...kept].filter((t) => t.includes(" "));
+  return cands.filter((c) => {
+    const n = totals.get(c.term) ?? 0;
+    if (!n) return true;
+    const re = new RegExp(`(^| )${c.term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}( |$)`);
+    for (const g of longer) {
+      if (g === c.term || g.split(" ").length <= c.term.split(" ").length || !re.test(g)) continue;
+      if ((totals.get(g) ?? 0) / n >= ratio) return false;
+    }
+    return true;
+  });
+}
+
 export async function analyzeContent(id: string, jobRunId?: string) {
   const a = await db.contentAnalysis.findUniqueOrThrow({ where: { id }, include: { project: true } });
   const p = a.project;
@@ -84,30 +191,51 @@ export async function analyzeContent(id: string, jobRunId?: string) {
   const top = serp.organic.filter((o) => o.domain !== own).slice(0, 10);
 
   await jobProgress(jobRunId, 15, "crawl");
-  const limit = pLimit(5);
+  const limit = pLimit(6);
   let done = 0;
-  const [mine, ...comps] = await Promise.all([
-    fetchPage(a.url).catch(() => null),
-    ...top.map((o) =>
-      limit(async () => {
-        const pd = await fetchPage(o.url).catch(() => null);
-        await jobProgress(jobRunId, 15 + (++done / top.length) * 50, `${done}/${top.length}`);
-        return pd && pd.status === 200 && pd.wordCount > 100 ? { o, pd } : null;
-      })
-    ),
+  const [mineR, ...compR] = await Promise.all([
+    fetchWithBoiler(a.url, limit),
+    ...top.map(async (o) => {
+      const r = await fetchWithBoiler(o.url, limit);
+      await jobProgress(jobRunId, 15 + (++done / top.length) * 50, `${done}/${top.length}`);
+      return r.pd && r.pd.status === 200 && r.pd.wordCount > 100 ? { o, pd: r.pd, boiler: r.boiler, title: r.title } : null;
+    }),
   ]);
-  const competitors = comps.filter(Boolean) as { o: (typeof top)[number]; pd: PageData }[];
+  const competitors = compR.filter(Boolean) as { o: (typeof top)[number]; pd: PageData; boiler: Set<string>; title: string }[];
   if (!competitors.length) throw new Error("No se pudo leer ningún competidor");
-  const minePd = mine && mine.status === 200 ? mine : null;
+  const minePd = mineR.pd && mineR.pd.status === 200 ? mineR.pd : null;
+  const mineBoiler = mineR.boiler;
+
+  // Tipo de página y texto editorial (sin menús, footer, tarjetas ni boilerplate)
+  const comps = competitors.map((c) => {
+    const editorial = editorialWords(c.pd, c.boiler);
+    return { ...c, editorial, type: classifyPage(c.o.url, c.pd, editorial), text: contentText(c.pd, c.boiler) };
+  });
+  const pageType = majorityType(comps.map((c) => ({ type: c.type, position: c.o.position })));
+  const typeCounts: Partial<Record<PageType, number>> = {};
+  for (const c of comps) typeCounts[c.type] = (typeCounts[c.type] ?? 0) + 1;
+  const myEditorial = minePd ? editorialWords(minePd, mineBoiler) : 0;
+  const myType = minePd ? classifyPage(a.url, minePd, myEditorial) : undefined;
+  const myText = minePd ? contentText(minePd, mineBoiler) : "";
 
   // Términos
   await jobProgress(jobRunId, 70, "términos");
-  const compTf = competitors.map((c) => tf(ngrams(`${c.pd.title ?? ""} ${c.pd.headings.map((h) => h.text).join(" ")} ${c.pd.text}`)));
-  const myTf = tf(ngrams(minePd ? `${minePd.title ?? ""} ${minePd.headings.map((h) => h.text).join(" ")} ${minePd.text}` : ""));
+  const allowLead = properNounLeads([...comps.map((c) => c.text), myText].join(" \n "));
+  const grams = (t: string) => ngrams(t, { extraStop: STOP_UI, allowLead });
+  // headings: sin los que son boilerplate del dominio (títulos de menú/footer repetidos)
+  const heads = (pd: PageData, boiler: Set<string>) => pd.headings.filter((h) => !boiler.has(h.text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9ñ ]/g, "").replace(/\s+/g, " ").trim())).map((h) => h.text).join(" \n ");
+  const compTf = comps.map((c) => tf(grams(`${c.title} \n ${heads(c.pd, c.boiler)} \n ${c.text}`)));
+  const myTf = tf(grams(minePd ? `${mineR.title} \n ${heads(minePd, mineBoiler)} \n ${myText}` : ""));
   const candidates = new Map<string, number[]>();
-  compTf.forEach((m) => m.forEach((c, t) => candidates.set(t, [...(candidates.get(t) ?? []), c])));
-  const N = competitors.length;
-  const cand = [...candidates.entries()].filter(([, cs]) => cs.length >= Math.max(2, Math.ceil(N * 0.3)));
+  const totals = new Map<string, number>();
+  compTf.forEach((m) =>
+    m.forEach((c, t) => {
+      candidates.set(t, [...(candidates.get(t) ?? []), c]);
+      totals.set(t, (totals.get(t) ?? 0) + c);
+    })
+  );
+  const N = comps.length;
+  const cand = [...candidates.entries()].filter(([t, cs]) => cs.length >= Math.max(2, Math.ceil(N * 0.3)) && !t.split(" ").every((w) => STOP_UI.has(w)));
   const idf = await corpusIdf(p.language, cand.map(([t]) => t));
   const kwTokens = new Set(tokens(a.keyword));
   let terms: Term[] = cand
@@ -118,23 +246,17 @@ export async function analyzeContent(id: string, jobRunId?: string) {
       const mineCount = myTf.get(term) ?? 0;
       return { term, weight, coverage, target: Math.max(1, Math.round(median(cs))), mine: mineCount, missing: mineCount === 0 };
     })
-    .filter((t) => !t.term.split(" ").every((w) => kwTokens.has(w)) || t.term.split(" ").length > 1)
-    .sort((x, y) => y.weight - x.weight);
-  // Quita unigramas contenidos en n-gramas más fuertes ya elegidos
-  const chosen: Term[] = [];
-  for (const t of terms) {
-    if (chosen.length >= 60) break;
-    if (chosen.some((c) => c.term.includes(t.term) && c.coverage >= t.coverage)) continue;
-    chosen.push(t);
-  }
-  terms = chosen;
-  await addToCorpus(p.language, competitors.map((c) => new Set(ngrams(c.pd.text))));
+    .filter((t) => !t.term.split(" ").every((w) => kwTokens.has(w)) || t.term.split(" ").length > 1);
+  terms = dropContained(terms, totals)
+    .sort((x, y) => y.weight - x.weight)
+    .slice(0, 60);
+  await addToCorpus(p.language, comps.map((c) => new Set(ngrams(c.text))));
 
   // Secciones comunes (H2)
   const groups: { sig: Set<string>; label: string; variants: string[]; docs: Set<number> }[] = [];
   competitors.forEach((c, i) => {
     for (const h of c.pd.headings.filter((h) => h.tag === "h2")) {
-      const sig = new Set(tokens(h.text));
+      const sig = new Set(tokens(h.text).filter((t) => !STOP_UI.has(t)));
       if (!sig.size) continue;
       const g = groups.find((g) => jaccard(g.sig, sig) >= 0.5);
       if (g) {
@@ -151,7 +273,7 @@ export async function analyzeContent(id: string, jobRunId?: string) {
     .map((g) => ({ label: g.label, count: g.docs.size, variants: g.variants, covered: myHeads.some((m) => jaccard(m, g.sig) >= 0.4) }));
 
   // PAA
-  const myTokens = new Set(tokens(minePd?.text ?? ""));
+  const myTokens = new Set(tokens(myText));
   const paa = serp.paa.map((q) => {
     const qt = tokens(q).filter((t) => !kwTokens.has(t));
     const hit = qt.filter((t) => myTokens.has(t)).length / Math.max(1, qt.length);
@@ -166,31 +288,50 @@ export async function analyzeContent(id: string, jobRunId?: string) {
   const mySchema = new Set(minePd?.jsonldTypes ?? []);
   const schema = [...schemaCount.entries()].sort((x, y) => y[1] - x[1]).map(([type, count]) => ({ type, count, mine: mySchema.has(type) }));
 
-  // Score
-  const targetWords = Math.round(median(competitors.map((c) => c.pd.wordCount)));
-  const myWords = minePd?.wordCount ?? 0;
+  // Largo: mediana del texto editorial del top 10 del mismo tipo de página
+  const sameType = comps.filter((c) => c.type === pageType);
+  let targetWords = Math.round(median((sameType.length ? sameType : comps).map((c) => c.editorial)));
+  // listados de puras tarjetas dan ~0: igual conviene una intro corta arriba del listado
+  if (pageType === "listing") targetWords = Math.max(targetWords, 60);
   const wsum = terms.reduce((s, t) => s + t.weight, 0) || 1;
   const sTerms = terms.reduce((s, t) => s + (t.mine ? t.weight * Math.min(1, t.mine / t.target) : 0), 0) / wsum;
-  const sLen = targetWords ? Math.min(1, myWords / (targetWords * 0.9)) : 1;
+  const sLen = targetWords ? Math.min(1, myEditorial / (targetWords * 0.9)) : 1;
   const sSec = sections.length ? sections.filter((s) => s.covered).length / sections.length : 1;
   const sPaa = paa.length ? paa.filter((x) => x.answered).length / paa.length : 1;
   const common = schema.filter((s) => s.count >= Math.ceil(N * 0.3));
   const sSchema = common.length ? common.filter((s) => s.mine).length / common.length : 1;
-  const breakdown = { terms: Math.round(sTerms * 40), length: Math.round(sLen * 15), sections: Math.round(sSec * 20), paa: Math.round(sPaa * 15), schema: Math.round(sSchema * 10) };
+  // en listados las secciones H2 pesan menos que en artículos
+  const wSec = pageType === "listing" ? 10 : 20;
+  const wTerms = pageType === "listing" ? 50 : 40;
+  const breakdown = {
+    terms: Math.round(sTerms * wTerms),
+    length: Math.round(sLen * 15),
+    sections: Math.round(sSec * wSec),
+    paa: Math.round(sPaa * 15),
+    schema: Math.round(sSchema * 10),
+  };
   const score = Object.values(breakdown).reduce((s, x) => s + x, 0);
+
+  const target = (await gscTargetFor(p.id, a.keyword, a.url)) ?? undefined;
+  if (target?.mismatch) await jobLog("warn", `Search Console: la URL que ya rankea para "${a.keyword}" es ${target.gscUrl}, no ${a.url}`);
 
   const result: ContentResult = {
     keyword: a.keyword,
     url: a.url,
     score,
     breakdown,
-    mine: { words: myWords, title: minePd?.title ?? null, meta: null, h1: minePd?.h1 ?? [], headings: minePd?.headings ?? [], schema: [...mySchema] },
-    competitors: competitors.map((c) => ({
+    mine: { words: minePd?.wordCount ?? 0, editorial: myEditorial, type: myType, title: minePd?.title ?? null, meta: minePd?.metaDesc ?? null, h1: minePd?.h1 ?? [], headings: minePd?.headings ?? [], schema: [...mySchema] },
+    competitors: comps.map((c) => ({
       url: c.o.url, domain: c.o.domain, position: c.o.position, title: c.pd.title, words: c.pd.wordCount,
       h2: c.pd.headings.filter((h) => h.tag === "h2").length, h3: c.pd.headings.filter((h) => h.tag === "h3").length,
-      schema: c.pd.jsonldTypes, questions: questionsOf(c.pd).length,
+      schema: c.pd.jsonldTypes, questions: questionsOf(c.pd).length, editorial: c.editorial, type: c.type,
     })),
     targetWords,
+    pageType,
+    typeCounts,
+    location: detectLocation(a.keyword),
+    brand: brandOf(p),
+    target,
     terms,
     sections,
     paa,
@@ -208,11 +349,33 @@ export async function analyzeContent(id: string, jobRunId?: string) {
 let seq = 0;
 const nid = () => `b${Date.now().toString(36)}${(seq++).toString(36)}`;
 
-function fallbackBrief(r: ContentResult): Brief {
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+function polishAll(titles: string[], r: ContentResult) {
+  const brand = r.brand ?? "";
+  return [...new Set(titles.map((t) => (brand ? polishTitle(t, brand, r.location ?? null) : t)).filter(Boolean))];
+}
+
+export function fallbackBrief(r: ContentResult): Brief {
+  const loc = r.location ?? null;
+  const kw = cap(r.keyword);
+  if (r.pageType === "listing") {
+    return {
+      kind: "listing",
+      titles: polishAll([loc ? kw : `${kw}`], r),
+      metas: [],
+      outline: [],
+      intro: "",
+      filters: r.terms.filter((t) => t.term.split(" ").length <= 3).slice(0, 8).map((t) => t.term),
+      links: [],
+      faq: r.paa.slice(0, 4).map((x) => ({ q: x.q, a: "" })),
+    };
+  }
   const outline: Brief["outline"] = r.sections.slice(0, 10).map((s) => ({ id: nid(), tag: "h2", text: s.label }));
   for (const q of r.paa.filter((x) => !x.answered)) outline.push({ id: nid(), tag: "h3", text: q.q });
   return {
-    titles: [`${r.keyword[0].toUpperCase()}${r.keyword.slice(1)}: guía completa ${new Date().getFullYear()}`],
+    kind: "article",
+    titles: polishAll([`${kw}: guía ${new Date().getFullYear()}`], r),
     metas: [],
     outline,
     faq: r.paa.map((x) => ({ q: x.q, a: "" })),
@@ -222,11 +385,15 @@ function fallbackBrief(r: ContentResult): Brief {
 export async function makeBrief(r: ContentResult, language: string, country: string): Promise<Brief> {
   const llm = llmProvider();
   if (!llm) return fallbackBrief(r);
+  const listing = r.pageType === "listing";
   const input = {
     keyword: r.keyword,
     idioma: language,
     pais: country,
-    palabras_objetivo: r.targetWords,
+    marca: r.brand,
+    ubicacion: r.location ?? null,
+    tipo_de_pagina: r.pageType ? PAGE_TYPE_LABEL[r.pageType] : "artículo",
+    palabras_editoriales_objetivo: r.targetWords,
     title_actual: r.mine.title,
     headings_actuales: r.mine.headings.slice(0, 40),
     terminos_faltantes: r.terms.filter((t) => t.missing).slice(0, 30).map((t) => t.term),
@@ -237,15 +404,37 @@ export async function makeBrief(r: ContentResult, language: string, country: str
     schema_competencia: r.schema.slice(0, 8),
     titles_competencia: r.competitors.map((c) => c.title).filter(Boolean).slice(0, 10),
   };
+  const titleRules = `Titles ≤ 60 caracteres incluyendo " | ${r.brand}" al final${r.location ? ` y mencionando "${r.location}"` : ""}. Sin adjetivos genéricos (únicas, increíbles, espectaculares, imperdibles…): concreto y descriptivo.`;
+  const system = `Eres un editor SEO senior. Escribes en el idioma y variante del país indicado. ${titleRules} Metas 140–155 caracteres. Sin relleno ni frases genéricas.`;
   try {
+    if (listing) {
+      const out = await llm.json<{ titles: string[]; metas: string[]; intro: string; filters: string[]; links: { anchor: string; to: string }[]; faq: { q: string; a: string }[]; notes: string[] }>(
+        system,
+        `El top 10 de Google para esta keyword son mayormente LISTADOS/directorios. No escribas un artículo: genera el brief de una página de listado.\n\nFormato:\n{"titles": [5 strings], "metas": [3 strings], "intro": "texto de introducción de 60 a 120 palabras, sobre el listado, que use los términos clave sin repetirlos", "filters": [4 a 8 filtros/facetas útiles para este listado], "links": [{"anchor": texto del link, "to": a qué página interna enlazar (otra comuna, categoría, etc.)}] (4 a 8), "faq": [{"q": string, "a": respuesta de 1-2 frases}] (3 a 5), "notes": [máx 4 indicaciones concretas]}\n\nEl objetivo de palabras editoriales (sin contar tarjetas) es ~${r.targetWords}.\n\n${JSON.stringify(input)}`,
+        12000,
+        "medium"
+      );
+      return {
+        kind: "listing",
+        titles: polishAll(out.titles ?? [], r),
+        metas: out.metas ?? [],
+        outline: [],
+        intro: out.intro ?? "",
+        filters: out.filters ?? [],
+        links: (out.links ?? []).filter((l) => l?.anchor),
+        faq: out.faq ?? [],
+        notes: out.notes ?? [],
+      };
+    }
     const out = await llm.json<Omit<Brief, "outline"> & { outline: { tag: "h2" | "h3"; text: string; notes?: string }[] }>(
-      "Eres un editor SEO senior. Escribes en el idioma y variante del país indicado. Títulos ≤ 60 caracteres, metas 140–155 caracteres. Sin relleno ni frases genéricas.",
-      `Con este análisis de SERP genera el brief.\n\nFormato:\n{"titles": [5 strings], "metas": [3 strings], "outline": [{"tag":"h2"|"h3","text": string,"notes": string corto con términos a cubrir}], "faq": [{"q": string,"a": respuesta de 2-3 frases}], "notes": [máx 5 indicaciones concretas]}\n\nEl outline cubre las secciones comunes, los términos faltantes y las PAA sin responder. FAQ de 4 a 8 preguntas.\n\n${JSON.stringify(input)}`,
+      system,
+      `Con este análisis de SERP genera el brief.\n\nFormato:\n{"titles": [5 strings], "metas": [3 strings], "outline": [{"tag":"h2"|"h3","text": string,"notes": string corto con términos a cubrir}], "faq": [{"q": string,"a": respuesta de 2-3 frases}], "notes": [máx 5 indicaciones concretas]}\n\nEl outline cubre las secciones comunes, los términos faltantes y las PAA sin responder. FAQ de 4 a 8 preguntas. Objetivo de palabras editoriales: ~${r.targetWords}.\n\n${JSON.stringify(input)}`,
       16000,
       "medium"
     );
     return {
-      titles: out.titles ?? [],
+      kind: "article",
+      titles: polishAll(out.titles ?? [], r),
       metas: out.metas ?? [],
       outline: (out.outline ?? []).map((o) => ({ ...o, id: nid(), tag: o.tag === "h3" ? "h3" : "h2" })),
       faq: out.faq ?? [],

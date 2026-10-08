@@ -4,10 +4,23 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type D
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useProject } from "@/components/Shell";
-import { api, Bar, CopyBtn, cx, Empty, fmt, Icon, Score, Tabs, useApi } from "@/components/ui";
+import { api, Bar, CopyBtn, cx, Empty, fmt, Hint, Icon, Score, Tabs, useApi } from "@/components/ui";
 
 type Block = { id: string; tag: "h2" | "h3"; text: string; notes?: string };
-type Brief = { titles: string[]; metas: string[]; outline: Block[]; faq: { q: string; a: string }[]; notes?: string[]; title?: string; meta?: string };
+type Brief = {
+  kind?: "article" | "listing";
+  titles: string[];
+  metas: string[];
+  outline: Block[];
+  intro?: string;
+  filters?: string[];
+  links?: { anchor: string; to: string }[];
+  faq: { q: string; a: string }[];
+  notes?: string[];
+  title?: string;
+  meta?: string;
+};
+const TYPE_LABEL: Record<string, string> = { listing: "listado", detail: "ficha", article: "artículo", home: "home" };
 
 const nid = () => `u${Math.random().toString(36).slice(2, 9)}`;
 const faqLd = (faq: Brief["faq"]) =>
@@ -84,8 +97,20 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
     setOutline(arrayMove(brief.outline, a, b));
   };
   const terms = (r.terms ?? []).filter((t: any) => termFilter === "all" || t.missing);
+  const listing = brief?.kind === "listing";
   const md = brief
-    ? [`# ${brief.title ?? ""}`, "", `> ${brief.meta ?? ""}`, "", ...brief.outline.map((b) => `${b.tag === "h2" ? "##" : "###"} ${b.text}${b.notes ? `\n${b.notes}` : ""}`), "", "## FAQ", ...brief.faq.map((f) => `**${f.q}**\n${f.a}`)].join("\n")
+    ? [
+        `# ${brief.title ?? ""}`,
+        "",
+        `> ${brief.meta ?? ""}`,
+        "",
+        ...(listing
+          ? [brief.intro ?? "", "", "## Filtros", ...(brief.filters ?? []).map((f) => `- ${f}`), "", "## Links internos", ...(brief.links ?? []).map((l) => `- ${l.anchor} → ${l.to}`)]
+          : brief.outline.map((b) => `${b.tag === "h2" ? "##" : "###"} ${b.text}${b.notes ? `\n${b.notes}` : ""}`)),
+        "",
+        "## FAQ",
+        ...brief.faq.map((f) => `**${f.q}**\n${f.a}`),
+      ].join("\n")
     : "";
 
   return (
@@ -97,8 +122,14 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
           <div className="min-w-0 flex-1">
             <div className="truncate text-lg font-semibold">{data.keyword}</div>
             <a href={data.url} target="_blank" rel="noreferrer" className="block truncate text-xs text-ink-400 hover:text-acc">{data.url}</a>
+            {r.pageType && (
+              <div className="mt-0.5 text-[11px] text-ink-500">
+                Google muestra <b>{TYPE_LABEL[r.pageType]}s</b>
+                {r.mine?.type && r.mine.type !== r.pageType && <span className="text-amber-600"> · la tuya es {TYPE_LABEL[r.mine.type]}</span>}
+              </div>
+            )}
             <div className="mt-2 grid grid-cols-5 gap-3 text-[11px] text-ink-500">
-              {[["términos", r.breakdown?.terms, 40], ["largo", r.breakdown?.length, 15], ["secciones", r.breakdown?.sections, 20], ["PAA", r.breakdown?.paa, 15], ["schema", r.breakdown?.schema, 10]].map(([l, v, m]) => (
+              {[["términos", r.breakdown?.terms, r.pageType === "listing" ? 50 : 40], ["largo", r.breakdown?.length, 15], ["secciones", r.breakdown?.sections, r.pageType === "listing" ? 10 : 20], ["PAA", r.breakdown?.paa, 15], ["schema", r.breakdown?.schema, 10]].map(([l, v, m]) => (
                 <div key={l as string}>
                   <div className="truncate">{l}</div>
                   <div className="tabular-nums text-ink-800 dark:text-ink-200">{v}<span className="text-ink-400">/{m}</span></div>
@@ -107,11 +138,28 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
               ))}
             </div>
           </div>
-          <div className="text-right text-sm">
-            <div className="tabular-nums"><b>{fmt(r.mine?.words)}</b> <span className="text-ink-400">/ {fmt(r.targetWords)}</span></div>
-            <div className="text-[11px] text-ink-400">palabras</div>
+          <div className="w-24 shrink-0 text-right text-sm">
+            <div className="tabular-nums"><b>{fmt(r.mine?.editorial ?? r.mine?.words)}</b> <span className="text-ink-400">/ {fmt(r.targetWords)}</span></div>
+            <div className="flex items-center justify-end gap-1 text-[11px] text-ink-400">
+              editoriales
+              <Hint text="Solo texto editorial: sin menús, footer, tarjetas de listado ni bloques que se repiten en todo el sitio. El objetivo es la mediana del top 10 del mismo tipo de página." />
+            </div>
           </div>
         </div>
+
+        {r.target?.gscUrl && (
+          <div className={cx("rounded-lg px-3 py-2 text-sm", r.target.mismatch ? "bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200" : "bg-emerald-50 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-200")}>
+            {r.target.mismatch ? (
+              <>
+                <b>Ojo, canibalización:</b> para «{data.keyword}» Google ya muestra{" "}
+                <a className="underline" href={r.target.gscUrl} target="_blank" rel="noreferrer">{r.target.gscUrl}</a> ({fmt(r.target.impressions)} impr · pos {fmt(r.target.position, 1)}). Optimiza esa URL o diferencia bien esta.
+              </>
+            ) : (
+              <>Esta es la URL que ya rankea para «{data.keyword}» en Search Console ({fmt(r.target.impressions)} impr · pos {fmt(r.target.position, 1)}).</>
+            )}
+            {r.target.others?.length > 0 && <div className="mt-1 text-xs opacity-80">También aparecen: {r.target.others.map((o: any) => o.url).join(" · ")}</div>}
+          </div>
+        )}
 
         <Tabs
           value={tab}
@@ -179,20 +227,21 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
           {tab === "comp" && (
             <div className="overflow-auto">
               <table className="tbl">
-                <thead><tr><th>#</th><th>Dominio</th><th className="num">Palabras</th><th className="num">H2</th><th className="num">H3</th><th>Schema</th></tr></thead>
+                <thead><tr><th>#</th><th>Dominio</th><th>Tipo</th><th className="num">Editorial</th><th className="num">H2</th><th className="num">H3</th><th>Schema</th></tr></thead>
                 <tbody>
                   {(r.competitors ?? []).map((c: any) => (
                     <tr key={c.url}>
                       <td>{c.position}</td>
                       <td><a href={c.url} target="_blank" rel="noreferrer" className="hover:text-acc" title={c.title}>{c.domain}</a></td>
-                      <td className="num">{fmt(c.words)}</td>
+                      <td className="text-xs text-ink-500">{c.type ? TYPE_LABEL[c.type] : "–"}</td>
+                      <td className="num" title={`${fmt(c.words)} palabras en total`}>{fmt(c.editorial ?? c.words)}</td>
                       <td className="num">{c.h2}</td>
                       <td className="num">{c.h3}</td>
                       <td className="max-w-[200px] truncate text-xs text-ink-400">{c.schema.join(", ")}</td>
                     </tr>
                   ))}
                   <tr className="font-semibold">
-                    <td>★</td><td>tu página</td><td className="num">{fmt(r.mine?.words)}</td>
+                    <td>★</td><td>tu página</td><td className="text-xs">{r.mine?.type ? TYPE_LABEL[r.mine.type] : "–"}</td><td className="num">{fmt(r.mine?.editorial ?? r.mine?.words)}</td>
                     <td className="num">{(r.mine?.headings ?? []).filter((h: any) => h.tag === "h2").length}</td>
                     <td className="num">{(r.mine?.headings ?? []).filter((h: any) => h.tag === "h3").length}</td>
                     <td className="text-xs">{(r.mine?.schema ?? []).join(", ")}</td>
@@ -250,6 +299,32 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
               </div>
             </div>
 
+            {listing ? (
+              <div className="card space-y-3 p-3">
+                <div>
+                  <div className="flex items-center gap-1"><span className="lbl">Intro del listado</span><Hint text="Google muestra listados para esta keyword: no hace falta un artículo largo. Intro corta arriba de las tarjetas, filtros útiles y links a listados vecinos." /></div>
+                  <textarea className="input mt-1" rows={4} value={brief.intro ?? ""} onChange={(e) => setBrief({ ...brief, intro: e.target.value })} placeholder="60–120 palabras sobre el listado" />
+                  <div className="mt-0.5 text-right text-[11px] tabular-nums text-ink-400">{(brief.intro ?? "").trim().split(/\s+/).filter(Boolean).length} palabras</div>
+                </div>
+                <div>
+                  <span className="lbl">Filtros</span>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {(brief.filters ?? []).map((f, i) => (
+                      <span key={i} className="chip">{f}<button onClick={() => setBrief({ ...brief, filters: (brief.filters ?? []).filter((_, j) => j !== i) })}><Icon name="x" className="h-3 w-3" /></button></span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <span className="lbl">Links internos</span>
+                  <ul className="mt-1 space-y-1 text-sm">
+                    {(brief.links ?? []).map((l, i) => (
+                      <li key={i} className="flex gap-2"><span className="font-medium">{l.anchor}</span><span className="text-ink-400">→ {l.to}</span></li>
+                    ))}
+                    {!brief.links?.length && <li className="text-ink-400">—</li>}
+                  </ul>
+                </div>
+              </div>
+            ) : (
             <div className="card p-3">
               <div className="mb-2 flex items-center">
                 <span className="lbl">Outline</span>
@@ -265,6 +340,7 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
                 </SortableContext>
               </DndContext>
             </div>
+            )}
 
             <div className="card p-3">
               <div className="mb-2 flex items-center">
