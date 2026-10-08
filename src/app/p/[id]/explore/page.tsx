@@ -17,7 +17,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useProject } from "@/components/Shell";
-import { api, cx, Icon } from "@/components/ui";
+import { api, cx, Icon, useLocal } from "@/components/ui";
 import { TRANSFORMS, TYPE_LABEL, type GNode, type GResult, type GType } from "@/lib/graph-types";
 
 type ND = GNode & { busy?: boolean; done?: string[] };
@@ -77,6 +77,10 @@ const edgeOf = (source: string, target: string, label?: string): Edge => ({
 function forceLayout(nodes: GN[], edges: Edge[], iterations = 300): GN[] {
   const pos = new Map(nodes.map((n) => [n.id, { x: n.position.x, y: n.position.y, vx: 0, vy: 0 }]));
   const ids = [...pos.keys()];
+  // con muchos nodos: más repulsión y aristas más largas para que no se amontonen
+  const scale = Math.max(1, ids.length / 40);
+  const rep = 60000 * scale;
+  const len = 200 * Math.sqrt(scale);
   for (let it = 0; it < iterations; it++) {
     const cool = 1 - it / iterations;
     for (let i = 0; i < ids.length; i++) {
@@ -86,7 +90,7 @@ function forceLayout(nodes: GN[], edges: Edge[], iterations = 300): GN[] {
         let dx = a.x - b.x, dy = a.y - b.y;
         let d2 = dx * dx + dy * dy;
         if (d2 < 1) { dx = Math.random(); dy = Math.random(); d2 = 1; }
-        const f = 60000 / d2;
+        const f = rep / d2;
         const d = Math.sqrt(d2);
         a.vx += (dx / d) * f; a.vy += (dy / d) * f;
         b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
@@ -97,14 +101,14 @@ function forceLayout(nodes: GN[], edges: Edge[], iterations = 300): GN[] {
       if (!a || !b) continue;
       const dx = b.x - a.x, dy = b.y - a.y;
       const d = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-      const f = (d - 200) * 0.05;
+      const f = (d - len) * 0.05;
       a.vx += (dx / d) * f; a.vy += (dy / d) * f;
       b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
     }
     for (const p of pos.values()) {
-      p.vx -= p.x * 0.002; p.vy -= p.y * 0.002;
+      p.vx -= (p.x * 0.002) / scale; p.vy -= (p.y * 0.002) / scale;
       const v = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
-      const max = 40 * cool + 1;
+      const max = 40 * Math.sqrt(scale) * cool + 1;
       if (v > max) { p.vx = (p.vx / v) * max; p.vy = (p.vy / v) * max; }
       p.x += p.vx; p.y += p.vy;
       p.vx *= 0.5; p.vy *= 0.5;
@@ -164,10 +168,14 @@ function Explorer() {
   }, [q, id]);
 
   const selNode = nodes.find((n) => n.id === sel);
+  // estado más reciente para las expansiones en lote (entre awaits el closure queda viejo)
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+  const [bulk, setBulk] = useState<string>("");
 
   const run = useCallback(
-    async (nodeIdToExpand: string, t: string) => {
-      const parent = nodes.find((n) => n.id === nodeIdToExpand);
+    async (nodeIdToExpand: string, t: string, fit = true) => {
+      const parent = nodesRef.current.find((n) => n.id === nodeIdToExpand);
       if (!parent) return;
       setNote("");
       setNodes((ns) => ns.map((n) => (n.id === parent.id ? { ...n, data: { ...n.data, busy: true } } : n)));
@@ -195,13 +203,13 @@ function Explorer() {
           return [...es, ...r.edges.map((e) => edgeOf(e.source, e.target, e.label)).filter((e) => !have.has(e.id))];
         });
         // la cámara sigue a lo recién expandido
-        if (r.nodes.length) setTimeout(() => rf.fitView({ nodes: [{ id: parent.id }, ...r.nodes.map((n) => ({ id: n.id }))], padding: 0.25, maxZoom: 1.2, duration: 400 }), 60);
+        if (fit && r.nodes.length) setTimeout(() => rf.fitView({ nodes: [{ id: parent.id }, ...r.nodes.map((n) => ({ id: n.id }))], padding: 0.25, maxZoom: 1.2, duration: 400 }), 60);
       } catch (e) {
         setNote(e instanceof Error ? e.message : String(e));
         setNodes((ns) => ns.map((n) => (n.id === parent.id ? { ...n, data: { ...n.data, busy: false } } : n)));
       }
     },
-    [nodes, id, rf, setNodes, setEdges]
+    [id, rf, setNodes, setEdges]
   );
 
   const addNode = (n: GNode) => {
@@ -230,10 +238,60 @@ function Explorer() {
     setEdges((es) => es.filter((e) => !drop.has(e.source) && !drop.has(e.target)));
   };
 
+  const MAX_NODES = 400;
+  const wait = () => new Promise((r) => setTimeout(r, 30));
+
+  /** Corre todas las transformaciones pendientes de un nodo. */
+  const expandAll = async (nid: string) => {
+    const n = nodesRef.current.find((x) => x.id === nid);
+    if (!n) return;
+    for (const t of TRANSFORMS[n.data.type]) {
+      if (nodesRef.current.find((x) => x.id === nid)?.data.done?.includes(t.id)) continue;
+      await run(nid, t.id, false);
+      await wait();
+    }
+    setTimeout(() => rf.fitView({ maxZoom: 1.2, duration: 400 }), 60);
+  };
+
+  /** Expande un nivel completo: todas las transformaciones de todos los nodos visibles. */
+  const expandLevel = async () => {
+    const level = nodesRef.current.filter((n) => TRANSFORMS[n.data.type].some((t) => !n.data.done?.includes(t.id))).map((n) => n.id);
+    let i = 0;
+    for (const nid of level) {
+      if (nodesRef.current.length >= MAX_NODES) {
+        setNote(`Se paró en ${MAX_NODES} nodos para que el mapa siga legible. Quita ramas o expande nodos puntuales.`);
+        break;
+      }
+      setBulk(`${++i}/${level.length}`);
+      const n = nodesRef.current.find((x) => x.id === nid);
+      if (!n) continue;
+      for (const t of TRANSFORMS[n.data.type]) {
+        if (n.data.done?.includes(t.id)) continue;
+        await run(nid, t.id, false);
+        await wait();
+      }
+    }
+    setBulk("");
+    setNodes((ns) => forceLayout(ns, edgesRef.current));
+    setTimeout(() => rf.fitView({ maxZoom: 1.2, duration: 400 }), 60);
+  };
+  const edgesRef = useRef(edges);
+  edgesRef.current = edges;
+
   const relayout = () => {
-    setNodes((ns) => forceLayout(ns, edges));
+    // ordena solo lo visible: los tipos ocultos no ocupan espacio
+    setNodes((ns) => {
+      const show = ns.filter((n) => !hiddenTypes.includes(n.data.type) || n.data.type === "site");
+      const ids = new Set(show.map((n) => n.id));
+      const placed = new Map(forceLayout(show, edges.filter((e) => ids.has(e.source) && ids.has(e.target))).map((n) => [n.id, n.position]));
+      return ns.map((n) => (placed.has(n.id) ? { ...n, position: placed.get(n.id)! } : n));
+    });
     setTimeout(() => rf.fitView({ maxZoom: 1.2, duration: 400 }), 50);
   };
+
+  const [hiddenTypes, setHiddenTypes] = useLocal<GType[]>(`graph:hidden:${id}`, []);
+  // el sitio nunca se oculta: es la raíz
+  const visibleNodes = useMemo(() => (hiddenTypes.length ? nodes.map((n) => (hiddenTypes.includes(n.data.type) && n.data.type !== "site" ? { ...n, hidden: true } : n)) : nodes), [nodes, hiddenTypes]);
 
   const counts = useMemo(() => {
     const m = new Map<GType, number>();
@@ -244,7 +302,7 @@ function Explorer() {
   return (
     <div className="relative min-h-[520px] flex-1">
       <ReactFlow
-        nodes={nodes}
+        nodes={visibleNodes}
         edges={edges}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
@@ -265,7 +323,7 @@ function Explorer() {
       </ReactFlow>
 
       {/* barra superior */}
-      <div className="pointer-events-none absolute left-3 top-3 z-10 flex w-[min(520px,calc(100%-24px))] flex-col gap-2">
+      <div className="pointer-events-none absolute left-3 top-3 z-10 flex w-[min(640px,calc(100%-24px))] flex-col gap-2">
         <div className="pointer-events-auto flex gap-2">
           <div className="relative flex-1">
             <input className="input bg-white/95 shadow-sm dark:bg-ink-900/95" placeholder="buscar keyword, página, cluster o dominio…" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -281,15 +339,21 @@ function Explorer() {
               </div>
             )}
           </div>
+          <button className="btn shadow-sm" disabled={!!bulk} onClick={expandLevel} title="expande todo lo que hay en el mapa (un nivel)"><Icon name="plus" />{bulk ? `Expandiendo ${bulk}` : "Expandir todo"}</button>
           <button className="btn shadow-sm" onClick={relayout} title="ordenar el grafo automáticamente"><Icon name="map" />Ordenar</button>
           <button className="btn shadow-sm" onClick={() => confirm("¿Empezar de nuevo desde el sitio?") && reset()} title="empezar de nuevo"><Icon name="refresh" /></button>
         </div>
         <div className="flex flex-wrap gap-1">
           {(Object.keys(STYLE) as GType[]).filter((t) => counts.get(t)).map((t) => (
-            <span key={t} className="chip bg-white/90 shadow-sm dark:bg-ink-900/90">
+            <button
+              key={t}
+              title={hiddenTypes.includes(t) ? "mostrar este tipo" : "ocultar este tipo"}
+              onClick={() => setHiddenTypes(hiddenTypes.includes(t) ? hiddenTypes.filter((x) => x !== t) : [...hiddenTypes, t])}
+              className={cx("chip pointer-events-auto bg-white/90 shadow-sm transition hover:ring-1 hover:ring-acc dark:bg-ink-900/90", hiddenTypes.includes(t) && "line-through opacity-40")}
+            >
               <span className={cx("h-2 w-2 rounded-full", t === "page" ? "bg-emerald-400" : STYLE[t].dot)} />
               {TYPE_LABEL[t]} {counts.get(t)}
-            </span>
+            </button>
           ))}
         </div>
       </div>
@@ -312,7 +376,12 @@ function Explorer() {
             )}
           </div>
           <div className="flex-1 space-y-1 overflow-auto p-2">
-            <div className="lbl px-1 pb-1">Expandir</div>
+            <div className="flex items-center px-1 pb-1">
+              <span className="lbl">Expandir</span>
+              {TRANSFORMS[selNode.data.type].length > 1 && (
+                <button className="btn-g ml-auto text-xs text-acc" disabled={selNode.data.busy || !!bulk} onClick={() => expandAll(selNode.id)}>todo</button>
+              )}
+            </div>
             {TRANSFORMS[selNode.data.type].map((t) => {
               const done = selNode.data.done?.includes(t.id);
               return (
