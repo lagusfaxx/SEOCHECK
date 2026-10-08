@@ -25,7 +25,13 @@ test("GSC: acepta sc-domain: y https://, normaliza y rechaza lo demás", () => {
   assert.equal(normalizeGscProperty("sc-domain:https://ejemplo.cl/"), "sc-domain:ejemplo.cl");
   assert.equal(normalizeGscProperty("https://www.Ejemplo.cl"), "https://www.ejemplo.cl/");
   assert.equal(normalizeGscProperty("http://ejemplo.cl/blog"), "http://ejemplo.cl/blog/");
-  assert.throws(() => normalizeGscProperty("ejemplo.cl"), /usa sc-domain:ejemplo\.cl .* o https:\/\/ejemplo\.cl\//);
+  // dominio pelado y variantes mal escritas → propiedad de dominio
+  assert.equal(normalizeGscProperty("ejemplo.cl"), "sc-domain:ejemplo.cl");
+  assert.equal(normalizeGscProperty("www.Ejemplo.cl"), "sc-domain:ejemplo.cl");
+  assert.equal(normalizeGscProperty("sc-ejemplo.cl"), "sc-domain:ejemplo.cl");
+  assert.equal(normalizeGscProperty("sc domain ejemplo.cl"), "sc-domain:ejemplo.cl");
+  assert.equal(normalizeGscProperty("scotiabank.cl"), "sc-domain:scotiabank.cl");
+  assert.throws(() => normalizeGscProperty("mi sitio"), /usa sc-domain:dominio\.cl .* o https:\/\/dominio\.cl\//);
 });
 
 test("GSC: 403 dice qué email agregar y dónde", () => {

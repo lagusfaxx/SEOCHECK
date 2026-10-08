@@ -14,7 +14,10 @@ export function normalizeGscProperty(input: string): string {
     const u = new URL(v);
     return `${u.protocol}//${u.host.toLowerCase()}${u.pathname.endsWith("/") ? u.pathname : `${u.pathname}/`}`;
   }
-  throw new Error(`Propiedad GSC inválida "${input}": usa sc-domain:${v.replace(/^www\./, "") || "dominio.cl"} (propiedad de dominio) o https://${v || "dominio.cl"}/ (prefijo de URL)`);
+  // dominio pelado ("uzeed.cl") o variantes mal escritas ("sc-uzeed.cl", "sc domain uzeed.cl") → propiedad de dominio
+  const bare = v.replace(/^sc(?:[-_ ]domain)?[-_:\s]+/i, "").replace(/^www\./i, "").replace(/\/$/, "");
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(bare)) return `sc-domain:${bare.toLowerCase()}`;
+  throw new Error(`Propiedad GSC inválida "${input}": usa sc-domain:dominio.cl (propiedad de dominio) o https://dominio.cl/ (prefijo de URL)`);
 }
 
 export function serviceAccountEmail(): string | null {
