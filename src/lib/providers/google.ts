@@ -90,6 +90,50 @@ function client() {
   return jwt;
 }
 
+/** Propiedades de Search Console a las que tiene acceso la cuenta de servicio. */
+export async function gscSites(): Promise<string[]> {
+  const res = await client().request<{ siteEntry?: { siteUrl: string; permissionLevel: string }[] }>({ url: "https://searchconsole.googleapis.com/webmasters/v3/sites" });
+  return (res.data.siteEntry ?? []).filter((x) => x.permissionLevel !== "siteUnverifiedUser").map((x) => x.siteUrl);
+}
+
+const hostOfProp = (p: string) => p.replace(/^sc-domain:/, "").replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "").toLowerCase();
+
+/**
+ * Elige, entre las propiedades accesibles, la que corresponde a lo que escribió el usuario:
+ * la exacta si existe; si no, otra del mismo dominio (dominio > https > https://www > http).
+ */
+export function matchGscProperty(input: string, sites: string[]): string | null {
+  const want = normalizeGscProperty(input);
+  if (sites.includes(want)) return want;
+  const host = hostOfProp(want);
+  const same = sites.filter((s) => hostOfProp(s) === host);
+  const rank = (s: string) => (s.startsWith("sc-domain:") ? 0 : s.startsWith(`https://${host}`) ? 1 : s.startsWith("https://") ? 2 : 3);
+  return same.sort((a, b) => rank(a) - rank(b))[0] ?? null;
+}
+
+/** Normaliza y, si hay credenciales, corrige al formato real de la propiedad en Search Console. */
+export async function resolveGscProperty(input: string): Promise<string> {
+  const norm = normalizeGscProperty(input);
+  if (!env.gscCredentials) return norm;
+  try {
+    return matchGscProperty(norm, await gscSites()) ?? norm;
+  } catch {
+    return norm;
+  }
+}
+
+/** Agrega al error qué propiedades sí ve la cuenta (lo más útil cuando hay un 403/404). */
+async function withSitesHint(err: Error, prop: string): Promise<Error> {
+  try {
+    const sites = await gscSites();
+    const alt = matchGscProperty(prop, sites);
+    if (alt && alt !== prop) return new Error(`${err.message}\nLa cuenta sí tiene acceso a ${alt}: pon esa en Ajustes.`);
+    return new Error(`${err.message}\nPropiedades que ve la cuenta: ${sites.length ? sites.join(", ") : "ninguna"}.`);
+  } catch {
+    return err;
+  }
+}
+
 export type GscApiRow = { keys: string[]; clicks: number; impressions: number; ctr: number; position: number };
 
 export async function gscQuery(site: string, body: Record<string, unknown>): Promise<GscApiRow[]> {
@@ -102,7 +146,9 @@ export async function gscQuery(site: string, body: Record<string, unknown>): Pro
     });
     return res.data.rows ?? [];
   } catch (e) {
-    throw gscError(e, prop);
+    const err = gscError(e, prop);
+    const status = (e as any)?.response?.status ?? (e as any)?.status;
+    throw status === 403 || status === 404 ? await withSitesHint(err, prop) : err;
   }
 }
 

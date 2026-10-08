@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { normDomain } from "@/lib/util";
-import { normalizeGscProperty } from "@/lib/providers/google";
+import { normalizeGscProperty, resolveGscProperty } from "@/lib/providers/google";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
       country,
       language: b.language ?? "es",
       locationCode: b.locationCode ?? LOCATIONS[country] ?? 2152,
-      gscProperty: b.gscProperty ? normalizeGscProperty(b.gscProperty) : null,
+      gscProperty: b.gscProperty ? await resolveGscProperty(b.gscProperty) : null,
     },
   });
   return Response.json(p);

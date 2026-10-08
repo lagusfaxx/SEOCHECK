@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cleanKeyword, sanitizeKeywords } from "./providers/sanitize";
-import { gscError, normalizeGscProperty, parsePsi, parseServiceAccount } from "./providers/google";
+import { gscError, matchGscProperty, normalizeGscProperty, parsePsi, parseServiceAccount } from "./providers/google";
 
 test("DataForSEO: limpia símbolos inválidos, emojis y respeta límites", () => {
   assert.equal(cleanKeyword("¿Qué es el SEO?"), "qué es el seo");
@@ -79,4 +79,14 @@ test("GSC_SERVICE_ACCOUNT_JSON: tal cual, base64, entre comillas y con saltos de
   assert.deepEqual(parseServiceAccount(`"${json.replace(/"/g, '\\"')}"`), want);
   assert.throws(() => parseServiceAccount("{nope"), /no es un JSON válido \(5 caracteres, empieza con "\{nope", sin la clave/);
   assert.throws(() => parseServiceAccount(JSON.stringify({ a: 1 })), /client_email/);
+});
+
+test("propiedad GSC: se elige la que realmente ve la cuenta para ese dominio", () => {
+  // escrita como dominio, pero en Search Console está como prefijo de URL
+  assert.equal(matchGscProperty("uzeed.cl", ["https://uzeed.cl/"]), "https://uzeed.cl/");
+  assert.equal(matchGscProperty("sc-domain:uzeed.cl", ["https://www.uzeed.cl/", "https://otro.cl/"]), "https://www.uzeed.cl/");
+  // la exacta gana; entre varias del mismo dominio, la de dominio primero
+  assert.equal(matchGscProperty("https://uzeed.cl/", ["sc-domain:uzeed.cl", "https://uzeed.cl/"]), "https://uzeed.cl/");
+  assert.equal(matchGscProperty("uzeed.cl", ["http://uzeed.cl/", "https://uzeed.cl/", "sc-domain:uzeed.cl"]), "sc-domain:uzeed.cl");
+  assert.equal(matchGscProperty("uzeed.cl", ["https://otro.cl/"]), null);
 });

@@ -4,7 +4,7 @@ import { cancelJob, enqueue, QUEUES } from "@/lib/queue";
 import { sweepStale, workerAlive } from "@/lib/jobs";
 import { refreshCluster } from "@/lib/keywords/pipeline";
 import { ISSUE_LABELS } from "@/lib/audit/issues";
-import { indexNow, normalizeGscProperty } from "@/lib/providers/google";
+import { indexNow, resolveGscProperty } from "@/lib/providers/google";
 import { makeBrief, type ContentResult } from "@/lib/content/analyze";
 import { parseKeywordPlannerCsv } from "@/lib/volume/csv";
 import { backfillVolumes, volumeChainStatus, writeCache } from "@/lib/volume/broker";
@@ -350,7 +350,7 @@ const PATCHS: Record<string, H> = {
   "": async ({ id, body }) => {
     const data: Prisma.ProjectUpdateInput = {};
     for (const k of ["name", "domain", "country", "language", "gscProperty"] as const) if (k in body) (data as any)[k] = body[k] || (k === "gscProperty" ? null : body[k]);
-    if (body.gscProperty) data.gscProperty = normalizeGscProperty(body.gscProperty);
+    if (body.gscProperty) data.gscProperty = await resolveGscProperty(body.gscProperty);
     if ("locationCode" in body) data.locationCode = Number(body.locationCode);
     if (body.settings) {
       const p = await db.project.findUniqueOrThrow({ where: { id } });

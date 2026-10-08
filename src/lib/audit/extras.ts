@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { pageSpeed, urlInspect } from "../providers/google";
+import { projectGscProperty } from "../rank/gsc";
 
 export async function runPsi(projectId: string, urls: string[], strategies: ("mobile" | "desktop")[] = ["mobile", "desktop"]) {
   for (const url of urls) {
@@ -12,9 +13,10 @@ export async function runPsi(projectId: string, urls: string[], strategies: ("mo
 
 export async function runInspection(projectId: string, urls: string[]) {
   const p = await db.project.findUniqueOrThrow({ where: { id: projectId } });
-  if (!p.gscProperty) throw new Error("El proyecto no tiene propiedad de GSC");
+  const prop = await projectGscProperty(p);
+  if (!prop) throw new Error("El proyecto no tiene propiedad de GSC");
   for (const url of urls) {
-    const r = await urlInspect(p.gscProperty, url, `${p.language}-${p.country.toUpperCase()}`);
+    const r = await urlInspect(prop, url, `${p.language}-${p.country.toUpperCase()}`);
     const idx = r?.indexStatusResult ?? {};
     await db.urlInspection.create({
       data: {

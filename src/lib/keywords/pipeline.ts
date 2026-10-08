@@ -1,6 +1,7 @@
 import pLimit from "p-limit";
 import { db } from "../db";
 import { gscQuery } from "../providers/google";
+import { projectGscProperty } from "../rank/gsc";
 import { expandSeed } from "../providers/autocomplete";
 import { embeddingProvider, type EmbeddingProvider } from "../providers";
 import { resolveVolumes, volKey } from "../volume/broker";
@@ -67,7 +68,7 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
     try {
       const end = new Date(Date.now() - 2 * 864e5);
       const start = new Date(end.getTime() - 90 * 864e5);
-      const rows = await gscQuery(p.gscProperty, {
+      const rows = await gscQuery((await projectGscProperty(p))!, {
         startDate: start.toISOString().slice(0, 10),
         endDate: end.toISOString().slice(0, 10),
         dimensions: ["query"],
