@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { currentProjectId } from "./jobctx";
+import { currentProjectId, currentJobRunId } from "./jobctx";
 
 export type CostCtx = { projectId?: string; ref?: string };
 
@@ -22,6 +22,7 @@ export async function logUsage(u: Usage) {
         provider: u.provider, endpoint: u.endpoint, units: u.units ?? 1, costUsd: u.costUsd ?? null,
         inputTokens: u.inputTokens ?? null, outputTokens: u.outputTokens ?? null, model: u.model ?? null,
         projectId: u.projectId ?? currentProjectId() ?? null, ref: u.ref?.slice(0, 300) ?? null,
+        jobRunId: currentJobRunId() ?? null,
       },
     })
     .catch((e) => console.warn("[usage]", e));

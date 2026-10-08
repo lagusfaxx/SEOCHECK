@@ -9,6 +9,7 @@ export function runWithJob<T>(jobRunId: string | undefined, fn: () => Promise<T>
 }
 
 export const currentProjectId = () => store.getStore()?.projectId;
+export const currentJobRunId = () => store.getStore()?.jobRunId;
 
 export async function jobLog(level: "info" | "warn" | "error", msg: string, data?: unknown) {
   const line = `[job${store.getStore()?.jobRunId ? ` ${store.getStore()!.jobRunId}` : ""}] ${msg}`;

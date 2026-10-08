@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { env } from "./env";
 import { llmCost, SERPENT_USD_PER_CALL } from "./pricing";
+import { currentJobRunId } from "./jobctx";
 
 /**
  * Presupuesto mensual por proveedor (USD). Se compara el gasto del mes (ProviderUsage.costUsd, mes
@@ -57,21 +58,63 @@ export class BudgetError extends Error {
 }
 
 /** Lanza BudgetError si alguna estimación no cabe en lo que queda del mes. */
-export async function assertBudget(estimates: Partial<Record<BudgetProvider, number>>, label: string) {
+const RESERVE_HOURS = 6;
+
+/**
+ * Comprueba y RESERVA presupuesto de forma atómica (lock de Postgres): el gasto real del mes + lo reservado por
+ * otros jobs en curso (descontando lo que ya gastaron) + lo que pide este no puede pasar el límite.
+ * Dentro de un job (worker), la reserva queda a nombre del job hasta que termina; fuera de un job (pre-chequeo de la
+ * API) solo comprueba. Así dos jobs en paralelo no pueden pasar juntos el chequeo y gastar los dos.
+ */
+export async function assertBudget(estimates: Partial<Record<BudgetProvider, number>>, label: string, holder = currentJobRunId()) {
   const limits = budgetLimits();
-  const spent = await spentThisMonth();
-  const over = (Object.entries(estimates) as [BudgetProvider, number][])
-    .filter(([p, need]) => need > 0 && limits[p] >= 0 && (spent.get(p)?.usd ?? 0) + need > limits[p] + 1e-9)
-    .map(([p, need]) => ({ provider: p, limit: limits[p], spent: spent.get(p)?.usd ?? 0, needed: need }));
-  if (over.length) throw new BudgetError(over, label);
+  const wanted = (Object.entries(estimates) as [BudgetProvider, number][]).filter(([p, need]) => need > 0 && limits[p] >= 0);
+  if (!wanted.length) return;
+  await db.$transaction(async (tx) => {
+    // un solo lock para todo el presupuesto: los chequeos+reservas se hacen de a uno
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(4242002)`;
+    await tx.budgetReservation.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+    const since = monthStart();
+    const spentRows = await tx.providerUsage.groupBy({ by: ["provider"], where: { createdAt: { gte: since } }, _sum: { costUsd: true } });
+    const spent = new Map(spentRows.map((r) => [r.provider, r._sum.costUsd ?? 0]));
+    // reservado por OTROS = su reserva menos lo que ya gastaron (eso ya está en "spent")
+    const reserved = await tx.$queryRaw<{ provider: string; usd: number }[]>`
+      SELECT r.provider, COALESCE(SUM(GREATEST(r.usd - COALESCE(u.used, 0), 0)), 0)::float AS usd
+      FROM "BudgetReservation" r
+      LEFT JOIN (SELECT "jobRunId", provider, SUM("costUsd") AS used FROM "ProviderUsage" WHERE "createdAt" >= ${since} AND "jobRunId" IS NOT NULL GROUP BY 1, 2) u
+        ON u."jobRunId" = r.holder AND u.provider = r.provider
+      WHERE r.holder <> ${holder ?? ""} GROUP BY r.provider`;
+    const res = new Map(reserved.map((r) => [r.provider, r.usd]));
+    const over = wanted
+      .filter(([p, need]) => (spent.get(p) ?? 0) + (res.get(p) ?? 0) + need > limits[p] + 1e-9)
+      .map(([p, need]) => ({ provider: p, limit: limits[p], spent: (spent.get(p) ?? 0) + (res.get(p) ?? 0), needed: need }));
+    if (over.length) throw new BudgetError(over, label);
+    if (!holder) return;
+    const expiresAt = new Date(Date.now() + RESERVE_HOURS * 3600_000);
+    for (const [p, need] of wanted)
+      await tx.budgetReservation.upsert({
+        where: { holder_provider: { holder, provider: p } },
+        // un mismo job puede reservar varias veces (p. ej. "correr todo"): se suma
+        create: { holder, provider: p, usd: need, label, expiresAt },
+        update: { usd: { increment: need }, expiresAt },
+      });
+  });
 }
 
-/** ¿Cabe este gasto? (sin lanzar) — para saltar un proveedor de volumen y pasar al siguiente. */
+/** Libera las reservas del job (al terminar, falle o no). */
+export async function releaseBudget(holder: string | undefined) {
+  if (holder) await db.budgetReservation.deleteMany({ where: { holder } });
+}
+
+/** ¿Cabe este gasto? (sin lanzar) — reserva si cabe. Para saltar un proveedor de volumen y pasar al siguiente. */
 export async function fitsBudget(provider: BudgetProvider, need: number) {
-  const limit = budgetLimits()[provider];
-  if (limit < 0 || need <= 0) return true;
-  const spent = (await spentThisMonth(provider)).get(provider)?.usd ?? 0;
-  return spent + need <= limit + 1e-9;
+  try {
+    await assertBudget({ [provider]: need }, provider);
+    return true;
+  } catch (e) {
+    if (e instanceof BudgetError) return false;
+    throw e;
+  }
 }
 
 // ---- Estimaciones (cotas superiores) ----

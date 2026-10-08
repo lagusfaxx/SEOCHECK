@@ -10,7 +10,7 @@ import { syncGsc } from "../lib/rank/gsc";
 import { computeAlerts } from "../lib/rank/alerts";
 import { analyzeContent } from "../lib/content/analyze";
 import { runWithJob } from "../lib/jobctx";
-import { assertBudget, BudgetError, est } from "../lib/budget";
+import { assertBudget, BudgetError, est, releaseBudget } from "../lib/budget";
 import { collectDfsQueue, flushDfsQueue } from "../lib/volume/dataforseo";
 import { backfillVolumes, writeCache } from "../lib/volume/broker";
 import { runFull } from "../lib/fullrun";
@@ -128,6 +128,7 @@ async function main() {
             throw e;
           } finally {
             stop();
+            await releaseBudget(d.jobRunId).catch(() => {});
           }
         }
       });

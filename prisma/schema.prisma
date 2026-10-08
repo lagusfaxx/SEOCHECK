@@ -456,10 +456,13 @@ model ProviderUsage {
   outputTokens Int?
   model        String?
   ref          String?
+  /// job que generó el gasto (para descontarlo de su reserva de presupuesto)
+  jobRunId     String?
   createdAt    DateTime @default(now())
 
   @@index([projectId, createdAt], map: "ApiCall_projectId_createdAt_idx")
   @@index([provider, createdAt])
+  @@index([jobRunId])
 }
 
 /// Caché global de volumen (sin importar el proyecto): país + idioma + keyword normalizada.
@@ -512,4 +515,17 @@ model ProviderState {
 model Heartbeat {
   name String   @id
   at   DateTime @default(now())
+}
+
+/// Reserva de presupuesto de un job en curso: su costo máximo queda apartado hasta que termina, así dos jobs
+/// en paralelo no pueden pasarse juntos del límite mensual.
+model BudgetReservation {
+  holder    String
+  provider  String
+  usd       Float
+  label     String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@id([holder, provider])
 }

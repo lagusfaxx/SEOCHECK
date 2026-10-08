@@ -12,7 +12,8 @@ import { parseKeywordPlannerCsv } from "@/lib/volume/csv";
 import { backfillVolumes, volumeChainStatus, writeCache } from "@/lib/volume/broker";
 import { env } from "@/lib/env";
 import { llmStatus } from "@/lib/providers/llm";
-import { assertBudget, BudgetError, budgetLimits, est, monthStart, spentThisMonth } from "@/lib/budget";
+import { assertBudget, BudgetError, budgetLimits, est, monthStart, releaseBudget, spentThisMonth } from "@/lib/budget";
+import { runWithJob } from "@/lib/jobctx";
 import { hostOf, normTerm, normUrl } from "@/lib/util";
 import { buildReport } from "@/lib/report";
 import { expand, graphSearch, siteNode } from "@/lib/graph";
@@ -433,8 +434,16 @@ const POSTS: Record<string, H> = {
 
   "content/rebrief": async ({ id, body }) => {
     const a = await ownContent(id, body.cid);
-    await assertBudget({ llm: est.llmBrief() }, "Regenerar brief");
-    const brief = await makeBrief(a.result as unknown as ContentResult, a.project.language, a.project.country);
+    // se corre en la request: reserva propia para que dos "regenerar" seguidos no se pasen del límite
+    const holder = `api-${crypto.randomUUID()}`;
+    const brief = await runWithJob(
+      holder,
+      async () => {
+        await assertBudget({ llm: est.llmBrief() }, "Regenerar brief");
+        return makeBrief(a.result as unknown as ContentResult, a.project.language, a.project.country);
+      },
+      id
+    ).finally(() => releaseBudget(holder));
     return db.contentAnalysis.update({ where: { id: a.id }, data: { brief: brief as any } });
   },
 };
