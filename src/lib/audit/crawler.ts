@@ -77,6 +77,39 @@ export type PageSignals = {
 
 export type FetchOpts = { userAgent?: string };
 
+/** Error que no vale la pena reintentar (el sitio no responde, cancelado…): el worker no reintenta. */
+export class NoRetryError extends Error {
+  noRetry = true;
+}
+
+export type CrawlOutcome = { status: "completed" | "partial" | "failed"; reason: string | null };
+type OutcomePage = { url: string; finalUrl: string; status: number; error?: PageError | null; contentType: string | null; robotsBlocked?: boolean };
+
+/**
+ * Resultado honesto del crawl: si no se pudo leer el sitio, es "fallido" (sin puntaje);
+ * si se leyó solo en parte (WAF, muchos timeouts/5xx, home caída), es "parcial" con el motivo.
+ */
+export function classifyCrawl(o: { pages: OutcomePage[]; start: string; wafAbort: boolean; startError?: string | null }): CrawlOutcome {
+  const pages = o.pages.filter((p) => !p.robotsBlocked);
+  const ok = pages.filter((p) => p.status >= 200 && p.status < 300 && !p.error && (p.contentType ?? "").includes("html"));
+  const startP = pages.find((p) => p.url === o.start) ?? pages[0];
+  const why = (p: OutcomePage | undefined) => {
+    if (!p) return "no se obtuvo ninguna respuesta";
+    if (p.error === "ssrf_blocked") return o.startError ? `bloqueado por seguridad: ${o.startError}` : "la dirección resuelve a una red interna o no permitida";
+    if (p.error === "blocked_by_waf") return `el firewall del sitio (Cloudflare u otro) bloqueó al crawler (HTTP ${p.status})`;
+    if (p.status === 0) return `no se pudo conectar${o.startError ? `: ${o.startError}` : " (DNS, timeout o conexión rechazada)"}`;
+    if (p.status >= 400) return `el sitio respondió HTTP ${p.status}`;
+    if (!(p.contentType ?? "").includes("html")) return `la página de inicio no es HTML (${p.contentType ?? "sin tipo"})`;
+    return "respuesta inválida";
+  };
+  if (!ok.length) return { status: "failed", reason: `No se pudo acceder al sitio: ${why(startP)}.` };
+  const failed = pages.filter((p) => p.status === 0 || p.status >= 500 || p.error === "blocked_by_waf" || p.error === "fetch_failed");
+  if (o.wafAbort) return { status: "partial", reason: `El firewall del sitio empezó a bloquear al crawler: se leyeron ${ok.length} de ${pages.length} URLs.` };
+  if (pages.length >= 5 && failed.length / pages.length > 0.3) return { status: "partial", reason: `${failed.length} de ${pages.length} URLs no respondieron (timeouts, errores 5xx o bloqueos).` };
+  if (startP && !ok.includes(startP) && (startP.status === 0 || startP.status >= 500)) return { status: "partial", reason: `La página de inicio falló (${why(startP)}); el resto se leyó desde el sitemap.` };
+  return { status: "completed", reason: null };
+}
+
 async function fetchFollow(url: string, o: FetchOpts = {}) {
   const t0 = Date.now();
   const { res, finalUrl, redirects } = await safeFetch(url, { headers: { "User-Agent": o.userAgent || env.userAgent, Accept: "text/html,*/*" }, timeoutMs: 25000 });
@@ -239,6 +272,19 @@ function pageSignals($: cheerio.CheerioAPI, url: string): PageSignals {
   };
 }
 
+/** Mensaje entendible para un error de red (DNS, timeout, TLS, SSRF). */
+export function describeFetchError(e: unknown): string {
+  const err = e as { name?: string; message?: string; code?: string; cause?: { code?: string; message?: string } };
+  const code = err?.cause?.code ?? err?.code ?? "";
+  if (err?.name === "SsrfError") return err.message ?? "bloqueado por seguridad";
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN") return "el dominio no resuelve (DNS)";
+  if (code === "ECONNREFUSED") return "conexión rechazada";
+  if (code === "ECONNRESET" || code === "UND_ERR_SOCKET") return "la conexión se cortó";
+  if (code === "UND_ERR_CONNECT_TIMEOUT" || code === "ETIMEDOUT" || err?.name === "TimeoutError" || err?.name === "AbortError") return "tiempo de espera agotado";
+  if (/CERT|SSL|TLS/i.test(code) || /certificate/i.test(err?.cause?.message ?? err?.message ?? "")) return `certificado TLS inválido (${code || "TLS"})`;
+  return (err?.cause?.message ?? err?.message ?? String(e)).slice(0, 160);
+}
+
 export function parseHtml(html: string, url: string) {
   const $ = cheerio.load(html);
   const canonicalRaw = $('link[rel="canonical"]').attr("href");
@@ -350,7 +396,8 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   const start = normUrl(o.startUrl || `https://${domain}/`)!;
   const site = hostOf(start);
   const origin = new URL(start).origin;
-  await db.crawl.update({ where: { id: crawlId }, data: { status: "running" } });
+  if (crawl.status === "cancelled") throw new NoRetryError("Crawl cancelado antes de empezar");
+  await db.crawl.update({ where: { id: crawlId }, data: { status: "running", reason: null } });
 
   // robots + sitemap
   await jobProgress(jobRunId, 1, "robots.txt");
@@ -377,6 +424,15 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   };
   const skipExt = /\.(jpg|jpeg|png|gif|webp|svg|pdf|zip|mp4|mp3|css|js|ico|woff2?|xml|json)(\?|$)/i;
 
+  let startError: string | null = null;
+  // cancelación: el usuario puede cancelar el trabajo; se revisa entre tandas
+  let lastCheck = 0;
+  const cancelled = async () => {
+    if (Date.now() - lastCheck < 3000) return false;
+    lastCheck = Date.now();
+    const c = await db.crawl.findUnique({ where: { id: crawlId }, select: { status: true } });
+    return c?.status === "cancelled";
+  };
   const seen = new Map<string, number>(); // url → depth
   const pages: PageData[] = [];
   const external = new Set<string>();
@@ -399,6 +455,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
             pd = await fetchPage(u, o.render, { userAgent: ua });
           } catch (e) {
             pd = { ...emptyPage(u), error: e instanceof SsrfError ? "ssrf_blocked" : "fetch_failed" };
+            if (u === start) startError = describeFetchError(e);
           }
           pages.push({ ...pd, blocks: [] }); // los bloques solo los usa Contenido: no acumularlos en crawls grandes
           // Si el WAF bloquea todo, no seguir golpeando el sitio
@@ -425,6 +482,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     );
     queue = next;
     depth++;
+    if (await cancelled()) throw new NoRetryError("Crawl cancelado");
   }
 
   // Huérfanas: en sitemap pero no alcanzadas
@@ -507,10 +565,22 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     warning: sev("warning"),
     info: sev("info"),
     avgMs: Math.round(saved.reduce((s, p) => s + p.responseMs, 0) / Math.max(1, saved.length)),
-    health: Math.max(0, Math.round(100 - (sev("critical") * 5 + sev("warning")) / Math.max(1, saved.length) * 10)),
+    health: Math.max(0, Math.round(100 - (sev("critical") * 5 + sev("warning")) / Math.max(1, saved.length) * 10)) as number | null,
+    /** cobertura: páginas leídas por links vs. el máximo pedido */
+    limitReached: Boolean(o.maxPages && pages.length - Math.min(orphans.length, 300) >= o.maxPages),
   };
-  await db.crawl.update({ where: { id: crawlId }, data: { status: "done", stats, finishedAt: new Date() } });
-  return stats;
+  const outcome = classifyCrawl({
+    pages: pages.map((p) => ({ url: p.url, finalUrl: p.finalUrl, status: p.status, error: p.error ?? null, contentType: p.contentType, robotsBlocked: p.status === 0 && !p.error && blocked(p.url) })),
+    start,
+    wafAbort,
+    startError,
+  });
+  // sin acceso al sitio no hay puntaje: un 70/100 de algo que no se leyó sería falso
+  if (outcome.status === "failed") stats.health = null;
+  if (await cancelled()) throw new NoRetryError("Crawl cancelado");
+  await db.crawl.update({ where: { id: crawlId }, data: { status: outcome.status, reason: outcome.reason, stats, finishedAt: new Date() } });
+  if (outcome.status === "failed") throw new NoRetryError(outcome.reason ?? "Crawl fallido");
+  return { ...stats, status: outcome.status };
 }
 
 function emptyPage(url: string): PageData {

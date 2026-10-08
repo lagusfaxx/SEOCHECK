@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useProject } from "@/components/Shell";
 import { api, cx, DataTable, Drawer, Empty, fmt, Hint, Icon, Score, SEV, Stat, Tabs, useApi, type Col } from "@/components/ui";
 import { ISSUE_FIX, ISSUE_WHY } from "@/lib/audit/fixes";
+import { CRAWL_STATUS } from "@/lib/status";
 
 const SEV_HINT: Record<string, string> = {
   critical: "Problemas que impiden que Google vea o indexe páginas. Arreglar primero.",
@@ -102,18 +103,30 @@ export default function AuditPage() {
         {data?.crawls?.length > 0 && (
           <select className="input ml-auto w-auto" value={data.crawlId} onChange={(e) => setCrawl(e.target.value)}>
             {data.crawls.map((c: any) => (
-              <option key={c.id} value={c.id}>{new Date(c.startedAt).toLocaleString("es-CL")} · {c.status} · {fmt(c.stats?.pages)}</option>
+              <option key={c.id} value={c.id}>{new Date(c.startedAt).toLocaleString("es-CL")} · {CRAWL_STATUS[c.status]?.label ?? c.status}{c.stats?.pages != null ? ` · ${fmt(c.stats.pages)} URLs` : ""}</option>
             ))}
           </select>
         )}
       </div>
 
+      {cur && cur.status !== "completed" && (
+        <div className={cx("flex items-start gap-3 rounded-xl px-4 py-3 text-sm", CRAWL_STATUS[cur.status]?.cls)}>
+          <span className="font-semibold">Crawl {CRAWL_STATUS[cur.status]?.label ?? cur.status}</span>
+          <span className="flex-1">
+            {cur.reason ??
+              (cur.status === "running" || cur.status === "queued" ? "Los resultados aparecen al terminar." : "")}
+            {cur.status === "partial" && " Los resultados son incompletos: el puntaje y los problemas solo cubren lo que se pudo leer."}
+            {cur.status === "failed" && " No hay puntaje ni problemas que mostrar: revisa la dirección del sitio, el firewall (Cloudflare) o vuelve a intentar."}
+          </span>
+        </div>
+      )}
+
       {!data?.crawlId ? (
         <Empty>sin crawls</Empty>
-      ) : (
+      ) : cur && !["completed", "partial"].includes(cur.status) ? null : (
         <>
           <div className="card grid grid-cols-2 items-center gap-6 p-4 md:grid-cols-8">
-            <div className="row-span-2 flex items-start gap-1 md:row-span-1"><Score value={st.health} size={72} /><Hint text="Salud de 0 a 100: baja 5 puntos por cada crítico y 1 por cada warning, en proporción a las URLs revisadas." /></div>
+            <div className="row-span-2 flex items-start gap-1 md:row-span-1"><Score value={st.health} size={72} /><Hint text="Salud técnica de 0 a 100 (solo lo técnico, no todo el SEO): baja 5 puntos por cada crítico y 1 por cada warning, en proporción a las URLs revisadas. Si el crawl fue parcial, solo cubre lo que se pudo leer." /></div>
             <Stat label="URLs" value={fmt(st.pages)} hint="Páginas revisadas: las que el crawler encontró siguiendo links, más las del sitemap que no alcanzó por links." />
             <Stat label="Errores" value={fmt(st.errors)} tone={st.errors ? "bad" : undefined} hint="Páginas que respondieron con error (404, 500) o no respondieron." />
             <Stat label="Redirects" value={fmt(st.redirects)} hint="URLs que redirigen a otra. Normal en pocas; los links internos deberían apuntar directo a la URL final." />

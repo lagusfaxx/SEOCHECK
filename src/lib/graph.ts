@@ -31,7 +31,7 @@ function pageNode(ctx: Ctx, url: string, sub?: string) {
 }
 
 async function latestCrawl(projectId: string) {
-  return db.crawl.findFirst({ where: { projectId, status: "done" }, orderBy: { startedAt: "desc" }, select: { id: true } });
+  return db.crawl.findFirst({ where: { projectId, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" }, select: { id: true } });
 }
 
 async function latestRun(projectId: string) {

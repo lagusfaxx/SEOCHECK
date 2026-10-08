@@ -63,6 +63,11 @@ function blockedV6(ip: string) {
   const embedded = `${p[6] >> 8}.${p[6] & 255}.${p[7] >> 8}.${p[7] & 255}`;
   if (p.slice(0, 5).every((x) => x === 0) && (p[5] === 0xffff || p[5] === 0)) return blockedV4(embedded);
   if (p[0] === 0x64 && p[1] === 0xff9b) return blockedV4(embedded);
+  if (p[0] === 0x2001 && p[1] === 0x0db8) return true; // documentación
+  // 6to4 (2002:AABB:CCDD::): la IPv4 va en los grupos 2 y 3
+  if (p[0] === 0x2002) return blockedV4(`${p[1] >> 8}.${p[1] & 255}.${p[2] >> 8}.${p[2] & 255}`);
+  // Teredo (2001:0::/32): la IPv4 del cliente va invertida en el último grupo
+  if (p[0] === 0x2001 && p[1] === 0) return blockedV4(`${(p[6] >> 8) ^ 255}.${(p[6] & 255) ^ 255}.${(p[7] >> 8) ^ 255}.${(p[7] & 255) ^ 255}`);
   return false;
 }
 
@@ -115,12 +120,17 @@ export function makeSafeLookup(resolve: Resolver = defaultResolver) {
       const all = await resolve(hostname);
       if (!all.length) throw new SsrfError(`sin resolución: ${hostname}`);
       const bad = all.find((a) => isBlockedIp(a.address));
-      if (bad) throw new SsrfError(`${hostname} resuelve a IP bloqueada ${bad.address}`);
+      if (bad) {
+        // 0.0.0.0 / :: suele ser un filtro DNS del servidor (sinkhole), no un sitio interno
+        if (bad.address === "0.0.0.0" || bad.address === "::") throw new SsrfError(`el DNS del servidor devuelve ${bad.address} para ${hostname} (bloqueado por un filtro DNS)`);
+        throw new SsrfError(`${hostname} resuelve a una IP privada o reservada (${bad.address})`);
+      }
       const wanted = opts.family === 4 || opts.family === 6 ? all.filter((a) => a.family === opts.family) : all;
       return wanted.length ? wanted : all;
     })().then(
       (addrs) => (opts.all ? callback(null, addrs) : callback(null, addrs[0].address, addrs[0].family)),
-      (e) => callback(Object.assign(e instanceof Error ? e : new Error(String(e)), { code: "ESSRF" }), "", 0)
+      // solo los bloqueos son SSRF; un fallo de DNS (ENOTFOUND, EAI_AGAIN) sigue siendo un fallo de DNS
+      (e) => callback(e instanceof SsrfError ? Object.assign(e, { code: "ESSRF" }) : (e as NodeJS.ErrnoException), "", 0)
     );
   };
 }

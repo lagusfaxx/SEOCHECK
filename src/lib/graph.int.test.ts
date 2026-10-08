@@ -15,7 +15,7 @@ before(async () => {
   const { db } = await import("./db");
   const ws = await db.workspace.create({ data: { name: "test" } });
   projectId = (await db.project.create({ data: { workspaceId: ws.id, name: "g", domain: "mi-sitio.cl" } })).id;
-  const crawl = await db.crawl.create({ data: { projectId, status: "done" } });
+  const crawl = await db.crawl.create({ data: { projectId, status: "completed" } });
   await db.page.createMany({
     data: [
       { crawlId: crawl.id, url: HOME, status: 200, links: [CAT], inlinks: 0 },

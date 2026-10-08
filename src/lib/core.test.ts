@@ -152,3 +152,30 @@ test("matchGroups no depende del orden de entrada", async () => {
   assert.deepEqual(fwd, rev);
   assert.deepEqual(fwd, [null, "B", "A"]);
 });
+
+test("crawl: fallido si no se pudo leer el sitio, parcial con motivo, completado si no", async () => {
+  const { classifyCrawl } = await import("./audit/crawler");
+  const html = "text/html; charset=utf-8";
+  const S = "https://x.cl/";
+  // DNS/timeout en la home y nada más
+  let o = classifyCrawl({ pages: [{ url: S, finalUrl: S, status: 0, error: "fetch_failed", contentType: null }], start: S, wafAbort: false, startError: "el dominio no resuelve (DNS)" });
+  assert.deepEqual(o, { status: "failed", reason: "No se pudo acceder al sitio: no se pudo conectar: el dominio no resuelve (DNS)." });
+  // Cloudflare bloquea todo
+  o = classifyCrawl({ pages: [{ url: S, finalUrl: S, status: 403, error: "blocked_by_waf", contentType: html }], start: S, wafAbort: true });
+  assert.equal(o.status, "failed");
+  assert.match(o.reason!, /firewall/);
+  // la home responde 500
+  o = classifyCrawl({ pages: [{ url: S, finalUrl: S, status: 500, contentType: html }], start: S, wafAbort: false });
+  assert.match(o.reason!, /HTTP 500/);
+  // se leyó algo pero el WAF cortó
+  const ok = (u: string) => ({ url: u, finalUrl: u, status: 200, contentType: html });
+  o = classifyCrawl({ pages: [ok(S), ok(S + "a")], start: S, wafAbort: true });
+  assert.equal(o.status, "partial");
+  // >30% de timeouts/5xx
+  o = classifyCrawl({ pages: [ok(S), ok(S + "a"), ok(S + "b"), { url: S + "c", finalUrl: S + "c", status: 0, error: "fetch_failed", contentType: null }, { url: S + "d", finalUrl: S + "d", status: 503, contentType: html }], start: S, wafAbort: false });
+  assert.equal(o.status, "partial");
+  assert.match(o.reason!, /2 de 5 URLs no respondieron/);
+  // bloqueadas por robots no cuentan como fallas; un 404 tampoco
+  o = classifyCrawl({ pages: [ok(S), ok(S + "a"), { url: S + "login", finalUrl: S + "login", status: 0, contentType: null, robotsBlocked: true }, { url: S + "x", finalUrl: S + "x", status: 404, contentType: html }], start: S, wafAbort: false });
+  assert.deepEqual(o, { status: "completed", reason: null });
+});

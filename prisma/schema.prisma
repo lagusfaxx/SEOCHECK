@@ -173,7 +173,10 @@ model Crawl {
   id         String   @id @default(cuid())
   projectId  String
   project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// queued | running | completed | partial | failed | cancelled
   status     String   @default("queued")
+  /// por qué quedó parcial, fallido o cancelado (texto para el usuario)
+  reason     String?
   options    Json     @default("{}")
   stats      Json     @default("{}")
   robots     String?

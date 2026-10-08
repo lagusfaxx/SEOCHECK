@@ -98,3 +98,40 @@ test("redirect relativo a otro path público se sigue", async () => {
   assert.equal(r.finalUrl, "https://public.example.com/b");
   assert.deepEqual(r.redirects, [{ url: "https://public.example.com/a", status: 301 }]);
 });
+
+// ---- casos borde reales (cada bug encontrado queda acá) ----
+
+test("falla de DNS NO es un bloqueo SSRF (era el falso positivo: 'resuelve a red interna')", async () => {
+  const { makeSafeLookup } = await import("./net/ssrf");
+  const lookup = makeSafeLookup(async () => {
+    throw Object.assign(new Error("getaddrinfo ENOTFOUND no-existe.cl"), { code: "ENOTFOUND" });
+  });
+  const err = await new Promise<NodeJS.ErrnoException>((r) => lookup("no-existe.cl", {}, (e) => r(e!)));
+  assert.equal(err.code, "ENOTFOUND");
+  assert.ok(!(err instanceof SsrfError));
+});
+
+test("DNS sinkhole (0.0.0.0) se bloquea con un mensaje que lo explica", async () => {
+  const { makeSafeLookup } = await import("./net/ssrf");
+  const lookup = makeSafeLookup(async () => [{ address: "0.0.0.0", family: 4 }]);
+  const err = await new Promise<Error>((r) => lookup("tracker.cl", {}, (e) => r(e!)));
+  assert.ok(err instanceof SsrfError);
+  assert.match(err.message, /filtro DNS/);
+});
+
+test("un host que resuelve a una IP pública y otra privada se bloquea (rebinding por múltiples A)", async () => {
+  const { makeSafeLookup } = await import("./net/ssrf");
+  const lookup = makeSafeLookup(async () => [{ address: "93.184.216.34", family: 4 }, { address: "10.0.0.5", family: 4 }]);
+  const err = await new Promise<Error>((r) => lookup("mixto.cl", {}, (e) => r(e!)));
+  assert.ok(err instanceof SsrfError);
+});
+
+test("IPs públicas reales no se bloquean: Firebase (sintornillo.cl), Cloudflare, Shopify, IPv6 pública", () => {
+  for (const ip of ["199.36.158.100", "104.16.132.229", "172.67.1.1", "23.227.38.65", "151.101.1.69", "2606:4700::6810:84e5", "2a04:4e42::81"]) assert.equal(isBlockedIp(ip), false, ip);
+});
+
+test("formas raras de escribir IPs internas también se bloquean", () => {
+  for (const u of ["http://0177.0.0.1/", "http://127.1/", "http://0x7f.1/", "http://[::ffff:7f00:1]/", "http://[2002:7f00:1::]/", "http://[2001:db8::1]/", "http://metadata.google.internal/", "http://metadata/", "http://LOCALHOST./", "http://100.100.100.200/"])
+    assert.throws(() => assertUrlAllowed(u), SsrfError, u);
+  assert.equal(isBlockedIp("2001:0:4136:e378:8000:63bf:80ff:fffe"), true); // Teredo con IPv4 embebida 127.0.0.1
+});

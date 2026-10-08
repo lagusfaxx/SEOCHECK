@@ -65,5 +65,7 @@ export async function cancelJob(jobRunId: string) {
     const boss = await getBoss();
     await boss.cancel(run.kind, run.bossId).catch(() => {});
   }
+  // el crawl lo nota entre tandas y se detiene sin guardar un resultado a medias
+  if (run.kind === QUEUES.crawl && run.refId) await db.crawl.updateMany({ where: { id: run.refId, status: { in: ["queued", "running"] } }, data: { status: "cancelled", reason: "Cancelado por el usuario", finishedAt: new Date() } });
   return db.jobRun.update({ where: { id: run.id }, data: { status: "error", message: "Cancelado" } });
 }

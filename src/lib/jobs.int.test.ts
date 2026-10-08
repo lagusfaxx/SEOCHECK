@@ -35,7 +35,7 @@ test("reinicio del worker: lo que estaba corriendo queda interrumpido, lo en col
   assert.equal(r.status, "error");
   assert.match(r.message ?? "", /worker se reinició/);
   assert.equal((await db.jobRun.findUniqueOrThrow({ where: { id: queued.id } })).status, "queued");
-  assert.equal((await db.crawl.findUniqueOrThrow({ where: { id: crawl.id } })).status, "error");
+  assert.equal((await db.crawl.findUniqueOrThrow({ where: { id: crawl.id } })).status, "failed");
 });
 
 test("sin pulso por 5 min: se marca colgado; con pulso reciente, no", { skip: !hasDb }, async () => {

@@ -67,7 +67,7 @@ const GETS: Record<string, H> = {
     const [kw, clusters, crawl, tracked, alerts, gsc, content] = await Promise.all([
       db.keyword.aggregate({ where: { projectId: id, excluded: false }, _count: true, _sum: { volume: true } }),
       db.cluster.count({ where: { projectId: id } }),
-      db.crawl.findFirst({ where: { projectId: id, status: "done" }, orderBy: { startedAt: "desc" } }),
+      db.crawl.findFirst({ where: { projectId: id, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" } }),
       db.trackedKeyword.findMany({ where: { projectId: id, active: true }, include: { checks: { orderBy: { date: "desc" }, take: 2 } } }),
       db.alert.findMany({ where: { projectId: id, seen: false }, orderBy: { createdAt: "desc" }, take: 20 }),
       gscSeries(id, new Date(Date.now() - 90 * 864e5)),
@@ -103,7 +103,7 @@ const GETS: Record<string, H> = {
   },
 
   audit: async ({ id, url }) => {
-    const crawls = await db.crawl.findMany({ where: { projectId: id }, orderBy: { startedAt: "desc" }, take: 10, select: { id: true, status: true, stats: true, startedAt: true, finishedAt: true, options: true, sitemapUrls: true } });
+    const crawls = await db.crawl.findMany({ where: { projectId: id }, orderBy: { startedAt: "desc" }, take: 10, select: { id: true, status: true, reason: true, stats: true, startedAt: true, finishedAt: true, options: true, sitemapUrls: true } });
     const crawlId = url.searchParams.get("crawl") ?? crawls[0]?.id;
     if (!crawlId) return { crawls, crawlId: null };
     const [byCode, pages, psi, inspections] = await Promise.all([

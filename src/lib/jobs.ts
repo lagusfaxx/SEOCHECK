@@ -24,7 +24,7 @@ export async function recoverInterrupted() {
   const msg = "Interrumpido: el worker se reinició (redeploy). Vuelve a lanzarlo.";
   await db.$executeRawUnsafe(`UPDATE pgboss.job SET state = 'cancelled', completed_on = now() WHERE state = 'active'`).catch(() => {});
   const runs = await db.jobRun.updateMany({ where: { status: "running" }, data: { status: "error", message: msg } });
-  await db.crawl.updateMany({ where: { status: { in: ["running", "crawling"] } }, data: { status: "error" } });
+  await db.crawl.updateMany({ where: { status: { in: ["running", "crawling"] } }, data: { status: "failed", reason: "Interrumpido: el worker se reinició antes de terminar.", finishedAt: new Date() } });
   await db.contentAnalysis.updateMany({ where: { status: { in: ["running", "brief"] } }, data: { status: "error" } });
   await db.keywordRun.updateMany({ where: { status: { notIn: ["queued", "done", "error"] } }, data: { status: "error" } });
   return runs.count;

@@ -22,7 +22,7 @@ before(async () => {
   const crawl = await db.crawl.create({
     data: {
       projectId,
-      status: "done",
+      status: "completed",
       options: { maxPages: 2 },
       stats: { health: 80, pages: 4, errors: 1, redirects: 0, orphans: 2, sitemap: 4, avgMs: 120, critical: 1, warning: 3, info: 0 },
     },
@@ -187,6 +187,12 @@ test("correr todo: sigue aunque un paso falle y salta lo que no tiene credencial
   const steps = await runFull(projectId, { maxPages: 5 });
   const by = Object.fromEntries(steps.map((s) => [s.step, s]));
   assert.deepEqual(Object.keys(by), ["crawl", "gsc", "inspect", "psi", "keywords", "rank", "alerts"]);
+  // localhost no es accesible: el crawl queda fallido con motivo, sin puntaje, y el resto sigue
+  assert.equal(by.crawl.status, "error");
+  assert.match(by.crawl.detail ?? "", /No se pudo acceder al sitio: la dirección resuelve a una red interna/);
+  const c = await db.crawl.findFirstOrThrow({ where: { projectId }, orderBy: { startedAt: "desc" } });
+  assert.equal(c.status, "failed");
+  assert.equal((c.stats as any).health, null);
   assert.equal(by.gsc.status, "skipped");
   assert.equal(by.psi.detail, "falta PAGESPEED_API_KEY");
   assert.equal(by.keywords.detail, "sin semillas");

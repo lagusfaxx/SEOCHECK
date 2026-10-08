@@ -24,7 +24,8 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
       return runKeywordPipeline(d.runId, d.jobRunId);
     case QUEUES.crawl:
       return runCrawl(d.crawlId, d.jobRunId).catch(async (e) => {
-        await db.crawl.update({ where: { id: d.crawlId }, data: { status: "error" } });
+        // si ya quedó fallido/cancelado con su motivo, no pisarlo
+        await db.crawl.updateMany({ where: { id: d.crawlId, status: { in: ["queued", "running"] } }, data: { status: "failed", reason: e instanceof Error ? e.message : String(e), finishedAt: new Date() } });
         throw e;
       });
     case QUEUES.psi:
@@ -122,7 +123,8 @@ async function main() {
           } catch (e) {
             console.error(`[${name}] error ${job.id}`, e);
             await jobError(d.jobRunId, e);
-            if (e instanceof BudgetError) continue; // no reintentar: no se gastó nada y fallaría igual
+            // no reintentar: sin presupuesto, sitio inaccesible o cancelado fallarían igual
+            if (e instanceof BudgetError || (e as { noRetry?: boolean })?.noRetry) continue;
             throw e;
           } finally {
             stop();

@@ -68,7 +68,7 @@ export async function buildReport(projectId: string): Promise<string> {
     }
   }
   const hasGsc = imprByUrl.size > 0;
-  const crawl = await db.crawl.findFirst({ where: { projectId, status: "done" }, orderBy: { startedAt: "desc" } });
+  const crawl = await db.crawl.findFirst({ where: { projectId, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" } });
   const pages = crawl ? await db.page.findMany({ where: { crawlId: crawl.id }, select: { url: true, inlinks: true, outlinks: true, depth: true, status: true, canonical: true } }) : [];
   const pageByKey = new Map(pages.map((x) => [urlKey(x.url), x]));
   const weight = (u: string) => {

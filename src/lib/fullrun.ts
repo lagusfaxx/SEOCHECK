@@ -60,9 +60,9 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
     crawlId = crawl.id;
     try {
       const st = await runCrawl(crawl.id);
-      return `${st.pages} URLs · ${st.critical} críticos · ${st.warning} warnings`;
+      return `${st.status === "partial" ? "parcial · " : ""}${st.pages} URLs · ${st.critical} críticos · ${st.warning} warnings`;
     } catch (e) {
-      await db.crawl.update({ where: { id: crawl.id }, data: { status: "error" } });
+      await db.crawl.updateMany({ where: { id: crawl.id, status: { in: ["queued", "running"] } }, data: { status: "failed", reason: e instanceof Error ? e.message : String(e), finishedAt: new Date() } });
       throw e;
     }
   });

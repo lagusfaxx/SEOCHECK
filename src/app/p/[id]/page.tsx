@@ -136,6 +136,7 @@ export default function Overview() {
           data?.crawl ? (
             <Link key="h" href={`/p/${id}/audit`} className="flex items-center gap-4">
               <Score value={st.health} size={84} />
+              {data.crawl.status === "partial" && <span className="chip !bg-amber-100 !text-amber-800" title={data.crawl.reason ?? ""}>parcial</span>}
               <div className="space-y-1 text-sm">
                 <div><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-rose-500" />{fmt(st.critical)}</div>
                 <div><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-amber-400" />{fmt(st.warning)}</div>
