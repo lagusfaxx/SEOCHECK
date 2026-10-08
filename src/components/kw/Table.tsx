@@ -4,7 +4,7 @@ import { useProject } from "../Shell";
 import { api, cx, DataTable, fmt, Icon, IntentChip, INTENT, type Col, fmtDate } from "../ui";
 import type { Kw, KwData } from "./types";
 
-const SRC: Record<string, string> = { seed: "seed", autocomplete: "auto", gsc: "gsc", paa: "paa", related: "rel" };
+const SRC: Record<string, string> = { seed: "Semilla manual", autocomplete: "Autocomplete", gsc: "Search Console", paa: "Preguntas de Google", related: "SERP relacionada", serp: "SERP", csv: "Keyword Planner" };
 const VSRC: Record<string, string> = { gsc: "GSC impr.", dataforseo: "DataForSEO", apify: "Apify", csv: "Keyword Planner" };
 const short = (n: number) => (n >= 1e6 ? `${n / 1e6}M` : n >= 1e3 ? `${n / 1e3}K` : String(n));
 
@@ -32,6 +32,7 @@ export default function KwTable({ data, reload }: { data: KwData; reload: () => 
     { key: "comp", label: "Comp.", get: (k) => k.competition, render: (k) => fmt(k.competition, 2), num: true },
     { key: "rel", label: "Relev.", get: (k) => k.relevance, render: (k) => fmt(k.relevance, 2), num: true },
     { key: "kd", label: "Dif.", get: (k) => k.difficulty, render: (k) => k.difficulty == null ? "–" : <span className={cx("tabular-nums", k.difficulty > 60 ? "text-rose-600" : k.difficulty > 35 ? "text-amber-600" : "text-emerald-600")}>{k.difficulty}</span>, num: true },
+    { key: "relevance", label: "Relevancia", get:k=>k.relevance, render:k=><span title="Similitud con las semillas; no es una probabilidad de posicionar">{k.relevance==null?"Sin evaluar":`${Math.round(k.relevance*100)}%`}</span>, num:true },
     { key: "score", label: "Score", get: (k) => k.score, render: (k) => <b>{fmt(k.score)}</b>, num: true },
     { key: "cluster", label: "Cluster", get: (k) => (k.clusterId ? clusterName.get(k.clusterId) : null), render: (k) => <span className="text-ink-500">{k.clusterId ? clusterName.get(k.clusterId) : ""}</span> },
     { key: "src", label: "Fuente", get: (k) => k.sources.join(","), render: (k) => <span className="flex gap-1">{k.sources.map((s) => <span key={s} className="chip">{SRC[s] ?? s}</span>)}</span> },

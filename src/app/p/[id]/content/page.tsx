@@ -13,8 +13,9 @@ export default function ContentList() {
   const { data, mutate } = useApi<any[]>(`/api/p/${id}/content`, { refreshInterval: (d?: any[]) => (d?.some((c) => !["done", "error"].includes(c.status)) ? 3000 : 0) });
   const [url, setUrl] = useState("");
   const [kw, setKw] = useState("");
+  const [pageKind,setPageKind] = useState("");
   const [analyze, analyzing] = useAction(async () => {
-    const a = await api(`/api/p/${id}/content`, "POST", { url, keyword: kw });
+    const a = await api(`/api/p/${id}/content`, "POST", { url, keyword: kw, pageKind });
     refreshJobs();
     router.push(`/p/${id}/content/${a.id}`);
   });
@@ -36,6 +37,7 @@ export default function ContentList() {
       >
         <input className="input min-w-[280px] flex-[2]" placeholder={`https://${project?.domain ?? ""}/…`} value={url} onChange={(e) => setUrl(e.target.value)} required />
         <input className="input min-w-[200px] flex-1" placeholder="keyword objetivo" value={kw} onChange={(e) => setKw(e.target.value)} required />
+        <select className="input w-auto" value={pageKind} onChange={e=>setPageKind(e.target.value)} aria-label="Tipo de página"><option value="">Automático según página y SERP</option><option value="article">Artículo</option><option value="listing">Categoría / listado</option><option value="landing">Landing</option><option value="product">Producto</option></select>
         <button className="btn-p" disabled={analyzing}><Icon name="play" />{analyzing ? <><Spinner className="h-3.5 w-3.5" />Enviando…</> : "Analizar"}</button>
         {target?.gscUrl && (
           <div className={`w-full rounded-lg px-3 py-2 text-sm ${target.mismatch && url ? "bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200" : "bg-ink-50 text-ink-700 dark:bg-ink-800 dark:text-ink-200"}`}>

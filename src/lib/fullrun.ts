@@ -1,3 +1,4 @@
+import { crawlLimit } from "./plans";
 import { db } from "./db";
 import { env } from "./env";
 import { jobLog } from "./jobctx";
@@ -56,7 +57,7 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
   let crawlId: string | null = null;
   await step("crawl", "crawl", async () => {
     const crawl = await db.crawl.create({
-      data: { projectId, options: { maxPages: opts.maxPages ?? 1000, concurrency: opts.concurrency ?? 3, render: Boolean(opts.render) } },
+      data: { projectId, options: { maxPages: await crawlLimit(projectId,opts.maxPages ?? 1000), concurrency: opts.concurrency ?? 3, render: Boolean(opts.render) } },
     });
     crawlId = crawl.id;
     try {

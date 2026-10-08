@@ -8,6 +8,8 @@ const PUBLIC = [/^\/login$/, /^\/setup$/, /^\/forgot$/, /^\/reset$/, /^\/api\/au
  * ruta de la API (Node). Además: CSRF por Origin en métodos que modifican, y BASIC_AUTH opcional encima de todo.
  */
 export function middleware(req: NextRequest) {
+  // Stripe authenticates this exact endpoint with its signed raw payload, not browser cookies or Basic Auth.
+  if (req.nextUrl.pathname === "/api/billing/webhook" && req.method === "POST") return NextResponse.next();
   const cred = process.env.BASIC_AUTH;
   if (cred) {
     const h = req.headers.get("authorization");

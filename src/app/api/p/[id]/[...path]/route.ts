@@ -1,3 +1,9 @@
+import { BriefValidationError } from "@/lib/content/claims";
+import { runInlineJob } from "@/lib/inline-job";
+import { BillingError } from "@/lib/billing";
+import { PRODUCT_GETS, PRODUCT_POSTS, PRODUCT_PATCHS, PRODUCT_DELETES, ProductError } from "@/lib/product-api";
+import { withProjectQuota, assertResource, crawlLimit, PlanLimitError, projectPlan } from "@/lib/plans";
+import { storeBrief, validateBrief } from "@/lib/content/brief-tools";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { cancelJob, enqueue, QUEUES } from "@/lib/queue";
@@ -13,7 +19,6 @@ import { backfillVolumes, volumeChainStatus, writeCache } from "@/lib/volume/bro
 import { env } from "@/lib/env";
 import { llmStatus } from "@/lib/providers/llm";
 import { assertBudget, BudgetError, budgetLimits, est, monthStart, releaseBudget, spentThisMonth } from "@/lib/budget";
-import { runWithJob } from "@/lib/jobctx";
 import { hostOf, normTerm, normUrl } from "@/lib/util";
 import { buildReport } from "@/lib/report";
 import { expand, graphSearch, siteNode } from "@/lib/graph";
@@ -86,6 +91,7 @@ async function gscSeries(projectId: string, since: Date) {
 }
 
 const GETS: Record<string, H> = {
+  ...PRODUCT_GETS,
   "": async ({ id }) => {
     const p = await db.project.findUniqueOrThrow({ where: { id } });
     const chain = await volumeChainStatus();
@@ -284,7 +290,7 @@ const GETS: Record<string, H> = {
   "graph/expand": async ({ id, url }) => {
     const type = url.searchParams.get("type") as GType;
     const t = url.searchParams.get("t") ?? "";
-    if (!TRANSFORMS[type]?.some((x) => x.id === t)) throw new Error("transformación inválida");
+    if (!Object.hasOwn(TRANSFORMS,type) || !TRANSFORMS[type]?.some((x) => x.id === t)) throw new Error("transformación inválida");
     return expand(id, type, url.searchParams.get("key") ?? "", t);
   },
   /** Estado de la conexión con Search Console del proyecto */
@@ -308,10 +314,12 @@ const GETS: Record<string, H> = {
 };
 
 const POSTS: Record<string, H> = {
+  ...PRODUCT_POSTS,
   "keywords/run": async ({ id, body }) => {
     const seeds: string[] = (body.seeds ?? []).map((s: string) => normTerm(s)).filter(Boolean);
     if (!seeds.length) throw new HttpError(400, "Escribe al menos una semilla");
     await assertIdle(id, QUEUES.keywords, "un research de keywords");
+    await assertResource(id, "keywords", 0);
     const kwOpts = { serpTop: 150, serpExpansion: 20, maxKeywords: 400, ...((((await db.project.findUniqueOrThrow({ where: { id } })).settings ?? {}) as any).keywords ?? {}) };
     await assertBudget({ serpent: est.serpCalls(seeds.length + kwOpts.serpExpansion + kwOpts.serpTop), llm: est.llmIntent(kwOpts.maxKeywords) }, "Research de keywords");
     // volumeLive: DataForSEO endpoint Live (solo si se pide explícitamente); por defecto standard queue
@@ -321,6 +329,7 @@ const POSTS: Record<string, H> = {
   },
 
   "keywords/rerun": async ({ id, body }) => {
+    await assertResource(id, "keywords", 0);
     const run = await db.keywordRun.findFirstOrThrow({ where: { projectId: id, id: body.runId } });
     await db.keywordRun.update({ where: { id: run.id }, data: { status: "queued" } });
     return enqueue(id, QUEUES.keywords, { runId: run.id }, run.id);
@@ -340,7 +349,7 @@ const POSTS: Record<string, H> = {
       data: {
         projectId: id,
         options: {
-          maxPages: Math.max(1, Math.min(Number(body.maxPages ?? 500) || 500, 20000)),
+          maxPages: await crawlLimit(id, Number(body.maxPages ?? 500)),
           concurrency: Math.max(1, Math.min(Number(body.concurrency ?? 5) || 5, 20)),
           render: Boolean(body.render),
           startUrl: body.startUrl ? (await ownUrls(id, [body.startUrl]))[0] : undefined,
@@ -365,8 +374,9 @@ const POSTS: Record<string, H> = {
   report: async ({ id, body }) => {
     const running = await db.jobRun.findFirst({ where: { projectId: id, kind: QUEUES.full, status: { in: ["queued", "running"] } } });
     if (running) throw new Error("ya hay un informe en curso");
+    await assertResource(id,"reports",1);
     const opts = {
-      maxPages: Math.min(Number(body.maxPages ?? 1000), 20000),
+      maxPages: await crawlLimit(id, Number(body.maxPages ?? 1000)),
       concurrency: Math.min(Number(body.concurrency ?? 3), 10),
       render: Boolean(body.render),
       seeds: ((body.seeds ?? []) as string[]).map((s) => normTerm(s)).filter(Boolean).slice(0, 20),
@@ -394,16 +404,22 @@ const POSTS: Record<string, H> = {
     const kws: string[] = [...new Set<string>((body.keywords ?? []).map((k: string) => normTerm(k)).filter(Boolean))];
     // frecuencia: la del body, si no la del proyecto (settings.rank.frequency), si no semanal
     const projFreq = ((((await db.project.findUniqueOrThrow({ where: { id } })).settings ?? {}) as any).rank?.frequency as string) ?? "weekly";
-    const created = [];
+    if (body.frequency != null && !["daily","weekly"].includes(body.frequency)) throw new HttpError(400,"Frecuencia inválida");
+    const existing = await db.trackedKeyword.findMany({where:{projectId:id,keyword:{in:kws},active:true},select:{keyword:true}});
+    await assertResource(id,"rankings",kws.length-existing.length);
+    const created = await withProjectQuota(id,"rankings",async tx=>kws.length-await tx.trackedKeyword.count({where:{projectId:id,keyword:{in:kws},active:true}}),async tx=>{
+    const created: any[] = [];
     for (const keyword of kws) {
       created.push(
-        await db.trackedKeyword.upsert({
+        await tx.trackedKeyword.upsert({
           where: { projectId_keyword: { projectId: id, keyword } },
           create: { projectId: id, keyword, depth: 100, frequency: body.frequency ?? projFreq },
           update: { active: true },
         })
       );
     }
+    return created;
+    });
     if (created.length && body.check !== false) await enqueue(id, QUEUES.rankOne, { trackedIds: created.map((c) => c.id) });
     return created;
   },
@@ -437,32 +453,33 @@ const POSTS: Record<string, H> = {
   },
 
   content: async ({ id, body }) => {
+    await assertResource(id,"briefs",1);
     if (!body.url || !body.keyword) throw new HttpError(400, "Falta la URL o la keyword");
     const [u] = await ownUrls(id, [body.url]);
     if (!u) throw new HttpError(400, "URL inválida");
     await assertBudget({ serpent: est.serpCalls(1), llm: est.llmBrief() }, "Optimización de contenido");
-    const a = await db.contentAnalysis.create({ data: { projectId: id, url: u, keyword: normTerm(body.keyword) } });
+    const a = await withProjectQuota(id,"briefs",1,tx=>tx.contentAnalysis.create({ data: { projectId: id, url: u, keyword: normTerm(body.keyword), pageKind: ["article","listing","landing","product"].includes(body.pageKind) ? body.pageKind : null } }));
     await enqueue(id, QUEUES.content, { contentId: a.id }, a.id);
     return a;
   },
 
   "content/rebrief": async ({ id, body }) => {
     const a = await ownContent(id, body.cid);
+    if(a.status!=="done")throw new HttpError(409,"Espera a que termine el análisis");
     // se corre en la request: reserva propia para que dos "regenerar" seguidos no se pasen del límite
-    const holder = `api-${crypto.randomUUID()}`;
-    const brief = await runWithJob(
-      holder,
+    const brief = await runInlineJob(
+      id, "content.rebrief",
       async () => {
         await assertBudget({ llm: est.llmBrief() }, "Regenerar brief");
         return makeBrief(a.result as unknown as ContentResult, a.project.language, a.project.country);
-      },
-      id
-    ).finally(() => releaseBudget(holder));
-    return db.contentAnalysis.update({ where: { id: a.id }, data: { brief: brief as any } });
+      }
+    );
+    return storeBrief(a.id, brief, "regenerate");
   },
 };
 
 const PATCHS: Record<string, H> = {
+  ...PRODUCT_PATCHS,
   "": async ({ id, body }) => {
     const data: Prisma.ProjectUpdateInput = {};
     for (const k of ["name", "domain", "country", "language", "gscProperty"] as const) if (k in body) (data as any)[k] = body[k] || (k === "gscProperty" ? null : body[k]);
@@ -484,6 +501,12 @@ const PATCHS: Record<string, H> = {
 
   keywords: async ({ id, body }) => {
     switch (body.action) {
+      case "mapPage": {
+        const c=await db.cluster.findFirstOrThrow({where:{id:body.clusterId,projectId:id}});
+        const targetUrl=body.url?(await ownUrls(id,[body.url]))[0]:null;
+        if(body.url&&!targetUrl)throw new HttpError(400,"URL inválida");
+        return db.cluster.update({where:{id:c.id},data:{targetUrl}});
+      }
       case "move": {
         const k = await db.keyword.findFirstOrThrow({ where: { id: body.keywordId, projectId: id } });
         await ownOptional("cluster", id, body.clusterId);
@@ -531,10 +554,15 @@ const PATCHS: Record<string, H> = {
 
   rank: async ({ id, body }) => db.trackedKeyword.updateMany({ where: { projectId: id, id: body.id }, data: { ...(body.frequency === "daily" || body.frequency === "weekly" ? { frequency: body.frequency } : {}) } }),
 
-  content: async ({ id, body }) => db.contentAnalysis.updateMany({ where: { projectId: id, id: body.cid }, data: { brief: body.brief } }),
+  content: async ({ id, body, user }) => {
+    const a = await ownContent(id,body.cid);
+    validateBrief(body.brief);
+    return storeBrief(a.id,body.brief,"edit",user.id);
+  },
 };
 
 const DELETES: Record<string, H> = {
+  ...PRODUCT_DELETES,
   "gsc/connect": async ({ id }) => {
     await disconnect(id);
     return { ok: true };
@@ -574,6 +602,8 @@ function make(table: Record<string, H>) {
       const r = await h({ id: params.id, path, url: new URL(req.url), body, user });
       return r instanceof Response ? r : ok(r);
     } catch (e) {
+      if (e instanceof BriefValidationError || e instanceof BillingError || e instanceof ProductError || e instanceof PlanLimitError) return bad(e.message,e.status);
+      if (e instanceof AuthError) return bad(e.message,e.status);
       if (e instanceof HttpError) return bad(e.message, e.status);
       if (e instanceof GscNotConnected) return bad(e.message, 400);
       console.error(`[api] ${req.method} ${key}`, e);

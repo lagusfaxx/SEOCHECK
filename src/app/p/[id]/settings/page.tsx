@@ -1,4 +1,5 @@
 "use client";
+import { CommercialSettings } from "@/components/CommercialSettings";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSWRConfig } from "swr";
@@ -68,6 +69,7 @@ export default function Settings() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
+      <CommercialSettings />
       <div className="card grid gap-3 p-4 md:grid-cols-3">
         {field("Nombre", "name")}
         {field("Dominio", "domain")}

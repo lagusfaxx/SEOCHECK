@@ -1,3 +1,4 @@
+import { assertPlanActive } from "../plans";
 import { db } from "../db";
 import { env } from "../env";
 import { serpProvider } from "../providers";
@@ -6,6 +7,7 @@ import { hostOf } from "../util";
 export async function checkRank(trackedId: string) {
   const t = await db.trackedKeyword.findUniqueOrThrow({ where: { id: trackedId }, include: { project: true } });
   const p = t.project;
+  await assertPlanActive(p.id);
   const own = hostOf(p.domain);
   // Quick con num=100: una sola unidad facturada por keyword, top 100 completo.
   const serp = await serpProvider().quick(t.keyword, { country: p.country, language: p.language, projectId: p.id, num: 100 });

@@ -1,4 +1,6 @@
 "use client";
+import { ProjectProgress } from "@/components/ProjectProgress";
+import { NextActions } from "@/components/NextActions";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
@@ -221,6 +223,8 @@ export default function Overview() {
 
   return (
     <div className="p-4 md:p-6">
+      <ProjectProgress />
+      <NextActions />
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
           <div className="stagger-fade grid grid-cols-1 gap-4 md:grid-cols-3">

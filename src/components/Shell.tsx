@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSWRConfig } from "swr";
 import NewProject from "./NewProject";
+import { ContextGlossary } from "./ProjectProgress";
 import { api, Bar, cx, Drawer, Hint, Icon, Spinner, Toaster, useApi, useLocal } from "./ui";
 
 type Project = { id: string; name: string; domain: string; country: string; language: string; gscProperty: string | null; settings: any; providers: Record<string, any> };
@@ -18,6 +19,8 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: "General",
     items: [
+      { href:"/tasks",icon:"check",label:"Tareas",desc:"Qué hacer ahora",intro:"Tareas persistentes, prioridades e historial entre auditorías." },
+      { href:"/guide",icon:"gsc",label:"Guía GSC",desc:"Conectar desde cero",intro:"Pasos de Search Console y configuración DNS por proveedor." },
       {
         href: "", icon: "home", label: "Resumen", desc: "Estado del proyecto",
         intro: "Vista general: keywords, salud técnica, rankings, Search Console y gasto del mes. Arrastra los bloques para ordenarlos; el botón 1/3 de cada bloque cambia su ancho.",
@@ -118,6 +121,7 @@ function Intro({ item }: { item: NavItem }) {
 
 const JOB_LABEL: Record<string, string> = {
   "keywords.run": "keywords", "audit.crawl": "crawl", "audit.psi": "pagespeed", "audit.inspect": "inspección",
+  "content.section": "sección del brief", "content.rebrief": "regeneración del brief", "report.snapshot": "informe programado",
   "rank.check": "rankings", "gsc.sync": "gsc", "alerts.compute": "alertas", "content.analyze": "contenido", "report.full": "informe",
 };
 
@@ -288,7 +292,7 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
           </header>
           <main className="flex min-h-0 flex-1 flex-col overflow-auto">
             {current && <Intro key={current.href} item={current} />}
-            <div key={path} className="anim-in flex flex-1 flex-col">{children}</div>
+            <div key={path} className="anim-in flex flex-1 flex-col"><ContextGlossary terms={path.includes("audit")?["canonical","H1","LCP","noindex"]:path.includes("content")?["SERP","H2","canibalización"]:path.includes("keywords")?["cluster","SERP"]:["CTR","impresiones"]}/>{children}</div>
           </main>
         </div>
       </div>

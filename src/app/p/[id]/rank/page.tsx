@@ -1,4 +1,5 @@
 "use client";
+import { RankingExtras } from "@/components/RankingExtras";
 import { useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useProject } from "@/components/Shell";
@@ -59,6 +60,7 @@ export default function RankPage() {
   return (
     <div className="grid gap-4 p-4 md:p-6 xl:grid-cols-[1fr_380px]">
       <div className="space-y-4">
+        <RankingExtras />
         <div className="card flex flex-wrap items-start gap-2 p-3">
           <textarea className="input min-h-[38px] flex-1" rows={add.includes("\n") ? 4 : 1} placeholder="keywords a trackear (una por línea)" value={add} onChange={(e) => setAdd(e.target.value)} />
           <select className="input w-auto" value={freq} onChange={(e) => setFreq(e.target.value)} title="frecuencia (por defecto la del proyecto)">
@@ -98,11 +100,12 @@ export default function RankPage() {
             <div key={a.id} className={cx("rounded-lg border p-2.5 text-sm", a.seen ? "border-ink-100 opacity-60 dark:border-ink-800" : "border-ink-200 dark:border-ink-700")}>
               <div className="flex items-center gap-2">
                 <span className={cx("chip", a.type === "drop" && "!bg-rose-100 !text-rose-700", a.type === "cannibal" && "!bg-amber-100 !text-amber-700", a.type === "lowctr" && "!bg-sky-100 !text-sky-700")}>
-                  {a.type === "drop" ? "caída" : a.type === "cannibal" ? "canibalización" : "CTR bajo"}
+                  {a.type === "drop" ? "caída" : a.type === "cannibal" ? "canibalización" : a.type === "urlchange" ? "Cambio de URL" : "CTR bajo"}
                 </span>
                 <span className="truncate font-medium">{a.key}</span>
               </div>
               <div className="mt-1 text-xs text-ink-500">
+                {a.type === "urlchange" && <>{path(a.data.from)} → {path(a.data.to)}</>}
                 {a.type === "drop" && <>{a.data.from ?? "–"} → {a.data.to ?? "fuera"} · {path(a.data.url)}</>}
                 {a.type === "cannibal" && (a.data.pages ?? a.data.urls?.map((u: string) => ({ page: u })) ?? []).map((p: any) => (
                   <div key={p.page} className="truncate">{path(p.page)}{p.impressions != null && <span className="text-ink-400"> · {fmt(p.impressions)} impr · pos {fmt(p.position, 1)}</span>}</div>
