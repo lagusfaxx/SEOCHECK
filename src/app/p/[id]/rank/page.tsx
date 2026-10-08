@@ -5,19 +5,20 @@ import { useProject } from "@/components/Shell";
 import { api, cx, DataTable, Delta, Drawer, Empty, fmt, Icon, pct, Spark, Tabs, useApi, type Col } from "@/components/ui";
 
 type Check = { id: string; date: string; position: number | null; url: string | null; features: string[]; competitors: { domain: string; position: number; url: string }[] };
-type Tracked = { id: string; keyword: string; frequency: string; depth: number; active: boolean; checks: Check[] };
+type Tracked = { id: string; keyword: string; frequency: string; active: boolean; checks: Check[] };
 type Alert = { id: string; type: string; key: string; data: any; seen: boolean; createdAt: string };
 
 const FEAT: Record<string, string> = { ads: "ads", paa: "PAA", related: "rel", videos: "video", shopping: "shop", snippet: "snippet", ai_overview: "AIO", knowledge: "KP", local: "local" };
 const path = (u: string | null) => (u ? u.replace(/^https?:\/\/[^/]+/, "") || "/" : "–");
 
 export default function RankPage() {
-  const { id, refreshJobs } = useProject();
+  const { id, refreshJobs, project } = useProject();
   const [days, setDays] = useState(30);
   const { data, mutate } = useApi<{ tracked: Tracked[]; alerts: Alert[] }>(`/api/p/${id}/rank?days=${days}`);
   const [add, setAdd] = useState("");
-  const [depth, setDepth] = useState(10);
-  const [freq, setFreq] = useState("daily");
+  // Quick siempre trae el top 100: esto es solo un filtro de vista
+  const [view, setView] = useState<"10" | "100">("100");
+  const [freq, setFreq] = useState<string>("");
   const [sel, setSel] = useState<Tracked | null>(null);
   const [atab, setAtab] = useState<"all" | "drop" | "cannibal" | "lowctr">("all");
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -25,7 +26,7 @@ export default function RankPage() {
   const submit = async () => {
     const kws = add.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
     if (!kws.length) return;
-    await api(`/api/p/${id}/rank`, "POST", { keywords: kws, depth, frequency: freq });
+    await api(`/api/p/${id}/rank`, "POST", { keywords: kws, frequency: freq || undefined });
     setAdd("");
     refreshJobs();
     mutate();
@@ -41,13 +42,13 @@ export default function RankPage() {
   const cols: Col<R>[] = [
     { key: "sel", label: "", get: (r) => (checked.has(r.t.id) ? 1 : 0), render: (r) => <input type="checkbox" checked={checked.has(r.t.id)} onClick={(e) => e.stopPropagation()} onChange={() => setChecked((s) => { const n = new Set(s); n.has(r.t.id) ? n.delete(r.t.id) : n.add(r.t.id); return n; })} /> },
     { key: "kw", label: "Keyword", get: (r) => r.t.keyword },
-    { key: "pos", label: "Pos.", get: (r) => r.pos, render: (r) => <b className={cx("tabular-nums", r.pos != null && r.pos <= 3 && "text-emerald-600")}>{r.pos ?? (r.last ? ">" + r.t.depth : "…")}</b>, num: true },
+    { key: "pos", label: "Pos.", get: (r) => r.pos, render: (r) => <b className={cx("tabular-nums", r.pos != null && r.pos <= 3 && "text-emerald-600")}>{r.pos ?? (r.last ? ">100" : "…")}</b>, num: true },
     { key: "d", label: "Δ", get: (r) => (r.prev?.position ?? 101) - (r.pos ?? 101), render: (r) => <Delta from={r.prev?.position ?? null} to={r.pos} lowerIsBetter />, num: true },
     { key: "best", label: "Mejor", get: (r) => r.best, num: true },
     { key: "trend", label: "", get: () => 0, render: (r) => <Spark data={r.t.checks.map((c) => c.position)} invert /> },
     { key: "url", label: "URL", get: (r) => r.last?.url, render: (r) => <span className="block max-w-[260px] truncate text-ink-500">{path(r.last?.url ?? null)}</span> },
     { key: "feat", label: "SERP", get: (r) => r.last?.features.length, render: (r) => <span className="flex gap-1">{r.last?.features.map((f) => <span key={f} className="chip">{FEAT[f] ?? f}</span>)}</span> },
-    { key: "f", label: "", get: (r) => r.t.frequency, render: (r) => <span className="text-xs text-ink-400">{r.t.frequency === "daily" ? "diario" : "semanal"}{r.t.depth > 10 && " · 100"}</span> },
+    { key: "f", label: "", get: (r) => r.t.frequency, render: (r) => <span className="text-xs text-ink-400">{r.t.frequency === "daily" ? "diario" : "semanal"}</span> },
   ];
 
   const alerts = (data?.alerts ?? []).filter((a) => atab === "all" || a.type === atab);
@@ -58,11 +59,8 @@ export default function RankPage() {
       <div className="space-y-4">
         <div className="card flex flex-wrap items-start gap-2 p-3">
           <textarea className="input min-h-[38px] flex-1" rows={add.includes("\n") ? 4 : 1} placeholder="keywords a trackear (una por línea)" value={add} onChange={(e) => setAdd(e.target.value)} />
-          <select className="input w-auto" value={depth} onChange={(e) => setDepth(Number(e.target.value))}>
-            <option value={10}>top 10</option>
-            <option value={100}>top 100</option>
-          </select>
-          <select className="input w-auto" value={freq} onChange={(e) => setFreq(e.target.value)}>
+          <select className="input w-auto" value={freq} onChange={(e) => setFreq(e.target.value)} title="frecuencia (por defecto la del proyecto)">
+            <option value="">{(project?.settings?.rank?.frequency ?? "weekly") === "daily" ? "diario (proyecto)" : "semanal (proyecto)"}</option>
             <option value="daily">diario</option>
             <option value="weekly">semanal</option>
           </select>
@@ -70,6 +68,7 @@ export default function RankPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Tabs value={String(days) as "7" | "30" | "90"} onChange={(v) => setDays(Number(v))} items={[{ id: "7", label: "7d" }, { id: "30", label: "30d" }, { id: "90", label: "90d" }]} />
+          <Tabs value={view} onChange={setView} items={[{ id: "10", label: "≤10" }, { id: "100", label: "≤100" }]} />
           <button className="btn" onClick={async () => { await api(`/api/p/${id}/rank/check`, "POST", { ids: checked.size ? [...checked] : undefined }); refreshJobs(); }}><Icon name="refresh" />Revisar {checked.size || "todas"}</button>
           {checked.size > 0 && (
             <button className="btn" onClick={async () => { if (!confirm(`¿Dejar de trackear ${checked.size}?`)) return; await api(`/api/p/${id}/rank`, "DELETE", { ids: [...checked] }); setChecked(new Set()); mutate(); }}><Icon name="trash" /></button>
@@ -77,7 +76,7 @@ export default function RankPage() {
         </div>
         {rows.length ? (
           <div className="card max-h-[calc(100vh-260px)] overflow-auto">
-            <DataTable rows={rows} cols={cols} rowKey={(r) => r.t.id} initial={{ key: "pos", dir: 1 }} onRow={(r) => setSel(r.t)} />
+            <DataTable rows={view === "10" ? rows.filter((r) => r.pos != null && r.pos <= 10) : rows} cols={cols} rowKey={(r) => r.t.id} initial={{ key: "pos", dir: 1 }} onRow={(r) => setSel(r.t)} />
           </div>
         ) : (
           <Empty>sin keywords trackeadas</Empty>
@@ -134,10 +133,7 @@ function RankDetail({ t, onChange }: { t: Tracked; onChange: () => void }) {
           <option value="daily">diario</option>
           <option value="weekly">semanal</option>
         </select>
-        <select className="input w-auto" defaultValue={t.depth} onChange={async (e) => { await api(`/api/p/${id}/rank`, "PATCH", { id: t.id, depth: e.target.value }); onChange(); }}>
-          <option value={10}>top 10</option>
-          <option value={100}>top 100</option>
-        </select>
+
       </div>
       <div className="mt-4 h-56">
         <ResponsiveContainer>

@@ -356,7 +356,7 @@ const PATCHS: Record<string, H> = {
 
   alerts: async ({ id, body }) => db.alert.updateMany({ where: { projectId: id, ...(body.ids ? { id: { in: body.ids } } : {}) }, data: { seen: true } }),
 
-  rank: async ({ id, body }) => db.trackedKeyword.updateMany({ where: { projectId: id, id: body.id }, data: { ...(body.frequency ? { frequency: body.frequency } : {}), ...(body.depth ? { depth: Number(body.depth) } : {}) } }),
+  rank: async ({ id, body }) => db.trackedKeyword.updateMany({ where: { projectId: id, id: body.id }, data: { ...(body.frequency === "daily" || body.frequency === "weekly" ? { frequency: body.frequency } : {}) } }),
 
   content: async ({ id, body }) => db.contentAnalysis.updateMany({ where: { projectId: id, id: body.cid }, data: { brief: body.brief } }),
 };

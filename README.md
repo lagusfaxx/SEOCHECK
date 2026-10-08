@@ -35,8 +35,10 @@ cp .env.example .env   # DATABASE_URL=postgresql://...
 npm run db:migrate
 npm run dev            # web
 npm run worker         # worker
-npm test
+npm test               # con DATABASE_URL corre también los tests de integración
 ```
+
+Los tests de integración escriben en la base de `DATABASE_URL` (incluido `ProviderUsage`, que cuenta para el presupuesto del mes): úsalos contra una base de pruebas, nunca contra la de producción.
 
 ## Estructura
 
@@ -77,7 +79,7 @@ Cada fallback y rechazo final queda en `JobRun.log`. Con OpenAI, un `refusal` ta
 
 ## Crawler
 
-Opciones por proyecto en `settings.crawler` (vía `PATCH /api/p/:id/_`), sobreescribibles por crawl en el body de `POST /api/p/:id/audit`:
+Opciones por proyecto en `settings.crawler` (formulario de Ajustes o `PATCH /api/p/:id/_`), sobreescribibles por crawl en el body de `POST /api/p/:id/audit`:
 
 | Opción | Default | Qué hace |
 |---|---|---|
@@ -118,7 +120,7 @@ El costo de cada run (`usageTotalUsd`) queda en el log del job y en el registro 
 
 **Keywords Everywhere:** no está integrado (el plan mínimo es anual). Si se retoma: la API exige clave hasta para `/countries`, y el ejemplo de su doc no incluye Chile, así que hay que confirmar que CL esté soportado antes de usarla.
 
-**Importar CSV de Keyword Planner** (UTF-16, tabs, inglés o español; rangos como `100 – 1K` → `volumeMin`/`volumeMax`, con volumen representativo = media geométrica del rango):
+**Importar CSV de Keyword Planner** desde el botón CSV de la vista Keywords, o por API (UTF-16, tabs, inglés o español; rangos como `100 – 1K` → `volumeMin`/`volumeMax`, con volumen representativo = media geométrica del rango):
 
 ```bash
 curl -X POST https://<host>/api/p/<projectId>/volumes/csv -H 'content-type: text/csv' --data-binary @"Keyword Stats.csv"

@@ -64,6 +64,7 @@ export default function KeywordsPage() {
           <input type="range" min={0.2} max={0.8} step={0.05} value={th} onChange={(e) => setTh(Number(e.target.value))} />
           <span className="w-8 tabular-nums">{th.toFixed(2)}</span>
         </label>
+        <CsvImport id={id} onDone={() => mutate()} />
         <button className="btn-p" onClick={start} disabled={running || (!seeds.length && !draft.trim())}>
           <Icon name="play" />
           {running ? "…" : "Investigar"}
@@ -137,5 +138,37 @@ function SourceBadges({ s }: { s: RunSources }) {
         </span>
       ))}
     </div>
+  );
+}
+
+/** Importa el CSV exportado de Keyword Planner (UTF-16, tabs) como fuente de volumen. */
+function CsvImport({ id, onDone }: { id: string; onDone: () => void }) {
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  return (
+    <label className={cx("btn cursor-pointer", busy && "opacity-50")} title="CSV de Keyword Planner">
+      <Icon name="table" />
+      {busy ? "…" : msg ?? "CSV"}
+      <input
+        type="file"
+        accept=".csv,text/csv,text/tab-separated-values"
+        className="hidden"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          setBusy(true);
+          try {
+            const res = await fetch(`/api/p/${id}/volumes/csv`, { method: "POST", headers: { "Content-Type": "text/csv" }, body: await file.arrayBuffer() });
+            const j = await res.json();
+            setMsg(res.ok ? `${j.imported} importadas · ${j.updated} actualizadas` : j.error ?? "error");
+            if (res.ok) onDone();
+          } finally {
+            setBusy(false);
+            setTimeout(() => setMsg(null), 6000);
+          }
+        }}
+      />
+    </label>
   );
 }
