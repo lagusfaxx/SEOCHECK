@@ -57,7 +57,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       {
         href: "/audit", icon: "audit", label: "Auditoría", desc: "Salud técnica del sitio", jobs: ["audit.crawl", "audit.psi", "audit.inspect"],
         intro: "Recorre tu sitio como lo haría Google y detecta problemas técnicos: errores, redirects, títulos y metas, contenido duplicado, páginas huérfanas, velocidad (PageSpeed) e indexación (Search Console).",
-        steps: ["Aprieta Crawlear con un máximo mayor que la cantidad de páginas del sitio (si no, aparecen huérfanas falsas).", "Corrige primero los Críticos, después los Warnings. Los Info son mejoras opcionales.", "Haz clic en un issue para ver qué significa, cómo se arregla y qué URLs lo tienen."],
+        steps: ["Aprieta Analizar sitio con un máximo mayor que la cantidad de páginas del sitio (si no, aparecen huérfanas falsas).", "Corrige primero los errores, después las advertencias. Las observaciones son mejoras opcionales.", "Haz clic en un problema para ver qué significa, cómo se arregla y qué URLs lo tienen."],
       },
       {
         href: "/rank", icon: "rank", label: "Rankings", desc: "Posiciones en Google", jobs: ["rank.check"],

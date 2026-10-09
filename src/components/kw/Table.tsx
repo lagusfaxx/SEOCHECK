@@ -65,7 +65,7 @@ export default function KwTable({ data, reload }: { data: KwData; reload: () => 
         <div className="ml-auto flex gap-2">
           {sel.size > 0 && (
             <>
-              <button className="btn" onClick={async () => { await api(`/api/p/${id}/rank`, "POST", { keywords: selected.map((k) => k.term) }); refreshJobs(); setSel(new Set()); reload(); }}><Icon name="rank" />Trackear {sel.size}</button>
+              <button className="btn" onClick={async () => { await api(`/api/p/${id}/rank`, "POST", { keywords: selected.map((k) => k.term) }); refreshJobs(); setSel(new Set()); reload(); }}><Icon name="rank" />Monitorear {sel.size}</button>
               <button className="btn" onClick={async () => { await api(`/api/p/${id}/keywords`, "PATCH", { action: "exclude", ids: [...sel], value: !selected[0]?.excluded }); setSel(new Set()); reload(); }}><Icon name="x" />{selected[0]?.excluded ? "Incluir" : "Excluir"}</button>
             </>
           )}

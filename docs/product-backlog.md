@@ -66,3 +66,14 @@ Las auditorías existentes generan sus tareas automáticamente al consultarlas. 
 El PDF ejecutivo agrega problemas agrupados con impacto, corrección y ejemplos, consultas GSC, velocidad medida y alcance por fuente. El PDF técnico añade el contenido completo del Markdown con evidencia e instrucciones de implementación. Los snapshots anteriores mantienen sus datos originales; los nuevos campos estarán presentes al generar otra versión.
 
 El resumen muestra hasta tres tareas pendientes en una tabla compacta, sin colores por categoría ni controles repetidos. Los detalles se abren desde Tareas; la lista completa está paginada de doce en doce. El bloque desaparece si no hay pendientes.
+
+
+## Interfaz profesional y acciones agrupadas
+
+- Auditoría abre en una tabla de cinco columnas con problemas y métricas expandibles por URL. Se conserva la vista técnica completa. Opciones de rastreo e informe quedan en Opciones avanzadas.
+- Los controles compartidos explican métricas con tooltips accesibles por ratón, teclado y toque. Se muestran unidades y se distinguen Error, Advertencia y Observación. Salud técnica muestra su fórmula, denominador y nivel; las observaciones no restan puntos.
+- Las acciones se agrupan por código de incidencia y patrón de URL. El estado e historial siguen conservándose por URL; la vista de incidencias permite consultarlos. Una corrección parcial no resuelve la acción completa. Las causas inferidas se etiquetan como posibles.
+- La prioridad utiliza severidad, alcance, señales GSC de 28 días y las últimas URLs de rankings activos. La vista ejecutiva muestra impacto breve; las razones técnicas permanecen en el detalle.
+- Informe ofrece PDF principal, otras exportaciones en Más opciones e Implementación técnica con Copiar, Descargar .md y Vista previa cerrada por defecto.
+- El grafo, las tablas, los gráficos, los filtros, la edición de briefs y las configuraciones existentes se mantienen. Los briefs generados se identifican discretamente como Generado con IA.
+- Las pautas duraderas de interfaz están en [design-principles.md](design-principles.md).

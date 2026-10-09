@@ -9,7 +9,7 @@ import type { Cms } from "./audit/cms";
 import { brandFromDomain, DISCREPANCY_HINT, EASE, EASE_LABEL, expectedCtrAt, isBrandQuery, isParamCanonical, makeTask, PRIVATE_PATH, psiVerdict, SEV_WEIGHT, byPriority, MINOR_ONPAGE, spellingVariants, type PsiField, type Task } from "./report-rules";
 
 const SEV_ORDER = ["critical", "warning", "info"] as const;
-const SEV_LABEL: Record<string, string> = { critical: "Crítico", warning: "Warning", info: "Info" };
+const SEV_LABEL: Record<string, string> = { critical: "Error", warning: "Advertencia", info: "Observación" };
 const MAX_URLS = 25;
 
 export { urlSection };
@@ -139,7 +139,7 @@ export async function buildReport(projectId: string): Promise<string> {
     auditOut.push(
       `Crawl del ${date(crawl.startedAt)} · máx ${opts.maxPages ?? "–"} páginas${opts.render ? " · render JS" : ""}\n`,
       table(
-        ["Salud técnica", "URLs", "Errores", "Redirects", "Huérfanas", "En sitemap", "Resp. media", "Críticos", "Warnings", "Info"],
+        ["Salud técnica", "URLs", "Errores HTTP", "Redirects", "Huérfanas", "En sitemap", "Resp. media", "Errores", "Advertencias", "Observaciones"],
         [[st.health, st.pages, st.errors, st.redirects, st.orphans, st.sitemap, `${st.avgMs} ms`, st.critical, st.warning, st.info]]
       )
     );

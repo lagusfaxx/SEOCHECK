@@ -1,52 +1,21 @@
 "use client";
 import Link from "next/link";
-import { cx, Icon, useApi } from "./ui";
-
+import { useApi } from "./ui";
 type Mod = {
   key: string;
   label: string;
-  state: "ok" | "partial" | "failed" | "missing" | "never";
+  state: string;
   detail: string;
   short: string;
-  percent?: number;
 };
-
-const STYLE: Record<Mod["state"], { icon: string; cls: string }> = {
-  ok: {
-    icon: "check",
-    cls: "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-900",
-  },
-  partial: {
-    icon: "info",
-    cls: "bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-900",
-  },
-  failed: {
-    icon: "alert",
-    cls: "bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:ring-rose-900",
-  },
-  missing: {
-    icon: "lock",
-    cls: "bg-ink-50 text-ink-500 ring-ink-200 dark:bg-ink-800 dark:text-ink-400 dark:ring-ink-700",
-  },
-  never: {
-    icon: "clock",
-    cls: "bg-ink-50 text-ink-500 ring-ink-200 dark:bg-ink-800 dark:text-ink-400 dark:ring-ink-700",
-  },
+const ACTION: Record<string, [string, string]> = {
+  crawl: ["Analizar sitio", "/audit"],
+  gsc: ["Conectar o sincronizar", "/gsc"],
+  psi: ["Medir velocidad", "/audit#speed"],
+  inspect: ["Revisar indexación", "/audit#index"],
+  keywords: ["Investigar keywords", "/keywords"],
+  rank: ["Seleccionar keywords", "/rank"],
 };
-/** a dónde ir para completar cada módulo */
-const HREF: Record<string, string> = {
-  crawl: "/audit",
-  gsc: "/settings#gsc",
-  psi: "/audit",
-  inspect: "/audit",
-  keywords: "/keywords",
-  rank: "/rank",
-};
-
-/**
- * Qué datos respaldan los números: el puntaje es de salud TÉCNICA y vale según lo que se pudo leer.
- * "Crawl 100% · GSC conectado · PageSpeed disponible · Indexación no configurada".
- */
 export function Coverage({
   projectId,
   only,
@@ -59,33 +28,35 @@ export function Coverage({
   const { data } = useApi<Mod[]>(`/api/p/${projectId}/coverage`);
   if (!data) return null;
   const mods = only ? data.filter((m) => only.includes(m.key)) : data;
+  if (!mods.length) return null;
+  const missing = mods.filter((m) => m.state !== "ok").length;
   return (
-    <details className={cx("text-xs", compact && "text-[11px]")}>
+    <details className={compact ? "text-[11px]" : "text-xs"}>
       <summary className="cursor-pointer text-ink-500">
-        {mods.some((m) => m.state !== "ok")
-          ? `Datos incompletos · ${mods.filter((m) => m.state !== "ok").length} fuentes por completar`
+        {missing
+          ? `Datos incompletos · ${missing} fuentes por completar`
           : "Datos del informe completos"}
       </summary>
-      <div className="mt-2 flex flex-wrap gap-2">
+      <ul className="mt-2 divide-y divide-ink-100 dark:divide-ink-800">
         {mods.map((m) => (
-          <Link
-            key={m.key}
-            href={`/p/${projectId}${HREF[m.key] ?? ""}`}
-            title={m.detail}
-            className={cx(
-              "anim-in inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ring-1 transition hover:brightness-95",
-              STYLE[m.state].cls,
-            )}
-          >
-            <Icon
-              name={STYLE[m.state].icon}
-              className="h-3 w-3"
-              anim={m.state === "ok" ? "pop" : undefined}
-            />
-            {m.short}
-          </Link>
+          <li key={m.key} className="flex flex-wrap items-center gap-2 py-2">
+            <div className="min-w-0 flex-1">
+              <span className="font-medium">{m.label}</span>
+              <p className="mt-1 text-ink-500">{m.detail}</p>
+            </div>
+            <Link
+              className="underline underline-offset-4"
+              href={`/p/${projectId}${m.state === "missing" && m.key !== "gsc" ? "/settings#providers" : (ACTION[m.key]?.[1] ?? "/settings")}`}
+            >
+              {m.state === "ok"
+                ? "Ver datos"
+                : m.state === "missing" && m.key !== "gsc"
+                  ? "Revisar configuración"
+                  : (ACTION[m.key]?.[0] ?? "Revisar ajustes")}
+            </Link>
+          </li>
         ))}
-      </div>
+      </ul>
     </details>
   );
 }

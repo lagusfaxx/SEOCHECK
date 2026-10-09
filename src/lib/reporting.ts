@@ -134,6 +134,9 @@ export async function executiveReport(projectId: string) {
       reason: t.reason,
       affected: t.affected,
       category: t.category,
+      priorityLabel: t.priorityLabel,
+      pattern: t.pattern,
+      fix: t.fix,
       url: t.url,
       status: t.status,
     })),
@@ -274,7 +277,7 @@ export function executivePdf(
         .text(
           `${a.affected} incidencias agrupadas · ${({ detected: "detectado", pending: "pendiente", reappeared: "reapareció", resolved: "solucionado", ignored: "ignorado" } as Record<string, string>)[a.status] ?? a.status}`,
         )
-        .text(a.reason);
+        .text(technicalMarkdown ? a.reason : a.reason.split(" Prioridad:")[0]);
     }
     if (!r.actions.length)
       doc

@@ -50,7 +50,7 @@ export default function ContentList() {
         )}
       </form>
       {!data?.length ? (
-        <Empty icon="wand" tone="info" title="Optimiza tu primera página">Pon la URL y la keyword objetivo: comparamos tu página con las que rankean en Google y generamos un brief.</Empty>
+        <Empty icon="content" tone="info" title="Optimiza tu primera página">Pon la URL y la keyword objetivo: comparamos tu página con las que rankean en Google y generamos un brief.</Empty>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {data.map((c) => (

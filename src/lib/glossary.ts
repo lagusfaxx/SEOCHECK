@@ -1,4 +1,8 @@
 export const GLOSSARY: Record<string, string> = {
+  CLS: "Desplazamiento inesperado del contenido: hasta 0,1 es bueno; más de 0,25 requiere revisión.",
+  sitemap: "Archivo con URLs propuestas a Google. Facilita descubrirlas, sin garantizar indexación.",
+  "robots.txt": "Reglas de acceso para rastreadores. Bloquear el rastreo no equivale a excluir del índice.",
+  huérfana: "Página del sitemap sin enlaces internos encontrados en un análisis completo.",
   canonical:
     "URL preferida de una página. Ayuda a Google a agrupar duplicados; es una señal, no una orden de indexación.",
   CTR: "Porcentaje de impresiones que terminan en clic: clics ÷ impresiones × 100. Compáralo entre consultas y posiciones similares.",

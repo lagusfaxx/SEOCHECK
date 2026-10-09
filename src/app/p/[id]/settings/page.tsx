@@ -76,12 +76,13 @@ export default function Settings() {
         {field("Propiedad GSC", "gscProperty", { placeholder: "sc-domain:dominio.cl" })}
         {field("País", "country")}
         {field("Idioma", "language")}
-        {field("location_code", "locationCode", { type: "number" })}
       </div>
       <div className="card grid gap-3 p-4 md:grid-cols-2">
         {field("Marcas (navegacional)", "brands", { placeholder: "marca, otra marca" })}
         {field("Dominios fuertes extra", "strongDomains", { placeholder: "competidor.cl" })}
       </div>
+      <details className="card p-4"><summary className="cursor-pointer text-sm">Opciones avanzadas</summary><div className="mt-3 space-y-3">
+        {field("Código de ubicación del proveedor", "locationCode", { type: "number" })}
       <div className="card grid gap-3 p-4 md:grid-cols-4">
         {field("Máx. keywords", "maxKeywords", { type: "number" })}
         {field("SERPs por run", "serpTop", { type: "number" })}
@@ -97,6 +98,7 @@ export default function Settings() {
         {field("Máx. URLs por patrón", "maxPerPattern", { type: "number", min: 0, title: "0 = sin límite" })}
         <div className="md:col-span-2">{field("Parámetros a ignorar", "ignoreParams", { placeholder: "utm_*, gclid, orderby  (* = todos)" })}</div>
       </div>
+      </div></details>
       <div className="card flex flex-wrap items-end gap-3 p-4">
         <label className="block">
           <span className="lbl">Rank tracking</span>
@@ -105,7 +107,7 @@ export default function Settings() {
             <option value="daily">diario</option>
           </select>
         </label>
-        <span className="pb-2 text-xs text-ink-400">se aplica a todas las keywords trackeadas del proyecto</span>
+        <span className="pb-2 text-xs text-ink-400">se aplica a todas las keywords monitoreadas del proyecto</span>
       </div>
       {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{err}</div>}
       <div className="flex items-center gap-2">
@@ -114,14 +116,14 @@ export default function Settings() {
           <Icon name="trash" />Eliminar proyecto
         </button>
       </div>
-      <div className="card grid grid-cols-2 gap-2 p-4 md:grid-cols-4">
+      <div id="providers" className="card grid grid-cols-2 gap-2 p-4 md:grid-cols-4">
         {PROVIDERS.map(([k, label]) => {
           const v = project.providers?.[k];
           const on = Boolean(v) && v !== "hash";
           return (
             <div key={k} className="flex items-center gap-2 text-sm">
               <span className={cx("h-2 w-2 rounded-full", on ? "bg-emerald-500" : v === "hash" ? "bg-amber-400" : "bg-ink-300")} />
-              {label}
+              {label} <span className="text-xs text-ink-500">{on ? "Activo" : "Sin configurar"}</span>
               {typeof v === "string" && <span className="text-xs text-ink-400">{v}</span>}
             </div>
           );

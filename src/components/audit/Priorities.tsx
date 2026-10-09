@@ -70,7 +70,7 @@ export function Priorities({ projectId, crawlId, onIssue }: { projectId: string;
 
       {data.patterns.length > 0 && (
         <div className="card p-3">
-          <div className="lbl mb-2 flex items-center gap-1.5"><Icon name="sparkle" className="h-3.5 w-3.5 text-acc" anim="twinkle" />Patrones detectados</div>
+          <div className="lbl mb-2 flex items-center gap-1.5"><Icon name="refresh" className="h-3.5 w-3.5 text-acc" anim="twinkle" />Patrones detectados</div>
           <ul className="space-y-1.5 text-sm">
             {data.patterns.map((p, i) => (
               <li key={i} className="flex gap-2"><Icon name={PATTERN_ICON[p.kind]} className="mt-0.5 h-4 w-4 shrink-0 text-ink-400" />{p.text}</li>
@@ -119,7 +119,7 @@ export function Priorities({ projectId, crawlId, onIssue }: { projectId: string;
               <div className="anim-in space-y-3 border-t border-ink-100 p-3 text-sm dark:border-ink-800">
                 {f.fix && (
                   <div className="flex gap-2 rounded-lg bg-emerald-50 p-2.5 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-200">
-                    <Icon name="wand" className="mt-0.5 h-4 w-4 shrink-0" /><span><b>Cómo arreglarlo:</b> {f.fix}</span>
+                    <Icon name="content" className="mt-0.5 h-4 w-4 shrink-0" /><span><b>Cómo arreglarlo:</b> {f.fix}</span>
                   </div>
                 )}
                 <div>

@@ -13,12 +13,12 @@ export const ISSUE_LABELS: Record<string, string> = {
   redirect: "Redirect",
   broken_link: "Link roto",
   noindex_in_sitemap: "noindex en sitemap",
-  title_missing: "Sin title",
-  title_long: "Title largo",
-  title_short: "Title corto",
-  title_dup: "Title duplicado",
+  title_missing: "Sin título",
+  title_long: "Título demasiado largo",
+  title_short: "Título corto",
+  title_dup: "Título duplicado",
   meta_missing: "Sin meta description",
-  meta_long: "Meta larga",
+  meta_long: "Meta demasiado larga",
   meta_short: "Meta corta",
   meta_dup: "Meta duplicada",
   h1_missing: "Sin H1",
@@ -84,7 +84,7 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
     else if (p.titleLen > 60) add(p.url, "title_long", "warning", `${p.titleLen}`);
     else if (p.titleLen < 25) add(p.url, "title_short", "info", `${p.titleLen}`);
     if (!p.metaDesc) add(p.url, "meta_missing", "warning");
-    else if (p.metaLen > 160) add(p.url, "meta_long", "info", `${p.metaLen}`);
+    else if (p.metaLen > 155) add(p.url, "meta_long", "info", `${p.metaLen}`);
     else if (p.metaLen < 70) add(p.url, "meta_short", "info", `${p.metaLen}`);
     if (!p.h1.length) add(p.url, "h1_missing", "warning");
     else if (p.h1.length > 1) add(p.url, "h1_multiple", "info", `${p.h1.length}`);
