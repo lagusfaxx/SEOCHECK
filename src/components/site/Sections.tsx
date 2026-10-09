@@ -7,30 +7,17 @@ import { CLIENT_WORK, OWN_BUSINESSES, PLATFORMS, type Business } from "@/lib/sit
 export const findBusiness = (name: string) => [...OWN_BUSINESSES, ...CLIENT_WORK].find((b) => b.name === name);
 
 /** Fila de caso (home): sin tarjeta, con divisor fino. */
-export function CaseRow({ b, client }: { b: Business; client?: boolean }) {
+export function CaseRow({ b }: { b: Business }) {
   return (
-    <article className="grid gap-3 border-b border-fsv-line py-7 md:grid-cols-12 md:items-baseline md:gap-6 md:py-9">
+    <article className="grid gap-2 border-b border-fsv-line py-6 md:grid-cols-12 md:items-center md:gap-6 md:py-8">
       <div className="flex items-center gap-4 md:col-span-4">
         <div className="grid h-10 w-14 shrink-0 place-items-center">
           <BusinessLogo b={b} iconOnly className={b.name === "Barzuo" ? "h-6 max-w-[56px]" : b.name === "Starseeker" ? "h-3 max-w-[56px]" : "h-10 max-w-[56px]"} />
         </div>
-        <div>
-          <h3 className="font-display text-xl font-semibold tracking-tight md:text-2xl">{b.name}</h3>
-          <div className="text-sm text-fsv-muted">
-            {b.kind}
-            {client && " · cliente"}
-          </div>
-        </div>
+        <h3 className="font-display text-xl font-semibold tracking-tight md:text-2xl">{b.name}</h3>
       </div>
-      <p className="leading-relaxed text-fsv-ink/80 md:col-span-5">{b.text}</p>
-      <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-fsv-muted md:col-span-2">{b.tags}</div>
-      <div className="md:col-span-1 md:text-right">
-        {b.href && (
-          <a href={b.href} target="_blank" rel="noreferrer" className="text-sm font-medium transition hover:text-fsv-violet" aria-label={`Abrir el sitio de ${b.name}`}>
-            ↗
-          </a>
-        )}
-      </div>
+      <p className="text-fsv-ink/80 md:col-span-5">{b.short ?? b.text}</p>
+      <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-fsv-muted md:col-span-3 md:text-right">{b.tags}</div>
     </article>
   );
 }

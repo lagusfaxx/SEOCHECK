@@ -8,23 +8,25 @@ export type Business = {
   text: string;
   tags: string;
   href?: string;
+  /** frase corta para la home */
+  short?: string;
 };
 
 /** Construidos y operados por nuestro equipo. */
 export const OWN_BUSINESSES: Business[] = [
   { name: "Nomadbrew", logo: "nomadbrew.png", kind: "Café portátil", tags: "Importación / E-commerce", text: "Cafeteras portátiles Wacaco en Chile, en Mercado Libre Full, tienda propia y venta directa." },
   { name: "Starseeker", logo: "starseeker.png", kind: "Máquinas de espresso compactas", tags: "Importación / Marca", text: "Máquinas de espresso compactas, directo de fábrica, con tienda propia en Chile.", href: "https://starseeker.cl" },
-  { name: "TAUPOC", logo: "taupoc.png", kind: "Natación de competencia", tags: "Importación / E-commerce", text: "Trajes de natación homologados por World Aquatics, con nadadores federados como embajadores.", href: "https://taupoc.cl" },
+  { name: "TAUPOC", short: "Marca de natación de competencia operada por FSV.", logo: "taupoc.png", kind: "Natación de competencia", tags: "Importación / E-commerce", text: "Trajes de natación homologados por World Aquatics, con nadadores federados como embajadores.", href: "https://taupoc.cl" },
   { name: "Uzeed", logo: "uzeed.png", kind: "Directorio de contenido para adultos", tags: "Software / Next.js / Infraestructura", text: "Directorio de contenido para adultos en Next.js, con sistema PAC e infraestructura totalmente autoescalable.", href: "https://uzeed.cl" },
   { name: "La Frida", logo: "la-frida.png", kind: "Gastronomía", tags: "Gastronomía", text: "Restaurante de comida mexicana." },
-  { name: "ANDES Technologies", logo: "andes-technologies.png", kind: "Proveedor del Estado", tags: "Security / Compras públicas", text: "Ciberseguridad, tecnología y retail para instituciones públicas, con licitaciones municipales adjudicadas." },
+  { name: "ANDES Technologies", short: "Tecnología y ciberseguridad para instituciones públicas.", logo: "andes-technologies.png", kind: "Proveedor del Estado", tags: "Security / Compras públicas", text: "Ciberseguridad, tecnología y retail para instituciones públicas, con licitaciones municipales adjudicadas." },
   { name: "Centinela", logo: null, kind: "Seguridad ofensiva", tags: "Security / SaaS", text: "Plataforma de pruebas de seguridad con control de alcance y autorización, usada en licitaciones municipales." },
   { name: "Rent A Hacker", logo: "rent-a-hacker.png", kind: "Ciberseguridad para empresas", tags: "Security / Pentest", text: "Pentesting y auditorías de seguridad para empresas, siempre con autorización firmada.", href: "https://rentahacker.cl" },
 ];
 
 /** Construidos para un cliente. */
 export const CLIENT_WORK: Business[] = [
-  { name: "Barzuo", logo: "barzuo.png", kind: "Bar, lounge y club en Santiago", tags: "Software / Web application", text: "Sitio, punto de venta, pantallas de cocina y barra, fidelización y karaoke, hoy en etapa de escalamiento." },
+  { name: "Barzuo", short: "Sistema de operación para bar, cocina y clientes.", logo: "barzuo.png", kind: "Bar, lounge y club en Santiago", tags: "Software / Web application", text: "Sitio, punto de venta, pantallas de cocina y barra, fidelización y karaoke, hoy en etapa de escalamiento." },
 ];
 
 /** Cifras entregadas por el equipo (CLP). `short` es la etiqueta en móvil. */
