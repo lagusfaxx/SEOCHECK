@@ -335,7 +335,7 @@ function Explorer() {
       <div className="pointer-events-none absolute left-3 top-3 z-10 flex w-[min(640px,calc(100%-24px))] flex-col gap-2">
         <div className="pointer-events-auto flex gap-2">
           <div className="relative flex-1">
-            <input className="input bg-white/95 shadow-sm dark:bg-ink-900/95" placeholder="buscar keyword, página, cluster o dominio…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input className="input bg-white/95 shadow-sm dark:bg-ink-900/95" placeholder="Buscar keyword, página, cluster o dominio…" value={q} onChange={(e) => setQ(e.target.value)} />
             {results.length > 0 && (
               <div className="card absolute left-0 right-0 top-10 z-20 max-h-80 overflow-auto p-1 shadow-xl">
                 {results.map((r) => (
@@ -348,20 +348,32 @@ function Explorer() {
               </div>
             )}
           </div>
-          <button className="btn shadow-sm" disabled={!!bulk} onClick={expandLevel} title="expande todo lo que hay en el mapa (un nivel)"><Icon name="plus" />{bulk ? `Expandiendo ${bulk}` : "Expandir todo"}</button>
-          <button className="btn shadow-sm" onClick={relayout} title="ordenar el grafo automáticamente"><Icon name="map" />Ordenar</button>
-          <button className="btn shadow-sm" onClick={() => confirm("¿Empezar de nuevo desde el sitio?") && reset()} title="empezar de nuevo"><Icon name="refresh" /></button>
+          <div className="flex shrink-0 overflow-hidden rounded-lg border border-ink-200 bg-white shadow-sm dark:border-ink-700 dark:bg-ink-900" role="group" aria-label="Vista">
+            <button className="btn-g rounded-none" disabled={!!bulk} onClick={expandLevel} title="Expande un nivel todo lo que hay en el mapa"><Icon name="plus" />{bulk ? `Expandiendo ${bulk}` : "Expandir"}</button>
+            <button className="btn-g rounded-none border-l border-ink-200 dark:border-ink-700" onClick={relayout} title="Ordenar el mapa automáticamente"><Icon name="map" />Ordenar</button>
+            <button className="btn-g rounded-none border-l border-ink-200 dark:border-ink-700" onClick={() => confirm("¿Empezar de nuevo desde el sitio?") && reset()} title="Empezar de nuevo desde el sitio" aria-label="Empezar de nuevo"><Icon name="refresh" /></button>
+          </div>
+          <details className="relative shrink-0">
+            <summary className="btn cursor-pointer list-none [&::-webkit-details-marker]:hidden shadow-sm" title="Guardar o abrir exploraciones">{activeExploration ? graphName || "Guardada" : "Guardar"}<Icon name="down" className="h-3.5 w-3.5" /></summary>
+            <div className="card absolute right-0 top-10 z-20 w-64 space-y-2 p-3 shadow-xl">
+              <input className="input" placeholder="Nombre de la exploración" value={graphName} maxLength={100} onChange={e=>setGraphName(e.target.value)}/>
+              <button className="btn-p w-full justify-center" onClick={()=>nodeAction(async()=>{if(!graphName.trim())throw new Error("Escribe un nombre");const g=await api(`/api/p/${id}/explorations`,"POST",{name:graphName,eid:activeExploration||undefined,graph:{nodes:nodes.map(n=>({...n,data:{...n.data,busy:false}})),edges,filters:{text:filterText,ownership,hiddenTypes}}});setActiveExploration(g.id);await reloadSaved();})}>Guardar</button>
+              <label className="block text-xs text-ink-500">Abrir guardada
+                <select aria-label="Exploraciones guardadas" className="input mt-1" value={activeExploration} onChange={e=>nodeAction(async()=>{const eid=e.target.value;setActiveExploration(eid);if(!eid){setGraphName("");return;}const g=await api(`/api/p/${id}/explorations/one?eid=${eid}`);setNodes(g.graph.nodes);setEdges(g.graph.edges);setGraphName(g.name);setFilterText(g.graph.filters?.text??"");setOwnership(g.graph.filters?.ownership??"all");setHiddenTypes(g.graph.filters?.hiddenTypes??[]);setSel(null);})}><option value="">Nueva exploración</option>{savedGraphs?.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select>
+              </label>
+              {activeExploration&&<button className="btn w-full justify-center text-xs" onClick={()=>nodeAction(async()=>{await api(`/api/p/${id}/explorations`,"DELETE",{eid:activeExploration});setActiveExploration("");setGraphName("");await reloadSaved();})}><Icon name="trash" />Borrar guardada</button>}
+            </div>
+          </details>
         </div>
-        <div className="pointer-events-auto flex flex-wrap gap-1">
-          <input className="input w-40" placeholder="Nombre de exploración" value={graphName} maxLength={100} onChange={e=>setGraphName(e.target.value)}/>
-          <button className="btn" onClick={()=>nodeAction(async()=>{if(!graphName.trim())throw new Error("Escribe un nombre");const g=await api(`/api/p/${id}/explorations`,"POST",{name:graphName,eid:activeExploration||undefined,graph:{nodes:nodes.map(n=>({...n,data:{...n.data,busy:false}})),edges,filters:{text:filterText,ownership,hiddenTypes}}});setActiveExploration(g.id);await reloadSaved();})}>Guardar</button>
-          <select aria-label="Exploraciones guardadas" className="input w-44" value={activeExploration} onChange={e=>nodeAction(async()=>{const eid=e.target.value;setActiveExploration(eid);if(!eid){setGraphName("");return;}const g=await api(`/api/p/${id}/explorations/one?eid=${eid}`);setNodes(g.graph.nodes);setEdges(g.graph.edges);setGraphName(g.name);setFilterText(g.graph.filters?.text??"");setOwnership(g.graph.filters?.ownership??"all");setHiddenTypes(g.graph.filters?.hiddenTypes??[]);setSel(null);})}><option value="">Nueva exploración</option>{savedGraphs?.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select>
-          {activeExploration&&<button className="btn" onClick={()=>nodeAction(async()=>{await api(`/api/p/${id}/explorations`,"DELETE",{eid:activeExploration});setActiveExploration("");setGraphName("");await reloadSaved();})}>Borrar guardada</button>}
-          <input className="input w-40" placeholder="Filtrar nodos visibles" value={filterText} onChange={e=>setFilterText(e.target.value)}/>
-          <select aria-label="Filtro de propiedad" className="input w-auto" value={ownership} onChange={e=>setOwnership(e.target.value)}><option value="all">Todas las páginas</option><option value="own">Páginas propias</option><option value="external">Competidores</option></select>
-        </div>
-        {note&&!selNode&&<p className="pointer-events-auto rounded bg-amber-50 p-2 text-xs text-amber-800">{note}</p>}
-        <div className="flex flex-wrap gap-1">
+        <div className="pointer-events-auto flex flex-wrap items-center gap-1">
+          <details className="relative">
+            <summary className={cx("chip cursor-pointer list-none [&::-webkit-details-marker]:hidden bg-white/90 shadow-sm dark:bg-ink-900/90", (filterText || ownership !== "all") && "!bg-acc-soft !text-acc")}>Filtros{(filterText || ownership !== "all") ? " · activos" : ""}<Icon name="down" className="h-3 w-3" /></summary>
+            <div className="card absolute left-0 top-8 z-20 w-60 space-y-2 p-3 shadow-xl">
+              <input className="input" placeholder="Filtrar nodos visibles" value={filterText} onChange={e=>setFilterText(e.target.value)}/>
+              <select aria-label="Filtro de propiedad" className="input" value={ownership} onChange={e=>setOwnership(e.target.value)}><option value="all">Todas las páginas</option><option value="own">Solo páginas propias</option><option value="external">Solo competidores</option></select>
+              {(filterText || ownership !== "all") && <button className="btn-g text-xs" onClick={() => { setFilterText(""); setOwnership("all"); }}>Quitar filtros</button>}
+            </div>
+          </details>
           {(Object.keys(STYLE) as GType[]).filter((t) => counts.get(t)).map((t) => (
             <button
               key={t}
@@ -374,6 +386,7 @@ function Explorer() {
             </button>
           ))}
         </div>
+        {note&&!selNode&&<p className="pointer-events-auto rounded bg-amber-50 p-2 text-xs text-amber-800">{note}</p>}
       </div>
 
       {/* panel del nodo seleccionado */}

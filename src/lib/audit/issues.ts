@@ -30,7 +30,7 @@ export const ISSUE_LABELS: Record<string, string> = {
   dup_content: "Contenido duplicado",
   img_no_alt: "Imágenes sin alt",
   deep_page: "Profundidad > 3",
-  orphan: "Huérfana",
+  orphan: "Páginas huérfanas",
   slow: "Respuesta lenta",
   no_inlinks: "Sin links entrantes",
   robots_missing: "Sin robots.txt",

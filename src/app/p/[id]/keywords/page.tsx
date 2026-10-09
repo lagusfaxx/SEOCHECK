@@ -6,7 +6,7 @@ import MindMap from "@/components/kw/MindMap";
 import KwTable from "@/components/kw/Table";
 import type { KwData, RunSources } from "@/components/kw/types";
 import { useProject } from "@/components/Shell";
-import { api, cx, Empty, fmt, Icon, Tabs, useLocal, fmtDate, Spinner } from "@/components/ui";
+import { api, cx, Empty, fmt, Hint, Icon, Tabs, useLocal, fmtDate, Spinner } from "@/components/ui";
 import { useAction, useApi } from "@/components/ui";
 import { statusLabel } from "@/lib/status";
 
@@ -45,6 +45,7 @@ export default function KeywordsPage() {
     <div className="space-y-4 p-4 md:p-6">
       <KeywordInsights runId={data?.runId} />
       <div className="card flex flex-wrap items-center gap-2 p-3">
+        <span className="flex items-center gap-1 text-xs font-medium text-ink-600 dark:text-ink-300">Palabras iniciales <Hint text="Lo que vende o hace el sitio, en pocas palabras. Separa varias con coma o Enter; a partir de ellas buscamos las keywords relacionadas." /></span>
         <div className="flex min-w-[280px] flex-1 flex-wrap items-center gap-1.5 rounded-lg border border-ink-200 px-2 py-1 focus-within:border-acc dark:border-ink-700">
           {seeds.map((s) => (
             <span key={s} className="chip">
@@ -54,7 +55,7 @@ export default function KeywordsPage() {
           ))}
           <input
             className="min-w-[160px] flex-1 bg-transparent py-1 text-sm outline-none"
-            placeholder={seeds.length ? "" : "seeds, separados por coma"}
+            placeholder={seeds.length ? "" : "ej: muebles infantiles, torre montessori"}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -63,15 +64,19 @@ export default function KeywordsPage() {
             }}
           />
         </div>
-        <label className="flex items-center gap-2 text-xs text-ink-500" title="umbral de relevancia">
-          <input type="range" min={0.2} max={0.8} step={0.05} value={th} onChange={(e) => setTh(Number(e.target.value))} />
-          <span className="w-8 tabular-nums">{th.toFixed(2)}</span>
-        </label>
         <CsvImport id={id} onDone={() => mutate()} />
         <button className="btn-p" onClick={() => start()} disabled={running || starting || (!seeds.length && !draft.trim())}>
           <Icon name="play" />
           {running || starting ? <><Spinner className="h-3.5 w-3.5" />Investigando…</> : "Investigar"}
         </button>
+        <details className="w-full text-xs text-ink-500">
+          <summary className="cursor-pointer select-none">Opciones avanzadas</summary>
+          <label className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="flex items-center gap-1">Similitud mínima con tus palabras <Hint text="Qué tan parecida debe ser una keyword encontrada a tus palabras iniciales para quedarse en la investigación. Más alto = menos keywords y más enfocadas; más bajo = más ideas, algunas lejanas. 45% funciona bien en la mayoría de los casos." /></span>
+            <input type="range" min={0.2} max={0.8} step={0.05} value={th} onChange={(e) => setTh(Number(e.target.value))} />
+            <b className="w-9 tabular-nums text-ink-800 dark:text-ink-200">{Math.round(th * 100)}%</b>
+          </label>
+        </details>
       </div>
 
       {degraded.length > 0 && (
@@ -93,13 +98,13 @@ export default function KeywordsPage() {
           {current && (
             <div className="flex gap-3 text-xs text-ink-500">
               {current.status !== "done" && <span className="chip">{statusLabel(current.status)}</span>}
-              {Object.entries(current.stats ?? {}).map(([k, v]) => (
-                <span key={k}>{k} <b className="text-ink-800 dark:text-ink-200">{fmt(v)}</b></span>
+              {Object.entries(current.stats ?? {}).filter(([k]) => STAT_LABEL[k]).map(([k, v]) => (
+                <span key={k} title={STAT_LABEL[k][1]} className="cursor-help">{STAT_LABEL[k][0]} <b className="text-ink-800 dark:text-ink-200">{fmt(v)}</b></span>
               ))}
             </div>
           )}
           {current && (
-            <button className="btn ml-auto" disabled={running} title="re-correr: respeta lo fijado a mano" onClick={async () => { await api(`/api/p/${id}/keywords/rerun`, "POST", { runId: current.id }); refreshJobs(); }}>
+            <button className="btn ml-auto" disabled={running} title="Vuelve a correr la investigación respetando lo que fijaste a mano" onClick={async () => { await api(`/api/p/${id}/keywords/rerun`, "POST", { runId: current.id }); refreshJobs(); }}>
               <Icon name="refresh" />Re-correr
             </button>
           )}
@@ -112,7 +117,7 @@ export default function KeywordsPage() {
       )}
 
       {!data ? null : !data.runs.length ? (
-        <Empty icon="key" title="Empieza tu research">Escribe algunas palabras semilla (lo que vende o hace el sitio) y presiona <b>Investigar</b>. Agrupamos las keywords en clusters según lo que Google muestra.</Empty>
+        <Empty icon="key" title="Empieza tu investigación de keywords">Escribe algunas palabras iniciales (lo que vende o hace el sitio) y presiona <b>Investigar</b>. Agrupamos las keywords en clusters según lo que Google muestra.</Empty>
       ) : view === "table" ? (
         <KwTable data={data} reload={() => mutate()} />
       ) : view === "board" ? (
@@ -124,7 +129,26 @@ export default function KeywordsPage() {
   );
 }
 
+/** Contadores del run en palabras: [etiqueta, explicación]. Los internos (caché, etc.) no se muestran. */
+const STAT_LABEL: Record<string, [string, string]> = {
+  autocomplete: ["Autocompletado", "Keywords sacadas del autocompletado de Google."],
+  gsc: ["Search Console", "Consultas reales de tu sitio en Search Console (últimos 90 días)."],
+  paa: ["Preguntas", "Preguntas de «Otras preguntas de los usuarios» (PAA) de Google."],
+  related: ["Relacionadas", "Búsquedas relacionadas que Google muestra al pie de los resultados."],
+  expanded: ["Encontradas", "Total de keywords encontradas antes de filtrar."],
+  relevant: ["Relevantes", "Keywords que pasaron la similitud mínima con tus palabras iniciales."],
+  clusters: ["Clusters", "Grupos de keywords que Google responde con las mismas páginas: cada uno es una página a crear u optimizar."],
+  topics: ["Temas", "Grupos de clusters parecidos."],
+};
+
 const PROVIDER_NAME: Record<string, string> = { dataforseo: "DataForSEO", apify: "Apify", csv: "CSV Keyword Planner" };
+
+const SOURCE_HELP: Record<string, string> = {
+  SERP: "Si se consultaron resultados reales de Google para agrupar las keywords en clusters.",
+  Embeddings: "Método para medir qué tan parecidas son las keywords. «trigram-hash» es el respaldo básico, menos preciso.",
+  Volumen: "De dónde salieron las búsquedas mensuales.",
+  GSC: "Si se sumaron consultas reales de tu Search Console.",
+};
 
 function SourceBadges({ s }: { s: RunSources }) {
   const items: [string, string, boolean][] = [
@@ -136,7 +160,7 @@ function SourceBadges({ s }: { s: RunSources }) {
   return (
     <div className="flex gap-1.5">
       {items.map(([k, v, ok]) => (
-        <span key={k} title={k} className={cx("rounded-md px-1.5 py-0.5 text-[11px] font-medium", ok ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300")}>
+        <span key={k} title={SOURCE_HELP[k]} className={cx("rounded-md px-1.5 py-0.5 text-[11px] font-medium", ok ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300")}>
           {k} · {v}
         </span>
       ))}

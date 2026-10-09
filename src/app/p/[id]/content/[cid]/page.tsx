@@ -7,7 +7,7 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type D
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useProject } from "@/components/Shell";
-import { api, Bar, CopyBtn, cx, Empty, fmt, Hint, Icon, Score, Tabs, useApi, Spinner } from "@/components/ui";
+import { api, Bar, contentScoreLabel, CopyBtn, cx, Empty, fmt, Hint, Icon, Score, Tabs, useApi, Spinner } from "@/components/ui";
 
 type Block = { id: string; tag: "h2" | "h3"; text: string; notes?: string; state?: "optional" | "required" | "removed" };
 type Brief = {
@@ -128,9 +128,14 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
       <div className="xl:col-span-2"><ContentTools cid={params.cid} brief={brief} onChange={setBrief}/></div>
       {/* Análisis */}
       <div className="space-y-4">
-        <div className="card flex items-center gap-5 p-4">
-          <div className="text-xs text-ink-500">Datos medidos · página propia y SERP</div>
-          <Score value={r.score} size={92} />
+        <div className="card flex flex-wrap items-center gap-5 p-4">
+          <div className="flex flex-col items-center gap-1">
+            <Score value={r.score} size={92} />
+            <span className="flex items-center gap-1 text-[11px] text-ink-500">
+              {contentScoreLabel(r.score)}
+              <Hint text="Puntaje de 0 a 100 que compara tu página con las 10 primeras de Google para esta keyword. Es la suma de 5 partes medidas, no una opinión de IA: términos que usan los que rankean, largo del texto, secciones comunes, preguntas de Google respondidas y datos estructurados (schema). Pasa el mouse sobre cada parte para ver cómo se calcula." />
+            </span>
+          </div>
           <div className="min-w-0 flex-1">
             <div className="truncate text-lg font-semibold">{data.keyword}</div>
             <a href={data.url} target="_blank" rel="noreferrer" className="block truncate text-xs text-ink-400 hover:text-acc">{data.url}</a>
@@ -140,21 +145,27 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
                 {r.mine?.type && r.mine.type !== r.pageType && <span className="text-amber-600"> · la tuya es {TYPE_LABEL[r.mine.type]}</span>}
               </div>
             )}
-            <div className="mt-2 grid grid-cols-5 gap-3 text-[11px] text-ink-500">
-              {[["términos", r.breakdown?.terms, r.pageType === "listing" ? 50 : 40], ["largo", r.breakdown?.length, 15], ["secciones", r.breakdown?.sections, r.pageType === "listing" ? 10 : 20], ["PAA", r.breakdown?.paa, 15], ["schema", r.breakdown?.schema, 10]].map(([l, v, m]) => (
-                <div key={l as string}>
-                  <div className="truncate">{l}</div>
-                  <div className="tabular-nums text-ink-800 dark:text-ink-200">{v}<span className="text-ink-400">/{m}</span></div>
-                  <Bar value={((v as number) / (m as number)) * 100} className="mt-0.5" />
+            <div className="mt-2 grid grid-cols-2 gap-3 text-[11px] text-ink-500 sm:grid-cols-5">
+              {([
+                ["Términos clave", r.breakdown?.terms, r.pageType === "listing" ? 50 : 40, "Cuántos de los términos que usan las páginas del top 10 aparecen en tu página, y con qué frecuencia. Los más comunes pesan más."],
+                ["Largo del texto", r.breakdown?.length, 15, `Tus palabras editoriales comparadas con el objetivo (~${fmt(r.targetWords)}, la mediana del top 10). Puntaje completo al llegar al 90% del objetivo.`],
+                ["Secciones", r.breakdown?.sections, r.pageType === "listing" ? 10 : 20, "Cuántas de las secciones (H2/H3) que se repiten en el top 10 cubre tu página."],
+                ["Preguntas (PAA)", r.breakdown?.paa, 15, "Cuántas de las preguntas de «Otras preguntas de los usuarios» de Google respondes en tu página."],
+                ["Schema", r.breakdown?.schema, 10, "Si tu página tiene los datos estructurados (schema) que usa al menos un 30% del top 10."],
+              ] as [string, number, number, string][]).map(([l, v, m, help]) => (
+                <div key={l} className="cursor-help" title={help}>
+                  <div className="flex items-center gap-1 truncate">{l} <Hint text={help} /></div>
+                  <div className="tabular-nums text-ink-800 dark:text-ink-200">{v ?? 0}<span className="text-ink-400"> de {m} pts</span></div>
+                  <Bar value={((v ?? 0) / m) * 100} className="mt-0.5" />
                 </div>
               ))}
             </div>
           </div>
-          <div className="w-24 shrink-0 text-right text-sm">
-            <div className="tabular-nums"><b>{fmt(r.mine?.editorial ?? r.mine?.words)}</b> <span className="text-ink-400">/ {fmt(r.targetWords)}</span></div>
-            <div className="flex items-center justify-end gap-1 text-[11px] text-ink-400">
-              editoriales
-              <Hint text="Solo texto editorial: sin menús, footer, tarjetas de listado ni bloques que se repiten en todo el sitio. El objetivo es la mediana del top 10 del mismo tipo de página." />
+          <div className="shrink-0 text-right text-sm">
+            <div className="tabular-nums"><b>{fmt(r.mine?.editorial ?? r.mine?.words)}</b> palabras</div>
+            <div className="flex items-center justify-end gap-1 text-[11px] text-ink-500">
+              objetivo ~{fmt(r.targetWords)}
+              <Hint text="Solo cuenta texto editorial: sin menús, footer, tarjetas de listado ni bloques que se repiten en todo el sitio. El objetivo es la mediana de palabras del top 10 de Google con el mismo tipo de página." />
             </div>
           </div>
         </div>
@@ -164,10 +175,10 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
             {r.target.mismatch ? (
               <>
                 <b>Ojo, canibalización:</b> para «{data.keyword}» Google ya muestra{" "}
-                <a className="underline" href={r.target.gscUrl} target="_blank" rel="noreferrer">{r.target.gscUrl}</a> ({fmt(r.target.impressions)} impr · pos {fmt(r.target.position, 1)}). Optimiza esa URL o diferencia bien esta.
+                <a className="underline" href={r.target.gscUrl} target="_blank" rel="noreferrer">{r.target.gscUrl}</a> ({fmt(r.target.impressions)} impresiones · posición {fmt(r.target.position, 1)}). Optimiza esa URL o diferencia bien esta.
               </>
             ) : (
-              <>Esta es la URL que ya rankea para «{data.keyword}» en Search Console ({fmt(r.target.impressions)} impr · pos {fmt(r.target.position, 1)}).</>
+              <>Esta es la URL que ya rankea para «{data.keyword}» en Search Console ({fmt(r.target.impressions)} impresiones · posición {fmt(r.target.position, 1)}).</>
             )}
             {r.target.others?.length > 0 && <div className="mt-1 text-xs opacity-80">También aparecen: {r.target.others.map((o: any) => o.url).join(" · ")}</div>}
           </div>
@@ -177,24 +188,28 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
           value={tab}
           onChange={setTab}
           items={[
-            { id: "terms", label: `Términos ${(r.terms ?? []).filter((t: any) => t.missing).length}` },
-            { id: "sections", label: `Secciones ${(r.sections ?? []).filter((s: any) => !s.covered).length}` },
-            { id: "paa", label: `PAA ${(r.paa ?? []).filter((p: any) => !p.answered).length}` },
-            { id: "comp", label: "Competencia" },
+            { id: "terms", label: `Términos · faltan ${(r.terms ?? []).filter((t: any) => t.missing).length}`, title: "Palabras que usan las páginas del top 10 de Google" },
+            { id: "sections", label: `Secciones · faltan ${(r.sections ?? []).filter((s: any) => !s.covered).length}`, title: "Secciones (H2/H3) que se repiten en el top 10" },
+            { id: "paa", label: `Preguntas (PAA) · sin responder ${(r.paa ?? []).filter((p: any) => !p.answered).length}`, title: "«Otras preguntas de los usuarios» (People Also Ask): preguntas que Google muestra para esta keyword" },
+            { id: "comp", label: "Competencia", title: "Las páginas del top 10 que se usaron para comparar" },
           ]}
         />
 
         <div className="card p-3">
           {tab === "terms" && (
             <>
-              <div className="mb-2 flex items-center gap-2">
-                <Tabs value={termFilter} onChange={setTermFilter} items={[{ id: "missing", label: "faltan" }, { id: "all", label: "todos" }]} />
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <Tabs value={termFilter} onChange={setTermFilter} items={[{ id: "missing", label: "Faltan" }, { id: "all", label: "Todos" }]} />
+                <span className="flex items-center gap-1 text-xs text-ink-500">
+                  {terms[0] ? <>«{terms[0].term} {terms[0].mine}/{terms[0].target}» = lo usas {terms[0].mine} {terms[0].mine === 1 ? "vez" : "veces"}; el top 10, ~{terms[0].target}</> : "Veces que lo usas / veces que lo usa el top 10"}
+                  <Hint text="El primer número es cuántas veces aparece el término en tu página; el segundo, la cantidad típica (mediana) en las páginas del top 10 que lo usan. Rojo: no lo usas. Amarillo: lo usas menos. Verde: llegas al objetivo. Clic para copiarlo." />
+                </span>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {terms.map((t: any) => (
                   <button
                     key={t.term}
-                    title={`${Math.round(t.coverage * 100)}% de competidores · objetivo ${t.target}`}
+                    title={`Lo usas ${t.mine} ${t.mine === 1 ? "vez" : "veces"} · el top 10 lo usa ~${t.target} ${t.target === 1 ? "vez" : "veces"} · aparece en el ${Math.round(t.coverage * 100)}% de los competidores. Clic para copiar.`}
                     onClick={() => navigator.clipboard.writeText(t.term)}
                     className={cx("rounded-md border px-2 py-1 text-xs transition hover:border-acc", t.missing ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300" : t.mine >= t.target ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300" : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300")}
                     style={{ fontSize: `${11 + Math.min(4, t.coverage * 4)}px` }}
@@ -211,7 +226,7 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
                 <div key={s.label} className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-ink-50 dark:hover:bg-ink-800/50">
                   <span className={cx("h-4 w-4 shrink-0 rounded-full text-center text-[10px] leading-4", s.covered ? "bg-emerald-500 text-white" : "border border-ink-300")}>{s.covered ? "✓" : ""}</span>
                   <span className="min-w-0 flex-1 truncate text-sm" title={s.variants.join("\n")}>{s.label}</span>
-                  <span className="text-xs tabular-nums text-ink-400">{s.count}</span>
+                  <span className="text-xs tabular-nums text-ink-400" title={`${s.count} de las páginas del top 10 tienen esta sección`}>{s.count} págs.</span>
                   <button className="btn-g p-0.5 opacity-0 group-hover:opacity-100" onClick={() => addBlock(s.label)}><Icon name="plus" className="h-3.5 w-3.5" /></button>
                 </div>
               ))}
@@ -239,7 +254,7 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
           {tab === "comp" && (
             <div className="overflow-auto">
               <table className="tbl">
-                <thead><tr><th>#</th><th>Dominio</th><th>Tipo</th><th className="num">Editorial</th><th className="num">H2</th><th className="num">H3</th><th>Schema</th></tr></thead>
+                <thead><tr><th>#</th><th>Dominio</th><th>Tipo</th><th className="num" title="Palabras editoriales: sin menús, footer ni tarjetas">Palabras</th><th className="num">H2</th><th className="num">H3</th><th>Schema</th></tr></thead>
                 <tbody>
                   {(r.competitors ?? []).map((c: any) => (
                     <tr key={c.url}>

@@ -4,8 +4,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSWRConfig } from "swr";
 import NewProject from "./NewProject";
-import { ContextGlossary } from "./ProjectProgress";
-import { api, Bar, cx, Drawer, Hint, Icon, Spinner, Toaster, useApi, useLocal } from "./ui";
+import { GLOSSARY } from "@/lib/glossary";
+import { api, Bar, cx, Drawer, Icon, Spinner, Toaster, useApi, useLocal } from "./ui";
 
 type Project = { id: string; name: string; domain: string; country: string; language: string; gscProperty: string | null; settings: any; providers: Record<string, any> };
 type Job = { id: string; kind: string; status: string; progress: number; message: string | null };
@@ -26,8 +26,8 @@ const NAV: { group: string; items: NavItem[] }[] = [
       },
       {
         href: "/report", icon: "doc", label: "Informe", desc: "Todo de una + informe", jobs: ["report.full"],
-        intro: "Corre todos los módulos de una vez y arma un informe con las tareas ordenadas por prioridad. Está escrito para pasárselo a tu agente de código (Claude Code) y que aplique las correcciones en el sitio.",
-        steps: ["Elige qué módulos correr. Keywords viene apagado porque gasta créditos de Serpent.", "Aprieta Correr todo. Tarda unos minutos; abajo del botón ves cada paso en verde, gris (saltado) o rojo.", "Copia el informe o descárgalo en .md y pégaselo a Claude Code."],
+        intro: "Corre todos los módulos de una vez y arma un informe con las tareas ordenadas por prioridad. Está escrito para pasárselo a tu agente de código (por ejemplo, Claude Code) y que aplique las correcciones en el sitio.",
+        steps: ["Elige qué módulos correr. Keywords viene apagado porque gasta créditos de Serpent.", "Aprieta Correr todo. Tarda unos minutos; abajo del botón ves cada paso en verde, gris (saltado) o rojo.", "Copia el informe o descárgalo en .md y pégaselo a tu agente de código."],
       },
     ],
   },
@@ -82,20 +82,11 @@ const NAV: { group: string; items: NavItem[] }[] = [
 ];
 const ALL_NAV = NAV.flatMap((g) => g.items);
 
-function Intro({ item }: { item: NavItem }) {
-  const [open, setOpen] = useLocal<boolean>(`help:v2:${item.href || "home"}`, false);
-  if (!open)
-    return (
-      <button onClick={() => setOpen(true)} className="btn-g mx-4 mt-3 text-xs md:mx-6">
-        <Hint text={item.intro} /> ¿Para qué sirve {item.label}?
-      </button>
-    );
+/** Tutorial de la sección: se abre solo la primera vez; al cerrarlo no vuelve (queda en Ayuda). */
+function Intro({ item, onClose }: { item: NavItem; onClose: () => void }) {
   return (
     <div className="anim-in mx-4 mt-4 rounded-xl border border-acc/20 bg-acc-soft/60 p-4 text-sm dark:border-acc/30 dark:bg-acc/10 md:mx-6">
       <div className="flex items-start gap-3">
-        <div className="ic-float grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-acc shadow-sm dark:bg-ink-900">
-          <Icon name={item.icon} className="h-[18px] w-[18px]" anim="draw" />
-        </div>
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-ink-900 dark:text-ink-100">{item.label}</div>
           <p className="mt-0.5 max-w-3xl leading-relaxed text-ink-600 dark:text-ink-300">{item.intro}</p>
@@ -103,20 +94,77 @@ function Intro({ item }: { item: NavItem }) {
             <ol className="mt-2 grid gap-1.5 md:grid-cols-3">
               {item.steps.map((st, i) => (
                 <li key={i} className="flex gap-2 text-ink-600 dark:text-ink-300">
-                  <span className="ic-pop grid h-5 w-5 shrink-0 place-items-center rounded-full bg-acc text-[11px] font-semibold text-white" style={{ animationDelay: `${0.15 + i * 0.12}s` }}>{i + 1}</span>
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-acc text-[11px] font-semibold text-white">{i + 1}</span>
                   <span className="leading-snug">{st}</span>
                 </li>
               ))}
             </ol>
           )}
+          <p className="mt-2 text-xs text-ink-500">Puedes volver a verlo cuando quieras en <b>? Ayuda</b>, arriba a la derecha.</p>
         </div>
-        <button onClick={() => setOpen(false)} className="btn-g shrink-0 px-1" title="ocultar">
+        <button onClick={onClose} className="btn-g shrink-0 px-1" title="Entendido, no volver a mostrar" aria-label="Cerrar tutorial">
           <Icon name="x" className="h-4 w-4" />
         </button>
       </div>
     </div>
   );
 }
+
+/** Términos del glosario que se explican en cada sección. */
+const termsFor = (path: string) =>
+  path.includes("/audit") ? ["canonical", "H1", "LCP", "noindex", "huérfana"]
+  : path.includes("/content") ? ["SERP", "H2", "PAA", "canibalización"]
+  : path.includes("/keywords") ? ["cluster", "SERP", "PAA"]
+  : path.includes("/rank") ? ["SERP", "canibalización", "CTR"]
+  : ["CTR", "impresiones"];
+
+/** Ayuda común de la sección: qué hace, pasos y glosario. Un solo lugar en vez de botones en cada pantalla. */
+function HelpMenu({ item, path, onShowIntro }: { item?: NavItem; path: string; onShowIntro: () => void }) {
+  const [open, setOpen] = useState(false);
+  const terms = termsFor(path);
+  return (
+    <div className="relative shrink-0">
+      <button className="btn-g text-xs" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="grid h-4 w-4 place-items-center rounded-full border border-ink-300 text-[10px] font-semibold">?</span>
+        Ayuda
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="card fixed right-4 top-14 z-50 max-h-[70vh] w-[min(420px,calc(100vw-32px))] overflow-y-auto p-4 text-sm shadow-xl">
+            {item && (
+              <>
+                <div className="font-semibold text-ink-900 dark:text-ink-100">¿Para qué sirve {item.label}?</div>
+                <p className="mt-1 leading-relaxed text-ink-600 dark:text-ink-300">{item.intro}</p>
+                {item.steps && (
+                  <button className="btn mt-2 text-xs" onClick={() => { setOpen(false); onShowIntro(); }}>Ver los pasos</button>
+                )}
+              </>
+            )}
+            <div className="lbl mt-4">Glosario</div>
+            <dl className="mt-1 space-y-2">
+              {terms.map((t) => (
+                <div key={t}>
+                  <dt className="font-medium text-ink-800 dark:text-ink-100">{t}</dt>
+                  <dd className="text-xs leading-snug text-ink-500">{GLOSSARY[t]}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+const countryName = (cc?: string) => {
+  if (!cc) return "";
+  try {
+    return new Intl.DisplayNames(["es"], { type: "region" }).of(cc.toUpperCase()) ?? cc;
+  } catch {
+    return cc;
+  }
+};
 
 const JOB_LABEL: Record<string, string> = {
   "keywords.run": "keywords", "audit.crawl": "crawl", "audit.psi": "pagespeed", "audit.inspect": "inspección",
@@ -153,6 +201,12 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
   const setDismissed = (v: string[]) => setDismissedAll(v.slice(-50));
   // la sección más específica que coincide con la ruta (/content/xyz → Contenido)
   const current = [...ALL_NAV].sort((a, b) => b.href.length - a.href.length).find((n) => (n.href === "" ? path === base : path.startsWith(base + n.href)));
+  // tutorial: visible la primera vez que se entra a cada sección; al cerrarlo queda oculto para siempre
+  const [seenIntro, setSeenIntro] = useLocal<string[]>("help:v3:seen", []);
+  const [forceIntro, setForceIntro] = useState<string | null>(null);
+  const introKey = current ? current.href || "home" : "";
+  const showIntro = !!current && (forceIntro === introKey || !seenIntro.includes(introKey));
+  const closeIntro = () => { setForceIntro(null); if (!seenIntro.includes(introKey)) setSeenIntro([...seenIntro, introKey]); };
   const active = jobs.filter((j) => j.status === "queued" || j.status === "running" || j.status === "error");
 
   return (
@@ -214,7 +268,7 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
             <div className="relative">
               <button className="btn-g font-medium text-ink-900 dark:text-ink-100" onClick={() => setSwitcher(!switcher)}>
                 {project?.domain ?? "…"}
-                <span className="chip">{project?.country.toUpperCase()}</span>
+                <span className="chip" title={project ? `País de búsqueda: ${countryName(project.country)} · idioma ${project.language}. Define qué Google se consulta (resultados, volúmenes y rankings).` : undefined}>{project?.country.toUpperCase()}</span>
                 <Icon name="down" className="h-3.5 w-3.5" />
               </button>
               {switcher && (
@@ -230,7 +284,7 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
                 </div>
               )}
             </div>
-            <div className="ml-auto flex items-center gap-2 overflow-x-auto py-1.5 pr-1.5">
+            <div className="ml-auto flex min-w-0 items-center gap-2 overflow-x-auto py-1.5 pr-1.5">
               {active.filter((j) => !dismissed.includes(j.id)).map((j) => (
                 <div key={j.id} className="relative shrink-0">
                   <button
@@ -288,10 +342,11 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
                 </div>
               ))}
             </div>
+            <HelpMenu item={current} path={path} onShowIntro={() => setForceIntro(introKey)} />
           </header>
           <main className="flex min-h-0 flex-1 flex-col overflow-auto">
-            {current && <Intro key={current.href} item={current} />}
-            <div key={path} className="anim-in flex flex-1 flex-col"><ContextGlossary terms={path.includes("audit")?["canonical","H1","LCP","noindex"]:path.includes("content")?["SERP","H2","canibalización"]:path.includes("keywords")?["cluster","SERP"]:["CTR","impresiones"]}/>{children}</div>
+            {current && showIntro && <Intro key={current.href} item={current} onClose={closeIntro} />}
+            <div key={path} className="anim-in flex flex-1 flex-col">{children}</div>
           </main>
         </div>
       </div>

@@ -7,7 +7,7 @@ import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@d
 import { CSS } from "@dnd-kit/utilities";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useProject } from "@/components/Shell";
-import { api, cx, Delta, Empty, fmt, Icon, IconBadge, Score, Stat, Hint, useApi, useLocal, Spinner } from "@/components/ui";
+import { api, contentScoreLabel, cx, Delta, Empty, fmt, Icon, IconBadge, Score, Stat, Hint, useApi, useLocal, Spinner } from "@/components/ui";
 import { HEALTH_HELP, healthLabel } from "@/lib/presentation";
 import { Coverage } from "@/components/Coverage";
 
@@ -31,24 +31,25 @@ function Spend() {
   return (
     <div className="space-y-2.5 text-sm">
       {data.providers.map((p: any) => {
-        const pct = p.limitUsd > 0 ? (p.spentUsd / p.limitUsd) * 100 : p.limitUsd === 0 ? 100 : 0;
+        const off = p.limitUsd === 0;
+        const pct = p.limitUsd > 0 ? (p.spentUsd / p.limitUsd) * 100 : 0;
         const state = data.states.find((s: any) => s.provider === p.provider);
         return (
-          <div key={p.provider}>
+          <div key={p.provider} className={cx(off && "text-ink-400")}>
             <div className="flex items-baseline gap-2">
               <span>{PROV[p.provider] ?? p.provider}</span>
               {state && <span className="chip !bg-amber-100 !text-amber-800">{state.status === "no_balance" ? "sin saldo" : "credenciales"}</span>}
               <span className="ml-auto tabular-nums">
                 ${p.spentUsd.toFixed(p.spentUsd < 1 ? 3 : 2)}
-                <span className="text-ink-400"> / {p.limitUsd < 0 ? "∞" : p.limitUsd === 0 ? "bloqueado" : `$${p.limitUsd.toFixed(2)}`}</span>
+                {off ? <span className="ml-1 chip" title="Este proveedor tiene presupuesto $0: está apagado a propósito y no se usa. Se cambia en Ajustes.">Desactivado</span> : <span className="text-ink-400"> / {p.limitUsd < 0 ? "sin límite" : `$${p.limitUsd.toFixed(2)}`}</span>}
               </span>
             </div>
-            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-ink-100 dark:bg-ink-800">
+            {!off && <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-ink-100 dark:bg-ink-800">
               <div className={cx("h-full rounded-full", pct >= 100 ? "bg-rose-500" : pct >= 80 ? "bg-amber-400" : "bg-acc")} style={{ width: `${Math.min(100, pct)}%` }} />
-            </div>
-            <div className="mt-0.5 text-[11px] text-ink-400">
-              {fmt(p.calls)} llamadas{p.provider === "llm" && p.inputTokens ? ` · ${fmt(p.inputTokens)} in / ${fmt(p.outputTokens)} out tokens` : ""}
-            </div>
+            </div>}
+            {!off && <div className="mt-0.5 text-[11px] text-ink-400">
+              {fmt(p.calls)} {p.calls === 1 ? "llamada" : "llamadas"}{p.provider === "llm" && p.inputTokens ? ` · ${fmt(p.inputTokens)} tokens de entrada / ${fmt(p.outputTokens)} de salida` : ""}
+            </div>}
           </div>
         );
       })}
@@ -62,7 +63,7 @@ function Block({ w, onResize, children, title }: { w: W; onResize: () => void; c
     <div
       ref={s.setNodeRef}
       style={{ transform: CSS.Transform.toString(s.transform), transition: s.transition }}
-      className={cx("card group flex min-h-[180px] flex-col p-4", w.w === 3 ? "md:col-span-3" : w.w === 2 ? "md:col-span-2" : "", s.isDragging && "z-20 opacity-80 shadow-2xl")}
+      className={cx("card group flex flex-col p-4", COMPACT.has(w.id) && "md:self-start", w.w === 3 ? "md:col-span-3" : w.w === 2 ? "md:col-span-2" : "", s.isDragging && "z-20 opacity-80 shadow-2xl")}
     >
       <div className="mb-3 flex items-center gap-2">
         <button {...s.attributes} {...s.listeners} className="cursor-grab text-ink-300 hover:text-ink-600 active:cursor-grabbing">
@@ -70,12 +71,15 @@ function Block({ w, onResize, children, title }: { w: W; onResize: () => void; c
         </button>
         {WIDGET_ICON[w.id] && <IconBadge name={WIDGET_ICON[w.id].icon} tone={WIDGET_ICON[w.id].tone} size="sm" />}
         <span className="lbl">{title}</span>
-        <button onClick={onResize} className="btn-g ml-auto px-1 py-0 text-xs opacity-0 group-hover:opacity-100">{w.w}/3</button>
+        <button onClick={onResize} title="Cambiar el ancho del bloque" className="btn-g ml-auto px-1 py-0 text-xs opacity-0 group-hover:opacity-100">{w.w}/3</button>
       </div>
       <div className="min-h-0 flex-1">{children}</div>
     </div>
   );
 }
+
+/** Bloques que se ajustan a su contenido en vez de estirarse al alto de la fila. */
+const COMPACT = new Set(["alerts", "actions", "content", "movers", "spend"]);
 
 const WIDGET_ICON: Record<string, { icon: string; tone: "acc" | "good" | "bad" | "warn" | "info" | "mute" }> = {
   kpis: { icon: "chart", tone: "acc" }, gsc: { icon: "gsc", tone: "info" }, health: { icon: "audit", tone: "good" }, movers: { icon: "trend", tone: "acc" },
@@ -133,9 +137,9 @@ export default function Overview() {
           <div key="k" className="space-y-4">
           <Coverage projectId={id} />
           <div className="stagger grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-6">
-            <Stat icon="key" label="Keywords" value={fmt(data?.keywords)} sub={`${fmt(data?.volume)} vol.`} hint="Keywords del último research y la suma de su volumen mensual de búsquedas." />
+            <Stat icon="key" label="Keywords" value={fmt(data?.keywords)} sub={`${fmt(data?.volume)} búsquedas/mes`} hint="Keywords de la última investigación y la suma de su volumen mensual de búsquedas." />
             <Stat icon="layers" label="Clusters" value={fmt(data?.clusters)} hint="Grupos de keywords que se atacan con una misma página." />
-            <Stat icon="target" label="Trackeadas" value={fmt(data?.tracked)} sub={`${fmt(data?.top3)} top 3 · ${fmt(data?.top10)} top 10`} hint="Keywords a las que se les sigue la posición en Google, y cuántas están en el top 3 y top 10." />
+            <Stat icon="target" label="Monitoreadas" value={fmt(data?.tracked)} sub={`${fmt(data?.top3)} top 3 · ${fmt(data?.top10)} top 10`} hint="Keywords a las que se les sigue la posición en Google, y cuántas están en el top 3 y top 10." />
             <Stat icon="rank" label="Posición" value={fmt(data?.avgPos, 1)} hint="Posición promedio de las keywords monitoreadas que aparecen en el top 100. Más bajo es mejor." />
             <Stat icon="trend" label="Clics" value={fmt(sum("clicks"))} hint="Clics desde Google en los últimos 90 días (Search Console)." />
             <Stat icon="eye" label="Impresiones" value={fmt(sum("impressions"))} hint="Veces que tu sitio apareció en resultados de Google en 90 días (Search Console)." />
@@ -175,7 +179,7 @@ export default function Overview() {
                 <div>{fmt(st.critical)} errores</div>
                 <div>{fmt(st.warning)} advertencias</div>
                 <div>{fmt(st.info)} observaciones</div>
-                <div className="text-xs text-ink-400">{fmt(st.pages)} urls</div>
+                <div className="text-xs text-ink-400">{fmt(st.pages)} {st.pages === 1 ? "URL revisada" : "URLs revisadas"}</div>
               </div>
             </Link>
           ) : (
@@ -218,11 +222,11 @@ export default function Overview() {
       case "actions":
         return [
           "Acciones",
-          <div key="ac" className="grid grid-cols-2 gap-2">
-            <button className="btn justify-center py-2.5" onClick={() => run("audit")}><Icon name="audit" />Crawl</button>
-            <button className="btn justify-center py-2.5" onClick={() => run("rank/check")}><Icon name="rank" />Rankings</button>
-            <button className="btn hov-spin justify-center py-2.5" onClick={() => run("gsc/sync")}><Icon name="gsc" />GSC</button>
-            <button className="btn justify-center py-2.5" onClick={() => run("alerts")}><Icon name="bell" />Alertas</button>
+          <div key="ac" className="flex flex-wrap gap-1.5">
+            <button className="btn text-xs" title="Recorre el sitio y detecta problemas técnicos" onClick={() => run("audit")}><Icon name="audit" />Analizar sitio</button>
+            <button className="btn text-xs" title="Mide ahora la posición de las keywords monitoreadas (gasta créditos)" onClick={() => run("rank/check")}><Icon name="rank" />Revisar rankings</button>
+            <button className="btn hov-spin text-xs" title="Trae los últimos datos de Google Search Console" onClick={() => run("gsc/sync")}><Icon name="gsc" />Sincronizar Search Console</button>
+            <button className="btn text-xs" title="Recalcula caídas, canibalización y CTR bajo" onClick={() => run("alerts")}><Icon name="bell" />Recalcular alertas</button>
           </div>,
         ];
       case "spend":
@@ -231,11 +235,15 @@ export default function Overview() {
         return [
           "Contenido",
           data?.content?.length ? (
-            <div key="c" className="space-y-2 text-sm">
+            <div key="c" className="-mx-2 space-y-0.5 text-sm">
               {data.content.map((c: any) => (
-                <Link key={c.id} href={`/p/${id}/content/${c.id}`} className="flex items-center gap-2 hover:text-acc">
-                  <span className="truncate">{c.keyword}</span>
-                  <span className="ml-auto tabular-nums font-semibold">{c.score ?? <Spinner className="h-3.5 w-3.5 text-acc" />}</span>
+                <Link key={c.id} href={`/p/${id}/content/${c.id}`} title="Ver el análisis y el brief" className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-ink-50 hover:text-acc dark:hover:bg-ink-800/50">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{c.keyword}</span>
+                    {c.score != null && <span className="block text-xs text-ink-500">{contentScoreLabel(c.score)}</span>}
+                  </span>
+                  <span className="shrink-0 tabular-nums">{c.score != null ? <><b>{c.score}</b><span className="text-ink-400">/100</span></> : <Spinner className="h-3.5 w-3.5 text-acc" />}</span>
+                  <Icon name="chevr" className="h-3.5 w-3.5 shrink-0 text-ink-300" />
                 </Link>
               ))}
             </div>

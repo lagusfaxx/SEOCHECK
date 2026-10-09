@@ -77,12 +77,16 @@ export function ContentTools({
         >
           Regenerar solo esta sección
         </button>
-        <a
-          className="btn"
-          href={`/api/p/${id}/content/implementation?cid=${cid}`}
-        >
-          Enviar a implementación · Claude Code
-        </a>
+        <span className="inline-flex items-center gap-2">
+          <a
+            className="btn"
+            href={`/api/p/${id}/content/implementation?cid=${cid}`}
+            title="Descarga las instrucciones de implementación en Markdown para pasárselas a tu agente de código"
+          >
+            Enviar a implementación
+          </a>
+          <span className="text-xs text-ink-500">Destino: Claude Code (.md)</span>
+        </span>
         <button
           className="btn"
           disabled={busy || !brief}

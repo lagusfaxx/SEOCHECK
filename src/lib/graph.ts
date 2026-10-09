@@ -101,7 +101,7 @@ export async function expand(projectId: string, type: GType, key: string, t: str
       const g = await db.issue.groupBy({ by: ["code", "severity"], where: { crawlId: crawl.id }, _count: true });
       const order = { critical: 0, warning: 1, info: 2 } as Record<string, number>;
       for (const i of g.sort((a, b) => order[a.severity] - order[b.severity] || b._count - a._count))
-        link(mk("issue", i.code, ISSUE_LABELS[i.code] ?? i.code, { sub: `${i.severity === "critical" ? "crítico" : i.severity} · ${f0(i._count)} URLs` }));
+        link(mk("issue", i.code, ISSUE_LABELS[i.code] ?? i.code, { sub: `${i.severity === "critical" ? "crítico" : i.severity} · ${f0(i._count)} URL${i._count === 1 ? "" : "s"}` }));
       break;
     }
     case "site.gsc_queries":

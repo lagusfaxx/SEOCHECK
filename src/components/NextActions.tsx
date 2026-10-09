@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useProject } from "./Shell";
-import { api, Drawer, Metric, useApi } from "./ui";
+import { api, Drawer, Metric, plural, useApi } from "./ui";
 
 export const STATUS_LABEL: Record<string, string> = {
   detected: "Detectado",
@@ -201,7 +201,7 @@ export function NextActions({ all = false }: { all?: boolean }) {
                       </td>
                     ) : (
                       <td className="px-4 py-3 text-right tabular-nums text-ink-500">
-                        {t.affected ?? 1} URLs
+                        {plural(t.affected ?? 1, "URL", "URLs")}
                       </td>
                     )}
                     <td className="px-4 py-3 text-xs text-ink-500">

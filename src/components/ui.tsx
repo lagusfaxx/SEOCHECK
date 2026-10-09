@@ -235,6 +235,12 @@ export function Score({ value, size = 64 }: { value: number | null | undefined; 
   );
 }
 
+/** Lectura en palabras del puntaje de contenido (0–100), con los mismos cortes de color que <Score>. */
+export const contentScoreLabel = (v: number | null | undefined) => (v == null ? "Sin datos" : v >= 70 ? "Bien optimizada" : v >= 45 ? "Necesita mejoras" : "Muy por debajo del top 10");
+
+/** "1 URL" / "2 URLs". */
+export const plural = (n: number | null | undefined, one: string, many: string) => `${fmt(n ?? 0)} ${n === 1 ? one : many}`;
+
 export function Spark({ data, invert, w = 80, h = 22 }: { data: (number | null)[]; invert?: boolean; w?: number; h?: number }) {
   const pts = data.map((v, i) => [i, v] as const).filter(([, v]) => v != null) as [number, number][];
   if (pts.length < 2) return <span className="text-ink-300">—</span>;
@@ -259,11 +265,11 @@ export function Delta({ from, to, lowerIsBetter }: { from: number | null | undef
   return <span className={cx("text-xs tabular-nums", d > 0 ? "text-emerald-600" : "text-rose-600")}>{d > 0 ? "▲" : "▼"}{fmt(Math.abs(d), Math.abs(d) < 10 ? 1 : 0)}</span>;
 }
 
-export function Tabs<T extends string>({ value, onChange, items }: { value: T; onChange: (v: T) => void; items: { id: T; label: ReactNode; icon?: string }[] }) {
+export function Tabs<T extends string>({ value, onChange, items }: { value: T; onChange: (v: T) => void; items: { id: T; label: ReactNode; icon?: string; title?: string }[] }) {
   return (
     <div className="inline-flex rounded-lg border border-ink-200 bg-white p-0.5 dark:border-ink-800 dark:bg-ink-900">
       {items.map((it) => (
-        <button key={it.id} onClick={() => onChange(it.id)} className={cx("inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition", value === it.id ? "bg-ink-900 text-white dark:bg-ink-100 dark:text-ink-900" : "text-ink-500 hover:text-ink-900 dark:hover:text-ink-100")}>
+        <button key={it.id} title={it.title} onClick={() => onChange(it.id)} className={cx("inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition", value === it.id ? "bg-ink-900 text-white dark:bg-ink-100 dark:text-ink-900" : "text-ink-500 hover:text-ink-900 dark:hover:text-ink-100")}>
           {it.icon && <Icon name={it.icon} className="h-3.5 w-3.5" />}
           {it.label}
         </button>

@@ -9,7 +9,18 @@ type Check = { id: string; date: string; position: number | null; url: string | 
 type Tracked = { id: string; keyword: string; frequency: string; active: boolean; checks: Check[] };
 type Alert = { id: string; type: string; key: string; data: any; seen: boolean; createdAt: string };
 
-const FEAT: Record<string, string> = { ads: "ads", paa: "PAA", related: "rel", videos: "video", shopping: "shop", snippet: "snippet", ai_overview: "AIO", knowledge: "KP", local: "local" };
+/** Elementos que Google mostró en la página de resultados: [etiqueta, explicación]. */
+const FEAT: Record<string, [string, string]> = {
+  ads: ["Anuncios", "Hay anuncios pagados en los resultados."],
+  paa: ["Preguntas", "Google muestra «Otras preguntas de los usuarios» (PAA)."],
+  related: ["Relacionadas", "Búsquedas relacionadas al pie de los resultados."],
+  videos: ["Videos", "Carrusel de videos."],
+  shopping: ["Shopping", "Productos de Google Shopping."],
+  snippet: ["Fragmento destacado", "Una respuesta destacada arriba de los resultados."],
+  ai_overview: ["Resumen IA", "Google muestra un resumen generado con IA (AI Overview)."],
+  knowledge: ["Panel de información", "Panel lateral con datos de una marca, persona o lugar (Knowledge Panel)."],
+  local: ["Mapa local", "Resultados de Google Maps."],
+};
 const path = (u: string | null) => (u ? u.replace(/^https?:\/\/[^/]+/, "") || "/" : "–");
 
 export default function RankPage() {
@@ -50,7 +61,7 @@ export default function RankPage() {
     { key: "best", label: "Mejor", get: (r) => r.best, num: true },
     { key: "trend", label: "", get: () => 0, render: (r) => <Spark data={r.t.checks.map((c) => c.position)} invert /> },
     { key: "url", label: "URL", get: (r) => r.last?.url, render: (r) => <span className="block max-w-[260px] truncate text-ink-500">{path(r.last?.url ?? null)}</span> },
-    { key: "feat", label: "SERP", get: (r) => r.last?.features.length, render: (r) => <span className="flex gap-1">{r.last?.features.map((f) => <span key={f} className="chip">{FEAT[f] ?? f}</span>)}</span> },
+    { key: "feat", label: "SERP", get: (r) => r.last?.features.length, render: (r) => <span className="flex gap-1">{r.last?.features.map((f) => <span key={f} className="chip cursor-help" title={FEAT[f]?.[1]}>{FEAT[f]?.[0] ?? f}</span>)}</span> },
     { key: "f", label: "Frecuencia", get: (r) => r.t.frequency, render: (r) => <span className="text-xs text-ink-400">{r.t.frequency === "daily" ? "diario" : "semanal"}</span> },
   ];
 
@@ -71,8 +82,8 @@ export default function RankPage() {
           <button className="btn-p" disabled={adding || !add.trim()} onClick={() => submit()}><Icon name="plus" />{adding ? <><Spinner className="h-3.5 w-3.5" />Agregando…</> : "Agregar"}</button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Tabs value={String(days) as "7" | "30" | "90"} onChange={(v) => setDays(Number(v))} items={[{ id: "7", label: "7d" }, { id: "30", label: "30d" }, { id: "90", label: "90d" }]} />
-          <Tabs value={view} onChange={setView} items={[{ id: "10", label: "≤10" }, { id: "100", label: "≤100" }]} />
+          <Tabs value={String(days) as "7" | "30" | "90"} onChange={(v) => setDays(Number(v))} items={[{ id: "7", label: "7d", title: "Historial de los últimos 7 días" }, { id: "30", label: "30d", title: "Historial de los últimos 30 días" }, { id: "90", label: "90d", title: "Historial de los últimos 90 días" }]} />
+          <Tabs value={view} onChange={setView} items={[{ id: "10", label: "Top 10", title: "Solo keywords en la primera página de Google (posición 1 a 10)" }, { id: "100", label: "Top 100", title: "Todas las keywords monitoreadas, hasta la posición 100" }]} />
           <button className="btn hov-spin" disabled={!rows.length || checking || recheckBusy} title={checking ? "Ya hay una revisión en curso" : !rows.length ? "Primero agrega keywords" : undefined} onClick={() => recheck()}><Icon name="refresh" />{checking || recheckBusy ? <><Spinner className="h-3.5 w-3.5" />Revisando…</> : `Revisar ${checked.size || "todas"}`}</button>
           {checked.size > 0 && (
             <button className="btn" onClick={async () => { if (!confirm(`¿Dejar de monitorear ${checked.size}?`)) return; await api(`/api/p/${id}/rank`, "DELETE", { ids: [...checked] }); setChecked(new Set()); mutate(); }}><Icon name="trash" /></button>
@@ -94,7 +105,7 @@ export default function RankPage() {
           {unseen > 0 && <span className="rounded-full bg-rose-500 px-1.5 text-[11px] text-white">{unseen}</span>}
           <button className="btn-g ml-auto text-xs" onClick={async () => { await api(`/api/p/${id}/alerts`, "PATCH", {}); mutate(); }}>marcar vistas</button>
         </div>
-        <Tabs value={atab} onChange={setAtab} items={[{ id: "all", label: "Todas" }, { id: "drop", label: "Caídas" }, { id: "cannibal", label: "Canib." }, { id: "lowctr", label: "CTR" }]} />
+        <Tabs value={atab} onChange={setAtab} items={[{ id: "all", label: "Todas" }, { id: "drop", label: "Caídas", title: "Keywords que bajaron más de 3 posiciones" }, { id: "cannibal", label: "Canibalización", title: "Dos páginas tuyas compiten por la misma keyword" }, { id: "lowctr", label: "CTR bajo", title: "Pocas personas hacen clic para la posición que tienes" }]} />
         <div className="mt-3 max-h-[calc(100vh-240px)] space-y-2 overflow-y-auto">
           {alerts.map((a) => (
             <div key={a.id} className={cx("rounded-lg border p-2.5 text-sm", a.seen ? "border-ink-100 opacity-60 dark:border-ink-800" : "border-ink-200 dark:border-ink-700")}>
@@ -108,13 +119,13 @@ export default function RankPage() {
                 {a.type === "urlchange" && <>{path(a.data.from)} → {path(a.data.to)}</>}
                 {a.type === "drop" && <>{a.data.from ?? "–"} → {a.data.to ?? "fuera"} · {path(a.data.url)}</>}
                 {a.type === "cannibal" && (a.data.pages ?? a.data.urls?.map((u: string) => ({ page: u })) ?? []).map((p: any) => (
-                  <div key={p.page} className="truncate">{path(p.page)}{p.impressions != null && <span className="text-ink-400"> · {fmt(p.impressions)} impr · pos {fmt(p.position, 1)}</span>}</div>
+                  <div key={p.page} className="truncate">{path(p.page)}{p.impressions != null && <span className="text-ink-400"> · {fmt(p.impressions)} impresiones · posición {fmt(p.position, 1)}</span>}</div>
                 ))}
-                {a.type === "lowctr" && <>{fmt(a.data.impressions)} impr · CTR {pct(a.data.ctr)} (esperado {pct(a.data.expected)}) · pos {fmt(a.data.position, 1)}<div className="truncate">{path(a.data.page)}</div></>}
+                {a.type === "lowctr" && <>{fmt(a.data.impressions)} impresiones · CTR {pct(a.data.ctr)} (esperado {pct(a.data.expected)}) · posición {fmt(a.data.position, 1)}<div className="truncate">{path(a.data.page)}</div></>}
               </div>
             </div>
           ))}
-          {!alerts.length && <div className="py-6 text-center text-sm text-ink-300">—</div>}
+          {!alerts.length && <div className="py-2 text-sm text-ink-400">Sin alertas.</div>}
         </div>
       </div>
 

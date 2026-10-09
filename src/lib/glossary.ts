@@ -16,6 +16,7 @@ export const GLOSSARY: Record<string, string> = {
     "Dos o más URLs propias compiten por la misma intención. Confirma que no sea una aparición legítima antes de consolidar.",
   impresiones:
     "Veces que una página aparece en los resultados de Google. Una impresión no equivale a una visita.",
+  PAA: "«Otras preguntas de los usuarios» (People Also Ask): preguntas que Google muestra en sus resultados. Responderlas en tu página ayuda a cubrir lo que la gente quiere saber.",
   noindex:
     "Instrucción para que Google no incluya una página en su índice. Es habitual en páginas privadas o sin valor de búsqueda.",
 };

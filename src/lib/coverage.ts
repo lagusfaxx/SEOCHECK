@@ -32,10 +32,10 @@ export async function coverage(projectId: string): Promise<Module[]> {
     const pages = st.pages ?? 0;
     if (crawl.status === "failed") out.push({ key: "crawl", label: "Auditoría (crawl)", state: "failed", detail: crawl.reason ?? "El crawl falló", percent: 0 });
     else if (crawl.status === "cancelled") out.push({ key: "crawl", label: "Auditoría (crawl)", state: "failed", detail: "El último crawl se canceló" });
-    else if (crawl.status === "partial") out.push({ key: "crawl", label: "Auditoría (crawl)", state: "partial", detail: `${crawl.reason ?? "Parcial"} (${pages} URLs, ${day(crawl.startedAt)})`, percent: pages ? Math.round(((st.ok ?? pages) / pages) * 100) : 0 });
+    else if (crawl.status === "partial") out.push({ key: "crawl", label: "Auditoría (crawl)", state: "partial", detail: `${crawl.reason ?? "Parcial"} (${pages} URL${pages === 1 ? "" : "s"}, ${day(crawl.startedAt)})`, percent: pages ? Math.round(((st.ok ?? pages) / pages) * 100) : 0 });
     else if (st.limitReached ?? (opts.maxPages && pages - Math.min(st.orphans ?? 0, 300) >= opts.maxPages))
       out.push({ key: "crawl", label: "Auditoría (crawl)", state: "partial", detail: `Llegó al máximo de ${opts.maxPages} páginas: puede faltar parte del sitio (${day(crawl.startedAt)})`, percent: st.sitemapNotReached ? Math.min(99, Math.round((pages / (pages + st.sitemapNotReached)) * 100)) : undefined });
-    else out.push({ key: "crawl", label: "Auditoría (crawl)", state: "ok", detail: `Sitio completo: ${pages} URLs (${day(crawl.startedAt)})`, percent: 100 });
+    else out.push({ key: "crawl", label: "Auditoría (crawl)", state: "ok", detail: `Sitio completo: ${pages} URL${pages === 1 ? "" : "s"} (${day(crawl.startedAt)})`, percent: 100 });
   }
 
   // Search Console
@@ -60,16 +60,16 @@ export async function coverage(projectId: string): Promise<Module[]> {
   const inspJob = await lastJob(projectId, QUEUES.inspect);
   if (!gscMode) out.push({ key: "inspect", label: "Indexación", state: "missing", detail: "Requiere Search Console" });
   else if (inspJob?.status === "error") out.push({ key: "inspect", label: "Indexación", state: "failed", detail: `La última inspección falló: ${inspJob.message ?? "sin detalle"}` });
-  else if (inspCount) out.push({ key: "inspect", label: "Indexación", state: "ok", detail: `${inspCount} URLs inspeccionadas` });
+  else if (inspCount) out.push({ key: "inspect", label: "Indexación", state: "ok", detail: `${inspCount} ${inspCount === 1 ? "URL inspeccionada" : "URLs inspeccionadas"}` });
   else out.push({ key: "inspect", label: "Indexación", state: "never", detail: "Sin inspecciones" });
 
   // Keywords
   const run = await db.keywordRun.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { status: true, createdAt: true } });
   const runDone = await db.keywordRun.findFirst({ where: { projectId, status: "done" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
-  if (!run) out.push({ key: "keywords", label: "Keywords", state: "never", detail: "Sin research de keywords" });
-  else if (run.status === "error") out.push({ key: "keywords", label: "Keywords", state: "failed", detail: `El último research falló${runDone ? ` (hay uno anterior del ${day(runDone.createdAt)})` : ""}` });
-  else if (runDone) out.push({ key: "keywords", label: "Keywords", state: "ok", detail: `Research del ${day(runDone.createdAt)}` });
-  else out.push({ key: "keywords", label: "Keywords", state: "never", detail: "Research en curso" });
+  if (!run) out.push({ key: "keywords", label: "Keywords", state: "never", detail: "Sin investigación de keywords" });
+  else if (run.status === "error") out.push({ key: "keywords", label: "Keywords", state: "failed", detail: `La última investigación falló${runDone ? ` (hay uno anterior del ${day(runDone.createdAt)})` : ""}` });
+  else if (runDone) out.push({ key: "keywords", label: "Keywords", state: "ok", detail: `Investigación del ${day(runDone.createdAt)}` });
+  else out.push({ key: "keywords", label: "Keywords", state: "never", detail: "Investigación en curso" });
 
   // Rankings
   const tracked = await db.trackedKeyword.count({ where: { projectId, active: true } });
@@ -94,7 +94,7 @@ export function shortLabel(m: Module): string {
     gsc: { ok: "GSC conectado", failed: "GSC con error", missing: "GSC no conectado", never: "GSC sin sincronizar" },
     psi: { ok: "PageSpeed con datos", failed: "PageSpeed falló", missing: "PageSpeed no configurado", never: "PageSpeed disponible" },
     inspect: { ok: "Indexación revisada", failed: "Indexación falló", missing: "Indexación no configurada", never: "Indexación sin revisar" },
-    keywords: { ok: "Keywords al día", failed: "Keywords falló", never: "Keywords sin research" },
+    keywords: { ok: "Keywords al día", failed: "Keywords falló", never: "Keywords sin investigar" },
     rank: { ok: "Rankings activos", failed: "Rankings falló", missing: "Rankings no configurado", never: "Rankings sin keywords" },
   };
   return S[m.key]?.[m.state] ?? `${m.label}: ${STATE_LABEL[m.state]}`;

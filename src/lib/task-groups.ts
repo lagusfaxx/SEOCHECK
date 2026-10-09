@@ -95,11 +95,11 @@ export function groupTasks<T extends GroupableTask>(
         fix: ISSUE_FIX[first.code ?? ""] ?? "",
         probableCause:
           affected >= 3 && pattern?.includes("*")
-            ? `Posible causa compartida en ${pattern}: se detectó el mismo problema en ${affected} URLs. Es una inferencia por patrón; confirma la plantilla o configuración antes de aplicar un cambio global.`
+            ? `Posible causa compartida en ${pattern}: se detectó el mismo problema en ${affected} URL${affected === 1 ? "" : "s"}. Es una inferencia por patrón; confirma la plantilla o configuración antes de aplicar un cambio global.`
             : null,
         gscImpressions,
         rankingUrls: ranked,
-        priorityReason: `Severidad ${severity === "critical" ? "alta" : severity === "warning" ? "media" : "baja"} · ${affected} URLs afectadas${gscImpressions ? ` · ${gscImpressions} impresiones GSC (28 días)` : ""}${ranked ? ` · ${ranked} URLs con rankings activos` : ""}. La relevancia de cada URL incorpora impresiones GSC o enlaces internos cuando no hay GSC.`,
+        priorityReason: `Severidad ${severity === "critical" ? "alta" : severity === "warning" ? "media" : "baja"} · ${affected} ${affected === 1 ? "URL afectada" : "URLs afectadas"}${gscImpressions ? ` · ${gscImpressions} impresiones GSC (28 días)` : ""}${ranked ? ` · ${ranked} URL${ranked === 1 ? "" : "s"} con rankings activos` : ""}. La relevancia de cada URL incorpora impresiones GSC o enlaces internos cuando no hay GSC.`,
         members,
         resolvedCount: members.filter((t) => t.status === "resolved").length,
       };
