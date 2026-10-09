@@ -32,7 +32,7 @@ export const STATS: { value: string; short: string; long: string }[] = [
   { value: "+$20M", short: "Invertidos", long: "invertidos en negocios propios" },
   { value: "+$100M", short: "Retorno", long: "de retorno generado" },
   { value: "+$500M", short: "Valor SaaS", long: "valor estimado de los SaaS que creamos" },
-  { value: String(OWN_BUSINESSES.length), short: "Negocios", long: "negocios construidos y operados por nuestro equipo" },
+  { value: "+20", short: "Negocios", long: "negocios construidos y operados por nuestro equipo" },
 ];
 
 /** Los 3 casos de la home: muestran cosas distintas (e-commerce, software, security). */

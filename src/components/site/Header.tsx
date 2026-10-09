@@ -30,7 +30,7 @@ const LINKS = [
 export function Logo({ white }: { white?: boolean }) {
   return (
     <Link href="/" className="flex shrink-0 items-center" aria-label="Fullstack Ventures, inicio">
-      <img src={white ? "/brand/fsv-fullstack-ventures-white.png" : "/brand/fsv-fullstack-ventures.png"} alt="Fullstack Ventures" className="h-7 w-auto md:h-8" />
+      <img src={white ? "/brand/fsv-mark-white.png" : "/brand/fsv-mark.png"} alt="Fullstack Ventures" className="h-6 w-auto md:h-7" />
     </Link>
   );
 }
