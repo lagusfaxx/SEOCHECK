@@ -27,13 +27,16 @@ export const CLIENT_WORK: Business[] = [
   { name: "Barzuo", logo: "barzuo.png", kind: "Bar, lounge y club en Santiago", tags: "Software / Web application", text: "Sitio, punto de venta, pantallas de cocina y barra, fidelización y karaoke, hoy en etapa de escalamiento." },
 ];
 
-/** Cifras entregadas por el equipo (CLP). */
-export const STATS: [string, string][] = [
-  ["+$20M", "invertidos en negocios propios"],
-  ["+$100M", "de retorno generado"],
-  ["+$500M", "valor estimado de los SaaS que creamos"],
-  [String(OWN_BUSINESSES.length), "negocios construidos y operados por nuestro equipo"],
+/** Cifras entregadas por el equipo (CLP). `short` es la etiqueta en móvil. */
+export const STATS: { value: string; short: string; long: string }[] = [
+  { value: "+$20M", short: "Invertidos", long: "invertidos en negocios propios" },
+  { value: "+$100M", short: "Retorno", long: "de retorno generado" },
+  { value: "+$500M", short: "Valor SaaS", long: "valor estimado de los SaaS que creamos" },
+  { value: String(OWN_BUSINESSES.length), short: "Negocios", long: "negocios construidos y operados por nuestro equipo" },
 ];
+
+/** Los 3 casos de la home: muestran cosas distintas (e-commerce, software, security). */
+export const FEATURED = ["Nomadbrew", "Uzeed", "Centinela"];
 
 export const PLATFORMS: { name: string; file: string; use: string; h: string }[] = [
   { name: "Mercado Público", file: "mercado-publico.png", use: "Licitaciones", h: "h-7" },
