@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isHomeUrl, kwTokens, scorePage } from "./content/suggest";
+import { brandOf, isHomeUrl, isSpecific, kwTokens, scorePage } from "./content/suggest";
 
 test("kwTokens: sin tildes, sin palabras vacías y singular aproximado", () => {
   assert.deepEqual(kwTokens("Balancín Montessori"), ["balancin", "montessori"]);
@@ -27,4 +27,19 @@ test("scorePage: calce parcial vale menos que calce completo", () => {
   const completa = scorePage(kw, { url: "https://x.cl/balancin-montessori", title: null, h1: [] });
   const parcial = scorePage(kw, { url: "https://x.cl/montessori", title: null, h1: [] });
   assert.ok(completa > parcial && parcial > 0);
+});
+
+test("brandOf / isSpecific", () => {
+  assert.deepEqual(brandOf("sin-tornillo.cl"), ["sin", "tornillo", "sintornillo"]);
+  assert.equal(isSpecific(kwTokens("balancin montessori"), brandOf("sintornillo.cl")), true);
+  assert.equal(isSpecific(kwTokens("sintornillo"), brandOf("sintornillo.cl")), false);
+  assert.equal(isSpecific(kwTokens("sintornillo muebles"), brandOf("sintornillo.cl")), false);
+});
+
+test("scorePage: la home no se excluye; gana cuando la keyword es la marca", () => {
+  const brand = brandOf("sintornillo.cl");
+  const kw = kwTokens("sintornillo");
+  const home = scorePage(kw, { url: "https://sintornillo.cl/", title: "Sintornillo | Muebles que se arman sin tornillos", h1: ["Sintornillo"] }, brand);
+  const contacto = scorePage(kw, { url: "https://sintornillo.cl/contacto", title: "Contacto | Sintornillo", h1: ["Contacto"] }, brand);
+  assert.ok(home > contacto, `${home} > ${contacto}`);
 });

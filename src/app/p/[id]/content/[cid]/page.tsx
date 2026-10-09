@@ -57,6 +57,54 @@ function OutlineItem({ b, onChange, onDelete }: { b: Block; onChange: (b: Block)
   );
 }
 
+const TYPE_ONE: Record<string, string> = { listing: "un listado o categoría", detail: "una ficha de producto", article: "un artículo", home: "una página de inicio" };
+const KIND_FOR: Record<string, string> = { listing: "listing", detail: "product", article: "article", home: "landing" };
+
+/**
+ * Tras el análisis SERP: si Google prefiere otro tipo de página, ¿el sitio ya tiene una de ese tipo para la keyword?
+ * Si la tiene, se propone analizarla; si no, recién ahí se recomienda crearla y se ofrece el brief.
+ */
+function PageTypeFit({ cid, keyword, googleType, onBrief }: { cid: string; keyword: string; googleType: string; onBrief: () => void }) {
+  const { id, refreshJobs } = useProject();
+  const { data: fit, isLoading } = useApi<{ match: { url: string; title: string | null } | null; checked: number } | null>(`/api/p/${id}/content/fit?cid=${cid}`);
+  const [busy, setBusy] = useState(false);
+  const box = "rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-200";
+  if (isLoading) return <div className="flex items-center gap-2 text-xs text-ink-500"><Spinner className="h-3 w-3" />Revisando si tu sitio tiene {TYPE_ONE[googleType]} para esta keyword…</div>;
+  if (!fit) return null;
+  if (fit.match)
+    return (
+      <div className={box}>
+        Para «{keyword}» Google muestra <b>{TYPE_PLURAL[googleType]}</b>. En tu sitio encontramos una que calza:{" "}
+        <b className="break-all">{fit.match.url.replace(/^https?:\/\/[^/]+/, "") || "/"}</b>.{" "}
+        <a className="font-medium underline" href={`/p/${id}/content?keyword=${encodeURIComponent(keyword)}&url=${encodeURIComponent(fit.match.url)}`}>Analizar esa página →</a>
+      </div>
+    );
+  return (
+    <div className={box}>
+      Para «{keyword}» Google muestra <b>{TYPE_PLURAL[googleType]}</b> y no encontramos {TYPE_ONE[googleType]} relacionada en tu sitio
+      {fit.checked ? ` (revisamos ${fit.checked} candidatas)` : ""}. Recomendación: crear {TYPE_ONE[googleType]} específica para esta keyword.
+      <div className="mt-2">
+        <button
+          className="btn text-xs"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await api(`/api/p/${id}/content/rebrief`, "POST", { cid, kind: KIND_FOR[googleType] });
+              onBrief();
+              refreshJobs();
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? <Spinner className="h-3.5 w-3.5" /> : <Icon name="doc" />}Generar brief para la página nueva
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ContentDetail({ params }: { params: { cid: string } }) {
   const { id, refreshJobs } = useProject();
   const {mutate:invalidate}=useSWRConfig();
@@ -174,6 +222,10 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
             ))}
           </div>
         </div>
+
+        {r.pageType && r.mine?.type && r.mine.type !== r.pageType && (
+          <PageTypeFit cid={data.id} keyword={data.keyword} googleType={r.pageType} onBrief={() => { loaded.current = null; mutate(); }} />
+        )}
 
         {r.target?.gscUrl && (
           <div className={cx("rounded-lg px-3 py-2 text-sm", r.target.mismatch ? "bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200" : "bg-emerald-50 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-200")}>

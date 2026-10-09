@@ -97,16 +97,18 @@ export function robotsAllows(r: Robots, url: string): boolean {
   return bestDis < 0 || bestAllow >= bestDis;
 }
 
-export async function fetchSitemapUrls(sitemaps: string[], max = 20000): Promise<string[]> {
+/** `maxSitemaps`/`timeoutMs` permiten una lectura rápida (sugerencias en vivo) sin cambiar el uso del crawler. */
+export async function fetchSitemapUrls(sitemaps: string[], max = 20000, o: { maxSitemaps?: number; timeoutMs?: number } = {}): Promise<string[]> {
+  const { maxSitemaps = 200, timeoutMs = 30000 } = o;
   const urls = new Set<string>();
   const queue = [...sitemaps];
   const visited = new Set<string>();
-  while (queue.length && urls.size < max && visited.size < 200) {
+  while (queue.length && urls.size < max && visited.size < maxSitemaps) {
     const sm = queue.shift()!;
     if (visited.has(sm)) continue;
     visited.add(sm);
     try {
-      const { res } = await safeFetch(sm, { headers: { "User-Agent": env.userAgent }, timeoutMs: 30000 });
+      const { res } = await safeFetch(sm, { headers: { "User-Agent": env.userAgent }, timeoutMs });
       if (!res.ok) continue;
       let xml: string;
       if (sm.endsWith(".gz")) {
