@@ -24,7 +24,8 @@ type Brief = {
   title?: string;
   meta?: string;
 };
-const TYPE_LABEL: Record<string, string> = { listing: "listado", detail: "ficha", article: "artículo", home: "home" };
+const TYPE_LABEL: Record<string, string> = { listing: "listado", detail: "ficha", article: "artículo", home: "página de inicio" };
+const TYPE_PLURAL: Record<string, string> = { listing: "listados", detail: "fichas de producto", article: "artículos", home: "páginas de inicio" };
 
 const nid = () => `u${Math.random().toString(36).slice(2, 9)}`;
 const faqLd = (faq: Brief["faq"]) =>
@@ -141,8 +142,12 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
             <a href={data.url} target="_blank" rel="noreferrer" className="block truncate text-xs text-ink-400 hover:text-acc">{data.url}</a>
             {r.pageType && (
               <div className="mt-0.5 text-[11px] text-ink-500">
-                Google muestra <b>{TYPE_LABEL[r.pageType]}s</b>
-                {r.mine?.type && r.mine.type !== r.pageType && <span className="text-amber-600"> · la tuya es {TYPE_LABEL[r.mine.type]}</span>}
+                Google muestra <b>{TYPE_PLURAL[r.pageType] ?? `${TYPE_LABEL[r.pageType]}s`}</b>
+                {r.mine?.type && r.mine.type !== r.pageType && (
+                  <span className="text-amber-600">
+                    {" "}· {r.mine.type === "home" ? "y estás analizando tu página de inicio: analiza la página específica de esta keyword" : `y la tuya es ${TYPE_LABEL[r.mine.type]}: Google prefiere otro tipo de página`}
+                  </span>
+                )}
               </div>
             )}
           </div>

@@ -5,6 +5,16 @@ import { useRouter } from "next/navigation";
 import { useProject } from "@/components/Shell";
 import { api, contentScoreLabel, Empty, fmt, Icon, Score, useAction, useApi, fmtDate, Spinner } from "@/components/ui";
 
+type Suggestion = { url: string; title: string | null; home: boolean; impressions?: number };
+const pathOf = (u: string) => u.replace(/^https?:\/\/[^/]+/, "") || "/";
+const isHome = (u: string) => {
+  try {
+    return new URL(/^https?:\/\//.test(u) ? u : `https://${u}`).pathname.replace(/\/+$/, "") === "";
+  } catch {
+    return false;
+  }
+};
+
 const CONTENT_STATUS: Record<string, string> = { queued: "en cola", running: "analizando…", brief: "generando brief…", error: "falló" };
 
 export default function ContentList() {
@@ -20,25 +30,65 @@ export default function ContentList() {
     router.push(`/p/${id}/content/${a.id}`);
   });
   const [target, setTarget] = useState<{ gscUrl: string | null; impressions: number; position: number | null; mismatch: boolean } | null>(null);
+  const [sugg, setSugg] = useState<{ suggestions: Suggestion[]; crawled: boolean } | null>(null);
   // ¿ya hay una URL del sitio rankeando para esta keyword? (Search Console)
   useEffect(() => {
     if (kw.trim().length < 3) return setTarget(null);
     const t = setTimeout(() => api(`/api/p/${id}/content/target?keyword=${encodeURIComponent(kw.trim())}&url=${encodeURIComponent(url)}`).then(setTarget).catch(() => setTarget(null)), 400);
     return () => clearTimeout(t);
   }, [kw, url, id]);
+  // páginas del sitio que calzan con la keyword (última auditoría + Search Console): gratis, sin consultar Google
+  useEffect(() => {
+    if (kw.trim().length < 3) return setSugg(null);
+    const t = setTimeout(() => api(`/api/p/${id}/content/suggest?keyword=${encodeURIComponent(kw.trim())}`).then(setSugg).catch(() => setSugg(null)), 400);
+    return () => clearTimeout(t);
+  }, [kw, id]);
+  const home = isHome(url);
+  const options = (sugg?.suggestions ?? []).filter((s) => !s.home && s.url !== url);
+  const submit = () => {
+    if (home && kw.trim() && !confirm(`La URL que pusiste es la página de inicio de ${project?.domain ?? "tu sitio"}.\n\nPara una keyword como «${kw.trim()}» Google suele mostrar una página específica (ficha, categoría o artículo), no la portada. ${options.length ? "Arriba te sugerimos páginas de tu sitio que calzan mejor." : ""}\n\n¿Analizar la página de inicio igual?`)) return;
+    analyze();
+  };
   return (
     <div className="space-y-4 p-4 md:p-6">
       <form
-        className="card flex flex-wrap gap-2 p-3"
+        className="card space-y-3 p-3"
         onSubmit={(e) => {
           e.preventDefault();
-          analyze();
+          submit();
         }}
       >
-        <input className="input min-w-[280px] flex-[2]" placeholder={`https://${project?.domain ?? ""}/…`} value={url} onChange={(e) => setUrl(e.target.value)} required />
-        <input className="input min-w-[200px] flex-1" placeholder="keyword objetivo (ej: torre montessori)" value={kw} onChange={(e) => setKw(e.target.value)} required />
-        <select className="input w-auto" value={pageKind} onChange={e=>setPageKind(e.target.value)} aria-label="Tipo de página"><option value="">Automático según página y SERP</option><option value="article">Artículo</option><option value="listing">Categoría / listado</option><option value="landing">Landing</option><option value="product">Producto</option></select>
-        <button className="btn-p" disabled={analyzing}><Icon name="play" />{analyzing ? <><Spinner className="h-3.5 w-3.5" />Enviando…</> : "Analizar"}</button>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="min-w-[200px] flex-1 space-y-1">
+            <span className="text-xs font-medium text-ink-600 dark:text-ink-300">Keyword objetivo</span>
+            <input className="input" placeholder="ej: torre montessori" value={kw} onChange={(e) => setKw(e.target.value)} required />
+          </label>
+          <label className="min-w-[280px] flex-[2] space-y-1">
+            <span className="text-xs font-medium text-ink-600 dark:text-ink-300">Página a optimizar (URL completa, no solo el dominio)</span>
+            <input className="input" placeholder={`https://${project?.domain ?? ""}/producto/…`} value={url} onChange={(e) => setUrl(e.target.value)} required />
+          </label>
+          <select className="input w-auto" value={pageKind} onChange={e=>setPageKind(e.target.value)} aria-label="Tipo de página"><option value="">Automático según página y SERP</option><option value="article">Artículo</option><option value="listing">Categoría / listado</option><option value="landing">Landing</option><option value="product">Producto</option></select>
+          <button className="btn-p" disabled={analyzing}><Icon name="play" />{analyzing ? <><Spinner className="h-3.5 w-3.5" />Enviando…</> : "Analizar"}</button>
+        </div>
+        {options.length > 0 && (
+          <div className="text-sm">
+            <div className="text-xs text-ink-500">Páginas de tu sitio que calzan con «{kw.trim()}»{sugg?.crawled ? " (según tu última auditoría y Search Console)" : " (según Search Console)"}:</div>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {options.map((s) => (
+                <button key={s.url} type="button" onClick={() => setUrl(s.url)} className="max-w-full truncate rounded-md border border-ink-200 px-2 py-1 text-left text-xs transition hover:border-acc hover:text-acc dark:border-ink-700" title={s.title ?? s.url}>
+                  {pathOf(s.url)}
+                  {s.impressions ? <span className="text-ink-400"> · {fmt(s.impressions)} impresiones</span> : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {home && kw.trim().length >= 3 && (
+          <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
+            Estás por analizar la <b>página de inicio</b>. Para «{kw.trim()}» Google suele mostrar una página específica (ficha, categoría o artículo).{" "}
+            {options.length ? "Elige una de las sugeridas arriba." : sugg?.crawled ? "No encontramos una página de tu sitio que calce: quizás convenga crearla." : "Pega la URL de la página específica o corre una auditoría para que te sugiramos."}
+          </div>
+        )}
         {target?.gscUrl && (
           <div className={`w-full rounded-lg px-3 py-2 text-sm ${target.mismatch && url ? "bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200" : "bg-ink-50 text-ink-700 dark:bg-ink-800 dark:text-ink-200"}`}>
             {target.mismatch && url ? "Ojo: para esta keyword Google ya muestra otra URL tuya: " : "Para esta keyword ya rankea: "}

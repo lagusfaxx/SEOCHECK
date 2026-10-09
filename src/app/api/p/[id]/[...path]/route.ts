@@ -17,6 +17,7 @@ import { onboarding } from "@/lib/onboarding";
 import { gscAvailable, gscSites, indexNow, resolveGscProperty } from "@/lib/providers/google";
 import { disconnect, GscNotConnected, oauthConfigured, startUrl } from "@/lib/gsc-oauth";
 import { gscTargetFor, makeBrief, type ContentResult } from "@/lib/content/analyze";
+import { pageSuggestions } from "@/lib/content/suggest";
 import { parseKeywordPlannerCsv } from "@/lib/volume/csv";
 import { backfillVolumes, volumeChainStatus, writeCache } from "@/lib/volume/broker";
 import { env } from "@/lib/env";
@@ -322,6 +323,7 @@ const GETS: Record<string, H> = {
   "report/last": async ({ id }) => db.jobRun.findFirst({ where: { projectId: id, kind: QUEUES.full }, orderBy: { createdAt: "desc" } }),
   /** Para el formulario de Contenido: qué URL ya rankea para la keyword en Search Console. */
   "content/target": async ({ id, url }) => gscTargetFor(id, url.searchParams.get("keyword") ?? "", url.searchParams.get("url") || undefined),
+  "content/suggest": async ({ id, url }) => pageSuggestions(id, url.searchParams.get("keyword") ?? ""),
   "content/one": async ({ id, url }) => {
     const { project: _p, ...a } = await ownContent(id, url.searchParams.get("cid"));
     return a;
