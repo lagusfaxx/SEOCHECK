@@ -1,12 +1,13 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useProject } from "@/components/Shell";
 import { api, contentScoreLabel, Empty, fmt, Icon, Score, useAction, useApi, fmtDate, Spinner } from "@/components/ui";
+import { canSubmit, initialTarget, lowRelevanceWarning, targetReducer } from "@/lib/content/target-state";
 
 type Suggestion = { url: string; title: string | null; home: boolean; impressions?: number; source: string };
-type SuggestResult = { suggestions: Suggestion[]; known: boolean; discovered: "sitemap" | "minicrawl" | null; scanned: number };
+type SuggestResult = { suggestions: Suggestion[]; known: boolean; discovered: "sitemap" | "minicrawl" | null; scanned: number; kw: string };
 const SOURCE_NOTE: Record<string, string> = {
   known: "según tu última auditoría y Search Console",
   sitemap: "según el sitemap de tu sitio",
@@ -37,13 +38,17 @@ export default function ContentList() {
   const { id, project, refreshJobs } = useProject();
   const router = useRouter();
   const { data, mutate } = useApi<any[]>(`/api/p/${id}/content`, { refreshInterval: (d?: any[]) => (d?.some((c) => !["done", "error"].includes(c.status)) ? 3000 : 0) });
-  // se puede llegar con la keyword y la URL prellenadas (p. ej. desde «Analizar esa página»)
-  const [url, setUrl] = useState("");
-  const [kw, setKw] = useState("");
+  // keyword + página, recordando si la URL vino de una sugerencia (se limpia si cambia la keyword) o se escribió a mano
+  const [t, dispatch] = useReducer(targetReducer, initialTarget);
+  const { url, keyword: kw } = t;
+  const setKw = (keyword: string) => dispatch({ type: "keyword", keyword });
+  const pick = (u: string) => dispatch({ type: "pickSuggestion", url: u });
+  const chipsRef = useRef<HTMLDivElement>(null);
+  // se puede llegar con la keyword y la URL prellenadas (p. ej. desde «Analizar esa página»): cuenta como sugerida para esa keyword
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     if (q.get("keyword")) setKw(q.get("keyword")!);
-    if (q.get("url")) setUrl(q.get("url")!);
+    if (q.get("url")) pick(q.get("url")!);
   }, []);
   const [pageKind,setPageKind] = useState("");
   const [analyze, analyzing] = useAction(async () => {
@@ -68,7 +73,7 @@ export default function ContentList() {
     const t = setTimeout(() => {
       setSearching(true);
       api<SuggestResult>(`/api/p/${id}/content/suggest?keyword=${encodeURIComponent(kw.trim())}`)
-        .then((r) => alive && setSugg(r))
+        .then((r) => alive && setSugg({ ...r, kw: kw.trim() }))
         .catch(() => alive && setSugg(null))
         .finally(() => alive && setSearching(false));
     }, 500);
@@ -78,12 +83,18 @@ export default function ContentList() {
     };
   }, [kw, id]);
   const home = isHome(url);
-  const all = sugg?.suggestions ?? [];
+  // solo sirven las sugerencias calculadas para la keyword actual (las de la anterior pueden seguir en pantalla durante la espera)
+  const fresh = sugg && sugg.kw === kw.trim() ? sugg : null;
+  const all = fresh?.suggestions ?? [];
+  const suggestionUrls = all.map((s) => s.url);
+  const lowRel = lowRelevanceWarning(t, suggestionUrls);
+  const can = canSubmit(t, suggestionUrls);
   const options = all.filter((s) => s.url !== url);
   // la portada solo merece aviso si no es la página que mejor calza con la keyword
   const homeIsBest = !!all[0]?.home;
   const warnHome = home && kw.trim().length >= 3 && !homeIsBest;
   const submit = () => {
+    if (!canSubmit(t, suggestionUrls).ok) return;
     if (warnHome && !confirm(`La URL que pusiste es la página de inicio de ${project?.domain ?? "tu sitio"}.\n\nPara una keyword como «${kw.trim()}» Google suele mostrar una página específica (ficha, categoría o artículo). ${options.length ? "Arriba hay páginas de tu sitio que calzan mejor." : ""}\n\n¿Analizar la página de inicio igual?`)) return;
     analyze();
   };
@@ -115,30 +126,48 @@ export default function ContentList() {
           </label>
           <label className="min-w-[280px] flex-[2] space-y-1">
             <span className="text-xs font-medium text-ink-600 dark:text-ink-300">Página a optimizar (URL completa, no solo el dominio)</span>
-            <input className="input" placeholder={`https://${project?.domain ?? ""}/producto/…`} value={url} onChange={(e) => setUrl(e.target.value)} required />
+            <input className="input" placeholder={`https://${project?.domain ?? ""}/producto/…`} value={url} onChange={(e) => dispatch({ type: "typeUrl", url: e.target.value })} required />
           </label>
           <select className="input w-auto" value={pageKind} onChange={e=>setPageKind(e.target.value)} aria-label="Tipo de página"><option value="">Automático según página y SERP</option><option value="article">Artículo</option><option value="listing">Categoría / listado</option><option value="landing">Landing</option><option value="product">Producto</option></select>
-          <button className="btn-p" disabled={analyzing}><Icon name="play" />{analyzing ? <><Spinner className="h-3.5 w-3.5" />Enviando…</> : "Analizar"}</button>
+          <button className="btn-p" disabled={analyzing || !can.ok} title={can.ok ? undefined : can.reason}><Icon name="play" />{analyzing ? <><Spinner className="h-3.5 w-3.5" />Enviando…</> : "Analizar"}</button>
         </div>
-        {searching && !sugg && kw.trim().length >= 3 && (
+        {t.cleared && !url && (
+          <div className="rounded-lg bg-ink-50 px-3 py-2 text-sm text-ink-700 dark:bg-ink-800 dark:text-ink-200">
+            Cambiaste la keyword: quitamos la página que habías elegido para la anterior. Elige una página para «{kw.trim()}».
+          </div>
+        )}
+        {(searching || (sugg && !fresh)) && !fresh && kw.trim().length >= 3 && (
           <div className="flex items-center gap-2 text-xs text-ink-500"><Spinner className="h-3 w-3" />Buscando páginas de tu sitio que calcen…</div>
         )}
-        {sugg && kw.trim().length >= 3 && !all.length && !searching && (
+        {fresh && kw.trim().length >= 3 && !all.length && !searching && (
           <div className="text-xs text-ink-500">
-            No encontramos una página claramente relacionada con «{kw.trim()}»{sugg.scanned ? ` entre ${fmt(sugg.scanned)} páginas revisadas` : ""}. Pega la URL que quieres optimizar.
+            No encontramos una página claramente relacionada con «{kw.trim()}»{fresh.scanned ? ` entre ${fmt(fresh.scanned)} páginas revisadas` : ""}. Pega la URL que quieres optimizar.
           </div>
         )}
         {options.length > 0 && (
-          <div className="text-sm">
-            <div className="text-xs text-ink-500">Páginas de tu sitio que calzan con «{kw.trim()}» ({SOURCE_NOTE[sugg?.known ? "known" : sugg?.discovered ?? "known"]}):</div>
+          <div className="text-sm" ref={chipsRef}>
+            <div className="text-xs text-ink-500">Páginas de tu sitio que calzan con «{kw.trim()}» ({SOURCE_NOTE[fresh?.known ? "known" : fresh?.discovered ?? "known"]}):</div>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {options.map((s) => (
-                <button key={s.url} type="button" onClick={() => setUrl(s.url)} className="max-w-full truncate rounded-md border border-ink-200 px-2 py-1 text-left text-xs transition hover:border-acc hover:text-acc dark:border-ink-700" title={s.title ?? s.url}>
+                <button key={s.url} type="button" onClick={() => pick(s.url)} className="max-w-full truncate rounded-md border border-ink-200 px-2 py-1 text-left text-xs transition hover:border-acc hover:text-acc dark:border-ink-700" title={s.title ?? s.url}>
                   {s.home ? "página de inicio" : pathOf(s.url)}
                   {s.impressions ? <span className="text-ink-400"> · {fmt(s.impressions)} impresiones</span> : null}
                 </button>
               ))}
             </div>
+          </div>
+        )}
+        {lowRel && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
+            <span className="min-w-0 flex-1">Esta página parece poco relacionada con la nueva keyword.</span>
+            {options.length > 0 ? (
+              <button type="button" className="btn text-xs" onClick={() => { chipsRef.current?.scrollIntoView({ block: "nearest" }); chipsRef.current?.querySelector("button")?.focus(); }}>
+                Elegir una página sugerida
+              </button>
+            ) : fresh && !searching ? (
+              <span className="text-xs">No hay páginas sugeridas para esta keyword.</span>
+            ) : null}
+            <button type="button" className="btn text-xs" onClick={() => dispatch({ type: "keepManual" })}>Mantener esta URL</button>
           </div>
         )}
         {warnHome && (
@@ -152,7 +181,7 @@ export default function ContentList() {
             {target.mismatch && url ? "Ojo: para esta keyword Google ya muestra otra URL tuya: " : "Para esta keyword ya rankea: "}
             <b className="break-all">{target.gscUrl}</b> ({fmt(target.impressions)} impresiones · posición {fmt(target.position, 1)})
             {url !== target.gscUrl && (
-              <button type="button" className="btn-g ml-2 text-xs text-acc" onClick={() => setUrl(target.gscUrl!)}>usar esta</button>
+              <button type="button" className="btn-g ml-2 text-xs text-acc" onClick={() => pick(target.gscUrl!)}>usar esta</button>
             )}
           </div>
         )}
