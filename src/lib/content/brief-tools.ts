@@ -113,6 +113,8 @@ export function implementationMarkdown(a: {
     `# Implementar brief: ${a.keyword}`,
     `URL: ${a.url}`,
     "",
+    "Instrucciones de implementación generadas por FSV Search. Sirven para la persona o el asistente de programación que trabaje en el sitio.",
+    "",
     "Trabaja en el repositorio del sitio. Inspecciona su plantilla y conserva datos reales del negocio. No inventes precios, garantías ni enlaces. Confirma las recomendaciones contra el código existente.",
     "",
     `Title: ${(b as any).title ?? b.titles?.[0] ?? ""}`,

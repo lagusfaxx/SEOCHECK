@@ -1,5 +1,6 @@
 "use client";
 import { ContentTools } from "@/components/ContentTools";
+import { commonSchema, improvements, LEVEL_DOT, LEVEL_LABEL } from "@/lib/content/improvements";
 import { statusLabel } from "@/lib/status";
 import { useSWRConfig } from "swr";
 import { useEffect, useRef, useState } from "react";
@@ -7,7 +8,7 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type D
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useProject } from "@/components/Shell";
-import { api, contentScoreLabel, CopyBtn, cx, Empty, fmt, Hint, Icon, Score, Tabs, useApi, useLocal, Spinner } from "@/components/ui";
+import { api, contentScoreLabel, CopyBtn, cx, Drawer, Empty, fmt, Hint, Icon, Score, Tabs, useAction, useApi, useLocal, Spinner } from "@/components/ui";
 
 type Block = { id: string; tag: "h2" | "h3"; text: string; notes?: string; state?: "optional" | "required" | "removed" };
 type Brief = {
@@ -118,48 +119,7 @@ function Diagnosis({ cid, keyword, googleType, mineType, onBrief, onContinue }: 
   );
 }
 
-type Level = "bad" | "warn" | "good";
-const DOT: Record<Level, string> = { bad: "bg-rose-500", warn: "bg-amber-400", good: "bg-emerald-500" };
-const lvl = (v: number, m: number): Level => (m && v / m >= 0.8 ? "good" : m && v / m >= 0.5 ? "warn" : "bad");
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-const quote = (xs: string[]) => xs.map((x) => `«${x}»`).join(", ");
-
-/** «Qué debes mejorar»: el desglose del puntaje traducido a frases. Los puntos quedan como dato secundario. */
-function improvements(r: any): { level: Level; area: string; title: string; detail: string; pts: string }[] {
-  const listing = r.pageType === "listing";
-  const b = r.breakdown ?? {};
-  const max = { terms: listing ? 50 : 40, length: 15, sections: listing ? 10 : 20, paa: 15, schema: 10 };
-  const missTerms = (r.terms ?? []).filter((t: any) => t.missing).length;
-  const missSec = (r.sections ?? []).filter((s: any) => !s.covered).map((s: any) => s.label);
-  const paa = r.paa ?? [];
-  const missPaa = paa.filter((p: any) => !p.answered).map((p: any) => p.q);
-  const n = (r.competitors ?? []).length || 10;
-  const common = (r.schema ?? []).filter((s: any) => s.count >= Math.ceil(n * 0.3));
-  const missSchema = common.filter((s: any) => !s.mine).map((s: any) => s.type);
-  const words = r.mine?.editorial ?? r.mine?.words ?? 0;
-  const out = [
-    lvl(b.terms ?? 0, max.terms) === "good"
-      ? { level: "good" as Level, area: "Contenido", title: "Cubres los temas principales", detail: "Usas los términos que más se repiten en las páginas mejor posicionadas." }
-      : { level: lvl(b.terms ?? 0, max.terms), area: "Contenido", title: "Faltan temas importantes", detail: missTerms ? `${plural(missTerms, "término relevante aparece", "términos relevantes aparecen")} en los competidores y no en tu página.` : "Usas los términos del top 10, pero bastante menos que los competidores." },
-    missSec.length
-      ? { level: lvl(b.sections ?? 0, max.sections), area: "Estructura", title: `Falta${missSec.length > 1 ? "n" : ""} ${plural(missSec.length, "sección importante", "secciones importantes")}`, detail: `Google espera contenido sobre ${quote(missSec.slice(0, 3))}${missSec.length > 3 ? " y otras" : ""}.` }
-      : { level: "good" as Level, area: "Estructura", title: "Estructura completa", detail: "Tu página cubre las secciones que se repiten en el top 10." },
-    missSchema.length
-      ? { level: (b.schema ?? 0) >= max.schema * 0.5 ? ("warn" as Level) : ("bad" as Level), area: "Schema", title: "Datos estructurados mejorables", detail: `Tus competidores usan principalmente ${missSchema.join(" y ")}; tu página no.` }
-      : { level: "good" as Level, area: "Schema", title: common.length ? "Datos estructurados correctos" : "Sin schema en común que imitar", detail: common.length ? `Usas ${common.map((s: any) => s.type).join(" y ")}, como los competidores.` : "Los competidores no comparten un tipo de datos estructurados." },
-    lvl(b.length ?? 0, max.length) === "good"
-      ? { level: "good" as Level, area: "Extensión", title: "Extensión correcta", detail: `${fmt(words)} palabras. No necesitas alargar el contenido solo por alargarlo.` }
-      : { level: lvl(b.length ?? 0, max.length), area: "Extensión", title: "Contenido corto", detail: `${fmt(words)} palabras; las páginas mejor posicionadas usan ~${fmt(r.targetWords)}.` },
-    missPaa.length
-      ? { level: lvl(b.paa ?? 0, max.paa), area: "Preguntas", title: `${plural(missPaa.length, "pregunta de Google", "preguntas de Google")} sin responder`, detail: `Por ejemplo: ${quote(missPaa.slice(0, 2))}.` }
-      : { level: "good" as Level, area: "Preguntas", title: "Preguntas cubiertas", detail: paa.length ? "No encontramos preguntas importantes pendientes." : "Google no muestra preguntas para esta búsqueda." },
-  ];
-  const pts: Record<string, string> = {
-    Contenido: `${b.terms ?? 0} de ${max.terms} pts`, Estructura: `${b.sections ?? 0} de ${max.sections} pts`, Schema: `${b.schema ?? 0} de ${max.schema} pts`, Extensión: `${b.length ?? 0} de ${max.length} pts`, Preguntas: `${b.paa ?? 0} de ${max.paa} pts`,
-  };
-  const order: Record<Level, number> = { bad: 0, warn: 1, good: 2 };
-  return out.map((x) => ({ ...x, pts: pts[x.area] })).sort((a, b) => order[a.level] - order[b.level]);
-}
 
 const median = (xs: number[]) => {
   const s = [...xs].sort((a, b) => a - b);
@@ -176,7 +136,7 @@ function GoogleSummary({ r }: { r: any }) {
   const words = median(comps.map((c: any) => c.editorial ?? c.words ?? 0));
   const h2 = comps.map((c: any) => c.h2 ?? 0).sort((a: number, b: number) => a - b);
   const lo = h2[Math.floor(h2.length * 0.2)] ?? 0, hi = h2[Math.floor(h2.length * 0.8)] ?? 0;
-  const common = (r.schema ?? []).filter((s: any) => s.count >= Math.ceil(comps.length * 0.3)).map((s: any) => s.type);
+  const common = commonSchema(r).map((s) => s.type);
   const mineSchema: string[] = r.mine?.schema ?? [];
   const lines = [
     topType ? `${topN} de ${comps.length} resultados analizados son ${TYPE_PLURAL[topType] ?? topType}.` : null,
@@ -203,6 +163,52 @@ function GoogleSummary({ r }: { r: any }) {
 
 const pathOf = (u: string) => u.replace(/^https?:\/\/[^/]+/, "") || "/";
 
+/** Antes de descargar: qué cambios incluye el archivo de instrucciones y a dónde va. */
+function ImplementationSummary({ brief, url, onDownload }: { brief: Brief; url: string; onDownload: () => Promise<void> }) {
+  const [download, busy] = useAction(onDownload);
+  const heads = (brief.outline ?? []).filter((b) => b.state !== "removed");
+  const removed = (brief.outline ?? []).filter((b) => b.state === "removed").length;
+  const required = heads.filter((b) => b.state === "required").length;
+  const faq = (brief.faq ?? []).filter((f) => f.q && f.a).length;
+  const listing = brief.kind === "listing";
+  const rows: [string, string][] = [
+    ["Título", brief.title ?? brief.titles?.[0] ?? "—"],
+    ["Meta description", brief.meta ?? brief.metas?.[0] ?? "—"],
+    ...(listing
+      ? ([
+          ["Intro del listado", brief.intro ? plural(brief.intro.trim().split(/\s+/).length, "palabra", "palabras") : "—"],
+          ["Filtros", plural((brief.filters ?? []).length, "filtro", "filtros")],
+          ["Enlaces internos", plural((brief.links ?? []).length, "enlace", "enlaces")],
+        ] as [string, string][])
+      : ([["Estructura", `${plural(heads.length, "encabezado", "encabezados")} (${required} ${required === 1 ? "obligatorio" : "obligatorios"})${removed ? ` · ${removed} marcado${removed === 1 ? "" : "s"} para eliminar` : ""}`]] as [string, string][])),
+    ["Preguntas frecuentes", faq ? `${plural(faq, "pregunta", "preguntas")} con respuesta y su JSON-LD` : "—"],
+    ...((brief.notes ?? []).length ? ([["Notas", plural(brief.notes!.length, "indicación", "indicaciones")]] as [string, string][]) : []),
+  ];
+  return (
+    <div className="mt-8 space-y-5">
+      <div>
+        <h2 className="text-lg font-semibold">Preparar implementación</h2>
+        <p className="mt-1 text-sm text-ink-500">Estos cambios irán en el archivo para la página <span className="break-all">{url.replace(/^https?:\/\//, "")}</span>.</p>
+      </div>
+      <dl className="divide-y divide-ink-100 rounded-lg border border-ink-200 text-sm dark:divide-ink-800 dark:border-ink-800">
+        {rows.map(([k, v]) => (
+          <div key={k} className="grid gap-1 px-3 py-2.5 sm:grid-cols-[150px_1fr]">
+            <dt className="text-ink-500">{k}</dt>
+            <dd className="break-words">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="rounded-lg bg-ink-50 px-3 py-2.5 text-sm dark:bg-ink-800/50">
+        <div className="font-medium">Instrucciones de implementación (.md)</div>
+        <p className="text-ink-500">Un archivo Markdown con los cambios y cómo validarlos. Sirve para tu equipo o para cualquier asistente de programación.</p>
+      </div>
+      <button className="btn-p" disabled={busy} onClick={() => download()}>
+        {busy ? <Spinner className="h-3.5 w-3.5" /> : <Icon name="doc" />}Descargar instrucciones (.md)
+      </button>
+    </div>
+  );
+}
+
 export default function ContentDetail({ params }: { params: { cid: string } }) {
   const { id, refreshJobs } = useProject();
   const {mutate:invalidate}=useSWRConfig();
@@ -214,6 +220,7 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
   const [saving, setSaving] = useState(false);
   // «Continuar con esta página»: el usuario ya vio el diagnóstico y decidió seguir (se recuerda por análisis)
   const [continued, setContinued] = useLocal<boolean>(`content:continue:${params.cid}`, false);
+  const [prep, setPrep] = useState(false);
   const loaded = useRef<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -274,7 +281,7 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
 
   const fixType = r.pageType && r.mine?.type && r.mine.type !== r.pageType;
   const problem = fixType && !continued;
-  const items = improvements(r);
+  const items = improvements(r, { ready: !!r.breakdown });
   const counts = {
     terms: (r.terms ?? []).filter((t: any) => t.missing).length,
     sections: (r.sections ?? []).filter((x: any) => !x.covered).length,
@@ -347,14 +354,14 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
           {items.map((it) => (
             <li key={it.area} className="grid gap-1 px-4 py-3 sm:grid-cols-[130px_1fr_auto] sm:items-baseline sm:gap-4">
               <span className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-ink-500">
-                <span className={cx("h-2.5 w-2.5 shrink-0 rounded-full", DOT[it.level])} aria-label={it.level === "good" ? "bien" : it.level === "warn" ? "mejorable" : "prioritario"} />
+                <span className={cx("h-2.5 w-2.5 shrink-0 rounded-full", LEVEL_DOT[it.level])} aria-label={LEVEL_LABEL[it.level]} />
                 {it.area}
               </span>
               <div>
                 <div className="font-medium">{it.title}</div>
                 <div className="text-sm text-ink-500">{it.detail}</div>
               </div>
-              <span className="text-xs tabular-nums text-ink-400">{it.pts}</span>
+              <span className="text-xs tabular-nums text-ink-400">{it.points == null ? "—" : `${it.points} de ${it.max} pts`}</span>
             </li>
           ))}
         </ul>
@@ -371,9 +378,9 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
           </div>
           <CopyBtn text={md} />
           <button className="btn" onClick={async () => { loaded.current = null; await api(`/api/p/${id}/content/rebrief`, "POST", { cid: data.id }); mutate(); refreshJobs(); }}><Icon name="refresh" />Regenerar</button>
-          <a className="btn-p" href={`/api/p/${id}/content/implementation?cid=${params.cid}`} title="Descarga las instrucciones en Markdown para tu agente de código (Claude Code)">
+          <button className="btn-p" disabled={!brief} onClick={() => setPrep(true)}>
             Preparar implementación
-          </a>
+          </button>
         </div>
         {saveError && <p role="alert" className="text-rose-700">No se pudo guardar: {saveError}</p>}
         {!brief ? (
@@ -618,6 +625,14 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
           </div>
         </div>
       </details>
+
+      <Drawer open={prep && !!brief} onClose={() => setPrep(false)}>
+        {brief && <ImplementationSummary brief={brief} url={data.url} onDownload={async () => {
+          await api(`/api/p/${id}/content`, "PATCH", { cid: data.id, brief });
+          window.location.href = `/api/p/${id}/content/implementation?cid=${params.cid}`;
+          setPrep(false);
+        }} />}
+      </Drawer>
     </div>
   );
 }

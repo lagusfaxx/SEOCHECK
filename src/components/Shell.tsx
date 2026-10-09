@@ -26,8 +26,8 @@ const NAV: { group: string; items: NavItem[] }[] = [
       },
       {
         href: "/report", icon: "doc", label: "Informe", desc: "Todo de una + informe", jobs: ["report.full"],
-        intro: "Corre todos los módulos de una vez y arma un informe con las tareas ordenadas por prioridad. Está escrito para pasárselo a tu agente de código (por ejemplo, Claude Code) y que aplique las correcciones en el sitio.",
-        steps: ["Elige qué módulos correr. Keywords viene apagado porque gasta créditos de Serpent.", "Aprieta Correr todo. Tarda unos minutos; abajo del botón ves cada paso en verde, gris (saltado) o rojo.", "Copia el informe o descárgalo en .md y pégaselo a tu agente de código."],
+        intro: "Corre todos los módulos de una vez y arma un informe con las tareas ordenadas por prioridad. Está escrito para que tu equipo o tu asistente de programación aplique las correcciones en el sitio.",
+        steps: ["Elige qué módulos correr. Keywords viene apagado porque gasta créditos de Serpent.", "Aprieta Correr todo. Tarda unos minutos; abajo del botón ves cada paso en verde, gris (saltado) o rojo.", "Copia el informe o descárgalo en .md y entrégaselo a tu equipo o a tu asistente de programación."],
       },
     ],
   },
