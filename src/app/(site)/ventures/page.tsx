@@ -51,14 +51,14 @@ export default function VenturesPage() {
             <h1 className="mt-6 max-w-4xl font-display text-[2.6rem] font-semibold leading-[1.02] tracking-[-0.035em] md:text-[4.2rem]">¿Tienes una idea? La construimos contigo.</h1>
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-fsv-muted">Como socios, con $0 de entrada y tú como socio mayoritario. O por servicio, con precio cerrado antes de empezar.</p>
             <div className="mt-9 flex flex-wrap gap-3">
-              <a href="#postular" className="inline-flex items-center gap-2 rounded-lg bg-fsv-violet px-5 py-3 font-medium text-white transition hover:brightness-110">
+              <a href="#postular" className="inline-flex items-center gap-2 rounded-sm bg-fsv-violet px-5 py-3 font-medium text-white transition hover:brightness-110">
                 Cuéntanos tu idea <span aria-hidden>→</span>
               </a>
-              <a href="#como-funciona" className="rounded-lg border border-fsv-ink/15 bg-white px-5 py-3 font-medium transition hover:border-fsv-ink/40">
+              <a href="#como-funciona" className="rounded-sm border border-fsv-ink/15 bg-white px-5 py-3 font-medium transition hover:border-fsv-ink/40">
                 Cómo funciona
               </a>
             </div>
-            <dl className="mt-12 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-fsv-line bg-fsv-line md:mt-16 lg:grid-cols-4">
+            <dl className="mt-12 grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-fsv-line bg-fsv-line md:mt-16 lg:grid-cols-4">
               {STATS.map((st) => (
                 <div key={st.short} className="bg-white p-5 md:p-6">
                   <dt className="sr-only">{st.long}</dt>
@@ -74,7 +74,7 @@ export default function VenturesPage() {
           <div className="mx-auto max-w-6xl px-4 py-24 md:px-6 md:py-32">
             <Kicker>Así funciona</Kicker>
             <h2 className="mt-6 font-display text-4xl font-semibold tracking-[-0.03em] md:text-6xl">De la idea a una propuesta, en tres semanas.</h2>
-            <ol className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-fsv-line bg-fsv-line sm:grid-cols-2 lg:grid-cols-4">
+            <ol className="mt-14 grid gap-px overflow-hidden rounded-sm border border-fsv-line bg-fsv-line sm:grid-cols-2 lg:grid-cols-4">
               {STEPS.map(([t, d], i) => (
                 <li key={t} className="bg-white p-8">
                   <div className="font-mono text-sm text-fsv-violet">0{i + 1}</div>
@@ -90,7 +90,7 @@ export default function VenturesPage() {
           <div className="mx-auto max-w-6xl px-4 py-24 md:px-6 md:py-32">
             <Kicker>Dos formas de trabajar</Kicker>
             <div className="mt-10 grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-              <article className="rounded-2xl border border-fsv-ink bg-white p-8 md:p-10">
+              <article className="rounded-sm border border-fsv-ink bg-white p-8 md:p-10">
                 <div className="flex flex-wrap items-baseline justify-between gap-3">
                   <h3 className="font-display text-3xl font-semibold tracking-tight">Como socios</h3>
                   <span className="rounded-full bg-fsv-violet px-3 py-1 font-mono text-xs uppercase tracking-wider text-white">$0 de entrada</span>
@@ -104,17 +104,17 @@ export default function VenturesPage() {
                   ))}
                 </ul>
                 <div className="mt-8 grid gap-4 md:grid-cols-2">
-                  <div className="rounded-xl bg-emerald-50 p-5">
+                  <div className="rounded-sm bg-emerald-50 p-5">
                     <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-emerald-700">Si funciona</div>
                     <p className="mt-2 text-sm leading-relaxed">La empresa crece, la tecnología pasa a ser de tu empresa al cumplir los hitos (siempre antes de que entre un inversionista) y ambos ganamos con nuestra parte.</p>
                   </div>
-                  <div className="rounded-xl bg-fsv-bg p-5">
+                  <div className="rounded-sm bg-fsv-bg p-5">
                     <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-fsv-muted">Si no funciona en el plazo acordado</div>
                     <p className="mt-2 text-sm leading-relaxed">Se cierra, lo que construimos vuelve a nosotros y no nos debes nada. Perdimos los dos el tiempo, pero no quedas endeudado.</p>
                   </div>
                 </div>
               </article>
-              <article className="rounded-2xl border border-fsv-line bg-white p-8 md:p-10">
+              <article className="rounded-sm border border-fsv-line bg-white p-8 md:p-10">
                 <div className="flex flex-wrap items-baseline justify-between gap-3">
                   <h3 className="font-display text-3xl font-semibold tracking-tight">Por servicio</h3>
                   <span className="rounded-full bg-fsv-bg px-3 py-1 font-mono text-xs uppercase tracking-wider text-fsv-muted">Precio fijo</span>
@@ -129,7 +129,7 @@ export default function VenturesPage() {
         <section className="border-t border-fsv-line bg-white">
           <div className="mx-auto max-w-6xl px-4 py-24 md:px-6">
             <h2 className="font-display text-4xl font-semibold tracking-[-0.03em] md:text-5xl">Lo que pone cada uno</h2>
-            <div className="mt-12 grid overflow-hidden rounded-2xl border border-fsv-line md:grid-cols-2">
+            <div className="mt-12 grid overflow-hidden rounded-sm border border-fsv-line md:grid-cols-2">
               {(["Tú, el fundador", "Nosotros"] as const).map((who, i) => (
                 <div key={who} className={i ? "border-t border-fsv-line bg-fsv-bg md:border-l md:border-t-0" : "bg-white"}>
                   <div className="border-b border-fsv-line px-8 py-4 font-mono text-xs uppercase tracking-[0.18em] text-fsv-muted">{who}</div>

@@ -35,8 +35,23 @@ export const STATS: { value: string; short: string; long: string }[] = [
   { value: "+20", short: "Negocios", long: "negocios construidos y operados por nuestro equipo" },
 ];
 
-/** Los 3 casos de la home: muestran cosas distintas (e-commerce, software, security). */
-export const FEATURED = ["Nomadbrew", "Uzeed", "Centinela"];
+/** Franja bajo el hero: productos y negocios construidos por FSV (evidencia antes de los servicios). */
+export const PROOF: { name: string; fact: string; href: string; logo: string | null; external?: boolean }[] = [
+  { name: "FSV Search", fact: "Plataforma de SEO técnico y search intelligence", href: "/search", logo: "/brand/fsv-search.png" },
+  { name: "Uzeed", fact: "Directorio en Next.js, infraestructura autoescalable", href: "https://uzeed.cl", logo: "/brand/clients/uzeed.png", external: true },
+  { name: "Centinela", fact: "Plataforma propia de pruebas de seguridad", href: "/work", logo: null },
+  { name: "Nomadbrew", fact: "Importación y e-commerce en Mercado Libre Full", href: "/work", logo: "/brand/clients/nomadbrew.png" },
+];
+
+/** Capacidades como hechos, cada una con proyectos reales que la prueban. */
+export const CAPABILITIES = [
+  { id: "software", n: "01", area: "Software", fact: "Desarrollo de plataformas y SaaS.", detail: "Aplicaciones web, sistemas internos, APIs e integraciones.", proof: ["Barzuo", "Uzeed"] },
+  { id: "security", n: "02", area: "Security", fact: "Pentesting y seguridad de aplicaciones.", detail: "Aplicaciones web, APIs y evaluación técnica con autorización firmada.", proof: ["Centinela", "Rent A Hacker"] },
+  { id: "growth", n: "03", area: "Growth", fact: "SEO técnico y search intelligence.", detail: "Auditoría, datos de Search Console, keywords, rankings y contenido.", proof: ["FSV Search"] },
+];
+
+/** Los 3 casos de la home (distintos de la franja de evidencia): software, security y operación. */
+export const FEATURED = ["Barzuo", "ANDES Technologies", "TAUPOC"];
 
 export const PLATFORMS: { name: string; file: string; use: string; h: string }[] = [
   { name: "Mercado Público", file: "mercado-publico.png", use: "Licitaciones", h: "h-7" },
