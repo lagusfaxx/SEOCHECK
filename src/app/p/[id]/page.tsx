@@ -7,7 +7,8 @@ import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@d
 import { CSS } from "@dnd-kit/utilities";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useProject } from "@/components/Shell";
-import { api, cx, Delta, Empty, fmt, Icon, IconBadge, Score, Stat, useApi, useLocal, Spinner } from "@/components/ui";
+import { api, cx, Delta, Empty, fmt, Icon, IconBadge, Score, Stat, Hint, useApi, useLocal, Spinner } from "@/components/ui";
+import { HEALTH_HELP, healthLabel } from "@/lib/presentation";
 import { Coverage } from "@/components/Coverage";
 
 type W = { id: string; w: 1 | 2 | 3 };
@@ -88,8 +89,8 @@ function SetupBanner({ id }: { id: string }) {
   const done = Object.values(data.status).filter((s) => s === "done" || s === "skipped").length;
   const total = Object.keys(data.status).length;
   return (
-    <Link href={`/p/${id}/start`} className="anim-in group flex items-center gap-4 rounded-xl border border-acc/30 bg-gradient-to-r from-acc-soft to-white p-4 transition hover:shadow-md dark:from-acc/20 dark:to-ink-900">
-      <span className="ic-float"><IconBadge name="rocket" pulse /></span>
+    <Link href={`/p/${id}/start`} className="anim-in group flex items-center gap-4 rounded-xl border border-acc/30 bg-white p-4 transition hover:shadow-md dark:bg-ink-900">
+      <Icon name="check" className="h-5 w-5 shrink-0 text-ink-500"/>
       <div className="min-w-0 flex-1">
         <div className="font-semibold">Termina de configurar tu proyecto</div>
         <div className="text-sm text-ink-500">Llevas {done} de {total} pasos. Con todo listo, SEOCHECK prioriza con datos reales de Google.</div>
@@ -135,9 +136,9 @@ export default function Overview() {
             <Stat icon="key" label="Keywords" value={fmt(data?.keywords)} sub={`${fmt(data?.volume)} vol.`} hint="Keywords del último research y la suma de su volumen mensual de búsquedas." />
             <Stat icon="layers" label="Clusters" value={fmt(data?.clusters)} hint="Grupos de keywords que se atacan con una misma página." />
             <Stat icon="target" label="Trackeadas" value={fmt(data?.tracked)} sub={`${fmt(data?.top3)} top 3 · ${fmt(data?.top10)} top 10`} hint="Keywords a las que se les sigue la posición en Google, y cuántas están en el top 3 y top 10." />
-            <Stat icon="rank" label="Pos. media" value={fmt(data?.avgPos, 1)} hint="Posición promedio de las keywords trackeadas que aparecen en el top 100. Más bajo es mejor." />
-            <Stat icon="trend" label="Clicks 90d" value={fmt(sum("clicks"))} hint="Clics desde Google en los últimos 90 días (Search Console)." />
-            <Stat icon="eye" label="Impr. 90d" value={fmt(sum("impressions"))} hint="Veces que tu sitio apareció en resultados de Google en 90 días (Search Console)." />
+            <Stat icon="rank" label="Posición" value={fmt(data?.avgPos, 1)} hint="Posición promedio de las keywords monitoreadas que aparecen en el top 100. Más bajo es mejor." />
+            <Stat icon="trend" label="Clics" value={fmt(sum("clicks"))} hint="Clics desde Google en los últimos 90 días (Search Console)." />
+            <Stat icon="eye" label="Impresiones" value={fmt(sum("impressions"))} hint="Veces que tu sitio apareció en resultados de Google en 90 días (Search Console)." />
           </div>
           </div>,
         ];
@@ -157,7 +158,7 @@ export default function Overview() {
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <Empty key="g" compact icon="gsc" tone="info" title="Sin datos de Search Console"><button className="btn-p hov-spin mt-1" onClick={() => run("gsc/sync")}><Icon name="refresh" />Sincronizar</button></Empty>
+            <Empty key="g" compact icon="gsc" tone="info" title="Sin datos de Search Console">Conecta una propiedad y sincroniza sus datos.<Link className="btn mt-1" href={`/p/${id}/gsc`}>Abrir Search Console</Link><button className="btn-p hov-spin mt-1" onClick={() => run("gsc/sync")}><Icon name="refresh" />Sincronizar</button></Empty>
           ),
         ];
       case "health":
@@ -167,18 +168,18 @@ export default function Overview() {
             <Link key="h" href={`/p/${id}/audit`} className="flex items-center gap-4">
               <div className="flex flex-col items-center gap-1">
                 <Score value={st.health} size={84} />
-                <span className="text-[11px] text-ink-400">{st.health == null ? "sin puntaje" : "de 100"}</span>
+                <span className="text-xs text-ink-500">{healthLabel(st.health)} <Hint text={HEALTH_HELP}/></span>
               </div>
               {data.crawl.status === "partial" && <span className="chip !bg-amber-100 !text-amber-800" title={data.crawl.reason ?? ""}>parcial</span>}
               <div className="space-y-1 text-sm">
-                <div><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-rose-500" />{fmt(st.critical)}</div>
-                <div><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-amber-400" />{fmt(st.warning)}</div>
-                <div><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-sky-400" />{fmt(st.info)}</div>
+                <div>{fmt(st.critical)} errores</div>
+                <div>{fmt(st.warning)} advertencias</div>
+                <div>{fmt(st.info)} observaciones</div>
                 <div className="text-xs text-ink-400">{fmt(st.pages)} urls</div>
               </div>
             </Link>
           ) : (
-            <Empty key="h" compact icon="audit" tone="good" title="Aún no auditas el sitio"><button className="btn-p hov-nudge mt-1" onClick={() => run("audit")}><Icon name="play" />Crawlear</button></Empty>
+            <Empty key="h" compact icon="audit" tone="good" title="Aún no auditas el sitio"><button className="btn-p hov-nudge mt-1" onClick={() => run("audit")}><Icon name="play" />Analizar sitio</button></Empty>
           ),
         ];
       case "movers":
@@ -195,7 +196,7 @@ export default function Overview() {
               ))}
             </div>
           ) : (
-            <Empty key="m" compact icon="trend" title="Sin movimientos todavía"><Link className="btn mt-1" href={`/p/${id}/rank`}><Icon name="target" />Trackear keywords</Link></Empty>
+            <Empty key="m" compact icon="trend" title="Sin comparación todavía">Necesitas dos mediciones de rankings.<Link className="btn mt-1" href={`/p/${id}/rank`}><Icon name="target" />Monitorear keywords</Link></Empty>
           ),
         ];
       case "alerts":
@@ -211,7 +212,7 @@ export default function Overview() {
               ))}
             </div>
           ) : (
-            <Empty key="a" compact icon="check" tone="good" title="Todo tranquilo">Sin alertas nuevas</Empty>
+            <Empty key="a" compact icon="check" tone="good" title="Sin alertas nuevas">Se calculan con los datos de rankings y Search Console.</Empty>
           ),
         ];
       case "actions":
@@ -239,7 +240,7 @@ export default function Overview() {
               ))}
             </div>
           ) : (
-            <Empty key="c" compact icon="wand" tone="info" title="Sin análisis de contenido"><Link className="btn mt-1" href={`/p/${id}/content`}><Icon name="sparkle" />Optimizar una URL</Link></Empty>
+            <Empty key="c" compact icon="content" tone="info" title="Sin análisis de contenido">Selecciona una URL y una keyword.<Link className="btn mt-1" href={`/p/${id}/content`}><Icon name="refresh" />Optimizar una URL</Link></Empty>
           ),
         ];
     }
@@ -248,8 +249,8 @@ export default function Overview() {
 
   return (
     <div className="space-y-4 p-4 md:p-6">
-      <SetupBanner id={id} />
       <NextActions />
+      <SetupBanner id={id} />
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
           <div className="stagger-fade grid grid-cols-1 gap-4 md:grid-cols-3">

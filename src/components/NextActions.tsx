@@ -2,22 +2,23 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useProject } from "./Shell";
-import { api, Drawer, useApi } from "./ui";
+import { api, Drawer, Metric, useApi } from "./ui";
 
 export const STATUS_LABEL: Record<string, string> = {
   detected: "Detectado",
-  pending: "Pendiente",
+  pending: "En progreso",
   resolved: "Solucionado",
   reappeared: "Reapareció",
   ignored: "Ignorado",
 };
 const PAGE_SIZE = 12;
 const priorityLabel = (task: any) =>
-  task.severity === "critical"
+  task.priorityLabel ??
+  (task.severity === "critical"
     ? "Alta"
     : task.severity === "warning"
       ? "Media"
-      : "Baja";
+      : "Baja");
 
 export function NextActions({ all = false }: { all?: boolean }) {
   const { id, jobs, refreshJobs } = useProject();
@@ -28,6 +29,7 @@ export function NextActions({ all = false }: { all?: boolean }) {
     refreshInterval: running ? 3000 : 10000,
   });
   const [filter, setFilter] = useState("open");
+  const [raw, setRaw] = useState(false);
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
@@ -50,7 +52,7 @@ export function NextActions({ all = false }: { all?: boolean }) {
   };
   const change = async (taskId: string, status: string) => {
     try {
-      await api(`/api/p/${id}/tasks`, "PATCH", { taskId, status });
+      await api(`/api/p/${id}/tasks`, "PATCH", { taskId, status, group: !raw });
       await mutate();
       setError("");
     } catch (e) {
@@ -58,7 +60,7 @@ export function NextActions({ all = false }: { all?: boolean }) {
     }
   };
   const rows: any[] = all
-    ? (data?.tasks ?? []).filter(
+    ? (raw ? (data?.tasks ?? []) : (data?.groups ?? [])).filter(
         (t: any) =>
           filter === "all" ||
           (filter === "open"
@@ -71,17 +73,32 @@ export function NextActions({ all = false }: { all?: boolean }) {
   const visible = all
     ? rows.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE)
     : rows;
-  const selected = data?.tasks?.find((t: any) => t.id === selectedId);
+  const selected =
+    (raw ? data?.tasks : data?.groups)?.find((t: any) => t.id === selectedId) ??
+    data?.tasks?.find((t: any) => t.id === selectedId);
   if (!all && !rows.length) return null;
 
   return (
     <section className="card mb-4 overflow-hidden">
       <div className="flex flex-wrap items-center gap-3 px-4 py-3">
         <h2 className="text-sm font-semibold">
-          {all ? "Tareas" : "Tareas pendientes"}
+          {all ? "Tareas" : "Qué requiere tu atención"}
         </h2>
         {all ? (
           <>
+            <select
+              aria-label="Vista de tareas"
+              className="input w-auto"
+              value={raw ? "raw" : "group"}
+              onChange={(e) => {
+                setRaw(e.target.value === "raw");
+                setPage(0);
+                setSelectedId(null);
+              }}
+            >
+              <option value="group">Acciones agrupadas</option>
+              <option value="raw">Incidencias individuales</option>
+            </select>
             <select
               className="input ml-auto w-auto text-sm"
               aria-label="Filtrar tareas"
@@ -124,17 +141,19 @@ export function NextActions({ all = false }: { all?: boolean }) {
             <table className="w-full text-left text-sm">
               <thead className="border-y border-ink-200 bg-ink-50 text-xs text-ink-500 dark:border-ink-800 dark:bg-ink-900">
                 <tr>
-                  <th className="px-4 py-2 font-normal">Tarea</th>
-                  {all ? (
+                  <th className="px-4 py-2 font-normal">Acción</th>
+                  {all && raw ? (
                     <th className="hidden px-4 py-2 font-normal md:table-cell">
                       URL
                     </th>
                   ) : (
                     <th className="px-4 py-2 text-right font-normal">
-                      Incidencias
+                      <Metric label="Afectadas" />
                     </th>
                   )}
-                  <th className="px-4 py-2 font-normal">Prioridad</th>
+                  <th className="px-4 py-2 font-normal">
+                    <Metric label="Prioridad" />
+                  </th>
                   {all && <th className="px-4 py-2 font-normal">Estado</th>}
                 </tr>
               </thead>
@@ -150,18 +169,28 @@ export function NextActions({ all = false }: { all?: boolean }) {
                           className="text-left hover:underline"
                           onClick={() => setSelectedId(t.id)}
                         >
-                          {t.title}
+                          {t.title}{" "}
+                          {t.pattern && (
+                            <span className="ml-2 text-xs font-normal text-ink-500">
+                              {t.pattern}
+                            </span>
+                          )}
                         </button>
                       ) : (
                         <Link
                           className="hover:underline"
                           href={`/p/${id}/tasks?task=${encodeURIComponent(t.id)}`}
                         >
-                          {t.title}
+                          {t.title}{" "}
+                          {t.pattern && (
+                            <span className="ml-2 text-xs font-normal text-ink-500">
+                              {t.pattern}
+                            </span>
+                          )}
                         </Link>
                       )}
                     </td>
-                    {all ? (
+                    {all && raw ? (
                       <td
                         className="hidden max-w-[320px] truncate px-4 py-3 text-xs text-ink-500 md:table-cell"
                         title={t.url ?? ""}
@@ -172,7 +201,7 @@ export function NextActions({ all = false }: { all?: boolean }) {
                       </td>
                     ) : (
                       <td className="px-4 py-3 text-right tabular-nums text-ink-500">
-                        {t.affected ?? 1}
+                        {t.affected ?? 1} URLs
                       </td>
                     )}
                     <td className="px-4 py-3 text-xs text-ink-500">
@@ -260,10 +289,64 @@ export function NextActions({ all = false }: { all?: boolean }) {
                       ? "Ignorar"
                       : s === "resolved"
                         ? "Marcar solucionada"
-                        : "Marcar pendiente"}
+                        : "Iniciar tarea"}
                   </button>
                 ))}
             </div>
+            {selected.fix && <p className="text-sm">{selected.fix}</p>}
+            {selected.probableCause && (
+              <p className="text-sm text-ink-500">{selected.probableCause}</p>
+            )}
+            {selected.priorityReason && (
+              <details className="text-xs">
+                <summary>Cómo se priorizó</summary>
+                <p className="mt-2">{selected.priorityReason}</p>
+              </details>
+            )}
+            {selected.members && (
+              <div>
+                <h4 className="mb-2 text-sm font-semibold">
+                  URLs individuales · {selected.members.length}
+                </h4>
+                <div className="max-h-72 overflow-auto">
+                  <table className="tbl table-fixed"><colgroup><col style={{width:"75%"}}/><col style={{width:"25%"}}/></colgroup>
+                    <thead>
+                      <tr>
+                        <th>URL</th>
+                        <th>Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selected.members.map((m: any) => (
+                        <tr key={m.id}>
+                          <td className="!whitespace-normal break-words">
+                            <a
+                              className="break-all text-xs underline"
+                              href={`/p/${id}/audit?url=${encodeURIComponent(m.url ?? "")}`}
+                            >
+                              {m.url}
+                            </a>
+                            <details className="text-xs text-ink-500">
+                              <summary>Evidencia e historial</summary>
+                              <p>{m.reason}</p>
+                              {m.events?.map((e: any) => (
+                                <p key={e.id}>
+                                  {new Date(e.createdAt).toLocaleString(
+                                    "es-CL",
+                                  )}{" "}
+                                  · {STATUS_LABEL[e.status]} {e.note}
+                                </p>
+                              ))}
+                            </details>
+                          </td>
+                          <td>{STATUS_LABEL[m.status]}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
             <details className="text-xs text-ink-500">
               <summary className="cursor-pointer">Historial</summary>
               <ul className="mt-2 space-y-2">

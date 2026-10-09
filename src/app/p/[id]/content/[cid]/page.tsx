@@ -93,7 +93,7 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
         {data.status === "error" ? (
           <Empty icon="alert" tone="bad" title="El análisis falló">{data.result?.error ?? "Sin detalle"}</Empty>
         ) : (
-          <Empty icon="sparkle" title={<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4 text-acc" />{statusLabel(data.status)}…</span>}>Estamos leyendo tu página y las que rankean en Google. Tarda 1 a 2 minutos.</Empty>
+          <Empty icon="content" title={<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4 text-acc" />{statusLabel(data.status)}…</span>}>Estamos leyendo tu página y las que rankean en Google. Tarda 1 a 2 minutos.</Empty>
         )}
       </div>
     );
@@ -274,15 +274,15 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
       {/* Brief */}
       <div className="space-y-4">
         <div className="flex items-center gap-2">
-          <span className="lbl">Brief</span>
+          <span className="lbl">Brief</span>{brief?.provenance === "ai" && <span className="text-xs text-ink-500">Generado con IA</span>}
           <span className="text-xs text-ink-400">{saving ? "guardando…" : data.status !== "done" ? data.status : ""}</span>
           <div className="ml-auto flex gap-1">
             <CopyBtn text={md} />
-            <button className="btn" onClick={async () => { loaded.current = null; await api(`/api/p/${id}/content/rebrief`, "POST", { cid: data.id }); mutate(); refreshJobs(); }}><Icon name="sparkle" />Regenerar</button>
+            <button className="btn" onClick={async () => { loaded.current = null; await api(`/api/p/${id}/content/rebrief`, "POST", { cid: data.id }); mutate(); refreshJobs(); }}><Icon name="refresh" />Regenerar</button>
           </div>
         </div>
         {!brief ? (
-          <Empty icon="wand" title={<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4 text-acc" />Generando brief…</span>} />
+          <Empty icon="content" title={<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4 text-acc" />Generando brief…</span>} />
         ) : (
           <>
             <div className="card space-y-3 p-3">

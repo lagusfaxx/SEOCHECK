@@ -153,7 +153,7 @@ function AuditStep({ data, onStarted }: { data: Ob; onStarted: () => void }) {
         <Score value={data.crawl.health} size={64} />
         <div className="text-sm">
           <div className="font-medium">Salud técnica {data.crawl.health ?? "—"}{data.crawl.health != null ? "/100" : ""}</div>
-          <div className="text-ink-500">{data.crawl.healthNote ?? `${data.crawl.pages} URLs revisadas · ${data.crawl.critical} problemas críticos`}</div>
+          <div className="text-ink-500">{data.crawl.healthNote ?? `${data.crawl.pages} URLs revisadas · ${data.crawl.critical} errores`}</div>
           <Link className="text-acc" href={`/p/${id}/audit`}>Ver prioridades →</Link>
         </div>
       </div>

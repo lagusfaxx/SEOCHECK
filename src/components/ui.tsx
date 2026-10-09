@@ -1,5 +1,7 @@
 "use client";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { metricHelp } from "@/lib/presentation";
+import { useId, useEffect, useMemo, useState, type ReactNode } from "react";
 import useSWR, { type SWRConfiguration } from "swr";
 
 export async function api<T = any>(path: string, method = "GET", body?: unknown): Promise<T> {
@@ -173,8 +175,8 @@ export function IconBadge({ name, tone = "acc", size = "md", anim, pulse }: { na
   const box = size === "lg" ? "h-14 w-14 rounded-2xl" : size === "sm" ? "h-7 w-7 rounded-lg" : "h-9 w-9 rounded-xl";
   const ic = size === "lg" ? "h-7 w-7" : size === "sm" ? "h-3.5 w-3.5" : "h-[18px] w-[18px]";
   return (
-    <span className={cx("relative inline-grid shrink-0 place-items-center", box, TONE[tone], pulse && "ring-pulse")}>
-      <span className="relative"><Icon name={name} className={ic} anim={anim} /></span>
+    <span className={cx("relative inline-grid shrink-0 place-items-center", box, TONE[tone])}>
+      <span className="relative"><Icon name={name} className={ic} /></span>
     </span>
   );
 }
@@ -186,22 +188,21 @@ export function Skeleton({ className = "h-4 w-full" }: { className?: string }) {
 
 /** Ícono "?" con explicación al pasar el mouse (o tocar en móvil). */
 export function Hint({ text, className }: { text: string; className?: string }) {
-  return (
-    <span tabIndex={0} className={cx("group/hint relative inline-grid h-3.5 w-3.5 cursor-help place-items-center rounded-full border border-ink-300 text-[9px] font-semibold normal-case leading-none tracking-normal text-ink-400 outline-none dark:border-ink-600", className)}>
-      ?
-      <span className="pointer-events-none absolute left-1/2 top-5 z-50 w-64 -translate-x-1/2 rounded-lg bg-ink-900 px-3 py-2 text-left text-xs font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover/hint:opacity-100 group-focus/hint:opacity-100 dark:bg-ink-700">
-        {text}
-      </span>
-    </span>
-  );
+  const id = useId();
+  const [pos, setPos] = useState<{left:number;top:number}|null>(null);
+  const show = (target: HTMLElement) => { const r=target.getBoundingClientRect(); setPos({left:Math.max(8,Math.min(window.innerWidth-272,r.left-120)),top:Math.max(8,Math.min(window.innerHeight-160,r.bottom+8))}); };
+  return <span role="button" aria-label="Más información" aria-describedby={pos ? id : undefined} tabIndex={0} onMouseEnter={e=>show(e.currentTarget)} onMouseLeave={()=>setPos(null)} onFocus={e=>show(e.currentTarget)} onBlur={()=>setPos(null)} onClick={e=>{e.preventDefault();e.stopPropagation();show(e.currentTarget);}} onKeyDown={e=>{if(e.key==='Escape')setPos(null);if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();show(e.currentTarget);}}} className={cx("inline-grid h-3.5 w-3.5 cursor-help place-items-center rounded-full border border-ink-300 text-[9px] font-semibold normal-case leading-none tracking-normal text-ink-500",className)}>
+    ?{pos && createPortal(<span id={id} role="tooltip" style={{left:pos.left,top:pos.top}} className="pointer-events-none fixed z-[100] w-64 rounded border border-ink-700 bg-ink-900 px-3 py-2 text-left text-xs font-normal leading-snug text-white">{text}</span>,document.body)}
+  </span>;
 }
+export function Metric({label}:{label:string}) { const help=metricHelp(label);return <span className="inline-flex items-center gap-1">{label}{help&&<Hint text={help}/>}</span>; }
 
 export function Stat({ label, value, sub, tone, hint, icon }: { label: string; value: ReactNode; sub?: ReactNode; tone?: "good" | "bad"; hint?: string; icon?: string }) {
   return (
     <div className="flex min-w-0 items-start gap-3">
       {icon && <IconBadge name={icon} tone={tone ?? "acc"} anim="pop" />}
       <div className="min-w-0">
-        <div className="lbl flex items-center gap-1">{label}{hint && <Hint text={hint} />}</div>
+        <div className="lbl flex items-center gap-1">{label}{(hint || metricHelp(label)) && <Hint text={hint || metricHelp(label)} />}</div>
         <div className={cx("mt-0.5 truncate text-2xl font-semibold tabular-nums anim-in", tone === "good" && "text-emerald-600", tone === "bad" && "text-rose-600")}>{value}</div>
         {sub != null && <div className="text-xs text-ink-500">{sub}</div>}
       </div>
@@ -229,6 +230,7 @@ export function Score({ value, size = 64 }: { value: number | null | undefined; 
       <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" className="fill-current text-sm font-semibold" style={{ fontSize: size / 3.6 }}>
         {value == null ? "–" : v}
       </text>
+      {value != null && <text x="50%" y="76%" textAnchor="middle" className="fill-current text-ink-500" style={{fontSize: Math.max(8,size/9)}}>/100</text>}
     </svg>
   );
 }
@@ -275,7 +277,7 @@ export function Drawer({ open, onClose, children, wide }: { open: boolean; onClo
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-ink-950/30 backdrop-blur-[1px]" onClick={onClose}>
       <div className={cx("h-full overflow-y-auto border-l border-ink-200 bg-white p-5 shadow-2xl dark:border-ink-800 dark:bg-ink-900", wide ? "w-full max-w-3xl" : "w-full max-w-xl")} onClick={(e) => e.stopPropagation()}>
-        <button className="btn-g float-right" onClick={onClose}>
+        <button className="btn-g float-right" aria-label="Cerrar detalle" onClick={onClose}>
           <Icon name="x" />
         </button>
         {children}
@@ -287,8 +289,8 @@ export function Drawer({ open, onClose, children, wide }: { open: boolean; onClo
 /** Estado vacío: ícono flotando + título + qué hacer. */
 export function Empty({ children, icon = "inbox", title, tone = "acc", compact }: { children?: ReactNode; icon?: string; title?: ReactNode; tone?: keyof typeof TONE; compact?: boolean }) {
   return (
-    <div className={cx("anim-in flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-ink-200 text-center text-sm text-ink-500 dark:border-ink-800", compact ? "p-5" : "p-10")}>
-      <span className="ic-float"><IconBadge name={icon} tone={tone} size={compact ? "md" : "lg"} pulse /></span>
+    <div className={cx("flex flex-col items-start gap-2 text-sm text-ink-500", compact ? "py-2" : "p-4")}>
+      <Icon name={icon} className="h-4 w-4 text-ink-400"/>
       {title && <div className="font-medium text-ink-800 dark:text-ink-100">{title}</div>}
       {children != null && <div className="max-w-sm text-ink-500">{children}</div>}
     </div>
@@ -311,7 +313,7 @@ export function IntentChip({ intent }: { intent?: string | null }) {
 export const SEV: Record<string, string> = {
   critical: "bg-rose-500",
   warning: "bg-amber-400",
-  info: "bg-sky-400",
+  info: "bg-ink-400",
 };
 
 export type Col<T> = { key: string; label: ReactNode; get: (r: T) => any; render?: (r: T) => ReactNode; num?: boolean; className?: string };
@@ -338,7 +340,7 @@ export function DataTable<T>({ rows, cols, initial, onRow, rowKey, max = 500, se
           <tr>
             {cols.map((c) => (
               <th key={c.key} className={cx(c.num && "num", c.className)} onClick={() => setSort((s) => ({ key: c.key, dir: s.key === c.key ? ((-s.dir) as 1 | -1) : c.num ? -1 : 1 }))}>
-                {c.label}
+                {typeof c.label === "string" ? <Metric label={c.label}/> : c.label}
                 {sort.key === c.key && <span className="ml-0.5 text-acc">{sort.dir === 1 ? "↑" : "↓"}</span>}
               </th>
             ))}

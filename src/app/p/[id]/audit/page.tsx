@@ -1,14 +1,15 @@
 "use client";
-import { useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useProject } from "@/components/Shell";
-import { api, cx, DataTable, Drawer, Empty, fmt, Hint, Icon, Score, SEV, Stat, Tabs, useApi, type Col, fmtDate, Spinner, IconBadge } from "@/components/ui";
+import { api, cx, Metric, DataTable, Drawer, Empty, fmt, Hint, Icon, Score, SEV, Stat, Tabs, useApi, type Col, fmtDate, Spinner, IconBadge } from "@/components/ui";
 import { ISSUE_FIX, ISSUE_WHY } from "@/lib/audit/fixes";
 import { CRAWL_STATUS } from "@/lib/status";
+import { HEALTH_HELP, healthLabel, SEVERITY_LABEL, SEVERITY_TEXT } from "@/lib/presentation";
 import { Coverage } from "@/components/Coverage";
 
 const SEV_HINT: Record<string, string> = {
   critical: "Problemas que impiden que Google vea o indexe páginas. Arreglar primero.",
-  warning: "Problemas que bajan el rendimiento SEO. Arreglar después de los críticos.",
+  warning: "Problemas que bajan el rendimiento SEO. Arreglar después de los errores.",
   info: "Mejoras recomendadas. No penalizan por sí solas; revisa si aplican a tu sitio.",
 };
 
@@ -29,7 +30,7 @@ function cwv(metric: string, v: number | null | undefined) {
   const [g, b] = th[metric] ?? [Infinity, Infinity];
   return v <= g ? "text-emerald-600" : v <= b ? "text-amber-600" : "text-rose-600";
 }
-const ms = (v: number | null | undefined) => (v == null ? "–" : v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${Math.round(v)}ms`);
+const ms = (v: number | null | undefined) => (v == null ? "–" : v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${Math.round(v)} ms`);
 
 /** Una URL por plantilla: home + primer segmento distinto + profundidades. */
 function templates(pages: PageRow[]) {
@@ -51,11 +52,14 @@ export default function AuditPage() {
   const { id, project, refreshJobs, jobs } = useProject();
   const [crawl, setCrawl] = useState("");
   const { data, mutate } = useApi<any>(`/api/p/${id}/audit${crawl ? `?crawl=${crawl}` : ""}`);
-  const [tab, setTab] = useState<"issues" | "urls" | "speed" | "index">("issues");
+  const [tab, setTab] = useState<"summary" | "issues" | "urls" | "speed" | "index">("summary");
   const [opt, setOpt] = useState({ maxPages: 500, concurrency: 5, render: false });
   const [issue, setIssue] = useState<IssueAgg | null>(null);
   const [pageUrl, setPageUrl] = useState<string | null>(null);
   const [q, setQ] = useState("");
+  const [summaryLimit,setSummaryLimit]=useState(25);
+  const [expanded, setExpanded] = useState<string|null>(null);
+  useEffect(()=>{setPageUrl(new URLSearchParams(window.location.search).get("url"));const key=window.location.hash.slice(1);if(key==="speed"||key==="index")setTab(key);},[]);
   const running = jobs.some((j) => j.kind === "audit.crawl" && (j.status === "running" || j.status === "queued"));
 
   const cur = data?.crawls?.find((c: any) => c.id === data.crawlId);
@@ -69,21 +73,21 @@ export default function AuditPage() {
 
   const pageCols: Col<PageRow>[] = [
     { key: "url", label: "URL", get: (p) => p.url, render: (p) => <span className="block max-w-[420px] truncate" title={p.url}>{path(p.url)}</span> },
-    { key: "status", label: "Status", get: (p) => p.status, render: (p) => <span className={statusCls(p.status)}>{p.status || "—"}</span>, num: true },
+    { key: "status", label: "Estado", get: (p) => p.status, render: (p) => <span className={statusCls(p.status)}>{p.status || "—"}</span>, num: true },
     { key: "issues", label: "Errores", get: (p) => p.issues, num: true },
-    { key: "depth", label: "Prof.", get: (p) => p.depth, render: (p) => (p.depth < 0 ? "–" : p.depth), num: true },
-    { key: "in", label: "In", get: (p) => p.inlinks, num: true },
-    { key: "out", label: "Out", get: (p) => p.outlinks, num: true },
-    { key: "words", label: "Palabras", get: (p) => p.wordCount, render: (p) => fmt(p.wordCount), num: true },
-    { key: "title", label: "Title", get: (p) => p.titleLen, render: (p) => <span className={cx(p.titleLen > 60 || !p.titleLen ? "text-amber-600" : "")}>{p.titleLen}</span>, num: true },
-    { key: "meta", label: "Meta", get: (p) => p.metaLen, render: (p) => <span className={cx(p.metaLen > 160 || !p.metaLen ? "text-amber-600" : "")}>{p.metaLen}</span>, num: true },
-    { key: "ms", label: "ms", get: (p) => p.responseMs, num: true },
+    { key: "depth", label: "Profundidad", get: (p) => p.depth, render: (p) => (p.depth < 0 ? "–" : p.depth), num: true },
+    { key: "in", label: "Entrantes", get: (p) => p.inlinks, num: true },
+    { key: "out", label: "Salientes", get: (p) => p.outlinks, num: true },
+    { key: "words", label: "Palabras", get: (p) => p.wordCount, render: (p) => `${fmt(p.wordCount)} palabras`, num: true },
+    { key: "title", label: "Título", get: (p) => p.titleLen, render: (p) => <span className={cx(p.titleLen > 60 || !p.titleLen ? "text-amber-600" : "")}>{p.titleLen} caracteres</span>, num: true },
+    { key: "meta", label: "Meta", get: (p) => p.metaLen, render: (p) => <span className={cx(p.metaLen > 155 || !p.metaLen ? "text-amber-600" : "")}>{p.metaLen} caracteres</span>, num: true },
+    { key: "ms", label: "Respuesta", get: (p) => p.responseMs, render: (p) => `${p.responseMs} ms`, num: true },
     { key: "flags", label: "", get: (p) => (p.noindex ? 1 : 0) + (p.orphan ? 2 : 0), render: (p) => (
       <span className="flex gap-1">
-        {p.noindex && <span className="chip">noindex</span>}
-        {p.orphan && <span className="chip">huérfana</span>}
-        {p.canonicalType === "other" && <span className="chip">canonical</span>}
-        {p.inSitemap && <span className="chip">sitemap</span>}
+        {p.noindex && <span className="chip"><Metric label="noindex"/></span>}
+        {p.orphan && <span className="chip"><Metric label="Huérfana"/></span>}
+        {p.canonicalType === "other" && <span className="chip"><Metric label="Canonical"/></span>}
+        {p.inSitemap && <span className="chip"><Metric label="Sitemap"/></span>}
       </span>
     ) },
   ];
@@ -95,12 +99,14 @@ export default function AuditPage() {
     <div className="space-y-4 p-4 md:p-6">
       <div className="card flex flex-wrap items-center gap-3 p-3">
         <span className="text-sm text-ink-500">https://{project?.domain}</span>
-        <label className="flex items-center gap-1 text-xs text-ink-500">máx<input className="input w-20" type="number" value={opt.maxPages} onChange={(e) => setOpt({ ...opt, maxPages: Number(e.target.value) })} /></label>
-        <label className="flex items-center gap-1 text-xs text-ink-500">conc.<input className="input w-14" type="number" min={1} max={20} value={opt.concurrency} onChange={(e) => setOpt({ ...opt, concurrency: Number(e.target.value) })} /></label>
+        <details className="text-sm"><summary className="cursor-pointer">Opciones avanzadas</summary><div className="mt-3 flex flex-wrap gap-3">
+        <label className="flex items-center gap-1 text-xs text-ink-500">Máximo de URLs<input className="input w-20" type="number" value={opt.maxPages} onChange={(e) => setOpt({ ...opt, maxPages: Number(e.target.value) })} /></label>
+        <label className="flex items-center gap-1 text-xs text-ink-500">Concurrencia<input className="input w-14" type="number" min={1} max={20} value={opt.concurrency} onChange={(e) => setOpt({ ...opt, concurrency: Number(e.target.value) })} /></label>
         <label className={cx("flex items-center gap-1 text-xs", project?.providers?.render ? "text-ink-500" : "text-ink-300")} title={project?.providers?.render ? "" : "requiere BROWSER_WS_ENDPOINT"}>
-          <input type="checkbox" disabled={!project?.providers?.render} checked={opt.render} onChange={(e) => setOpt({ ...opt, render: e.target.checked })} />render JS
+          <input type="checkbox" disabled={!project?.providers?.render} checked={opt.render} onChange={(e) => setOpt({ ...opt, render: e.target.checked })} />Renderizar JavaScript
         </label>
-        <button className="btn-p hov-nudge" disabled={running} onClick={() => run("audit", opt)}>{running ? <><Spinner className="h-4 w-4" />Crawleando…</> : <><Icon name="play" />Crawlear</>}</button>
+        </div></details>
+        <button className="btn-p hov-nudge" disabled={running} onClick={() => run("audit", opt)}>{running ? <><Spinner className="h-4 w-4" />Analizando…</> : <><Icon name="play" />Analizar sitio</>}</button>
         {data?.crawls?.length > 0 && (
           <select className="input ml-auto w-auto" value={data.crawlId} onChange={(e) => setCrawl(e.target.value)}>
             {data.crawls.map((c: any) => (
@@ -115,7 +121,7 @@ export default function AuditPage() {
       {cur && cur.status !== "completed" && (
         <div className={cx("anim-in flex items-start gap-3 rounded-xl px-4 py-3 text-sm", CRAWL_STATUS[cur.status]?.cls)}>
           {cur.status === "running" || cur.status === "queued" ? <Spinner className="mt-0.5 h-4 w-4 shrink-0" /> : <Icon name={cur.status === "partial" ? "info" : "alert"} anim={cur.status === "failed" ? "wiggle" : "pop"} className="mt-0.5 h-4 w-4 shrink-0" />}
-          <span className="font-semibold">Crawl {CRAWL_STATUS[cur.status]?.label ?? cur.status}</span>
+          <span className="font-semibold">Análisis {CRAWL_STATUS[cur.status]?.label ?? cur.status}</span>
           <span className="flex-1">
             {cur.reason ??
               (cur.status === "running" || cur.status === "queued" ? "Los resultados aparecen al terminar." : "")}
@@ -126,25 +132,33 @@ export default function AuditPage() {
       )}
 
       {!data?.crawlId ? (
-        <Empty icon="audit" tone="good" title="Todavía no auditas este sitio">Lanza un crawl: revisamos cada página buscando errores técnicos, links rotos, títulos, indexación y velocidad.</Empty>
+        <Empty icon="audit" tone="good" title="Todavía no auditas este sitio">Selecciona Analizar sitio para revisar sus páginas.</Empty>
       ) : cur && !["completed", "partial"].includes(cur.status) ? null : (
         <>
           <div className="card grid grid-cols-2 items-center gap-6 p-4 md:grid-cols-8">
             <div className="row-span-2 flex flex-col items-center gap-1 md:row-span-1" title={st.healthNote ?? undefined}>
-              <div className="flex items-start gap-1"><Score value={st.health} size={72} /><Hint text="Salud técnica de 0 a 100 (solo lo técnico, no todo el SEO): baja 5 puntos por cada crítico y 1 por cada warning, en proporción a las URLs revisadas. Si el crawl fue parcial, solo cubre lo que se pudo leer. Sin datos mínimos no se calcula." /></div>
-              <span className="lbl">Salud técnica</span>
+              <div className="flex items-start gap-1"><Score value={st.health} size={72} /><Hint text={HEALTH_HELP} /></div>
+              <span className="lbl">Salud técnica</span><span className="text-sm">{healthLabel(st.health)}</span>
               {st.health == null && st.healthNote && <span className="max-w-[140px] text-center text-[11px] leading-tight text-ink-500">{st.healthNote}</span>}
             </div>
             <Stat label="URLs" value={fmt(st.pages)} hint="Páginas revisadas: las que el crawler encontró siguiendo links, más las del sitemap que no alcanzó por links." />
-            <Stat label="Errores" value={fmt(st.errors)} tone={st.errors ? "bad" : undefined} hint="Páginas que respondieron con error (404, 500) o no respondieron." />
-            <Stat label="Redirects" value={fmt(st.redirects)} hint="URLs que redirigen a otra. Normal en pocas; los links internos deberían apuntar directo a la URL final." />
+            <Stat label="Errores HTTP" value={fmt(st.errors)} tone={st.errors ? "bad" : undefined} hint="Páginas que respondieron con error (404, 500) o no respondieron." />
+            <Stat label="Redirecciones" value={fmt(st.redirects)} hint="URLs que redirigen a otra. Normal en pocas; los links internos deberían apuntar directo a la URL final." />
             <Stat label="Huérfanas" value={fmt(st.orphans)} hint="Están en el sitemap pero ninguna página revisada las enlaza. Si el crawl llegó al máximo, muchas pueden ser falsas: sube el máximo." />
             <Stat label="Sitemap" value={fmt(st.sitemap)} hint="URLs listadas en tu sitemap.xml." />
-            <Stat label="Resp. media" value={ms(st.avgMs)} hint="Tiempo promedio del servidor en responder el HTML. Bajo 500 ms está bien; sobre 1,5 s es lento." />
+            <Stat label="Respuesta" value={ms(st.avgMs)} hint="Tiempo promedio del servidor en responder el HTML. Bajo 500 ms está bien; sobre 1,5 s es lento." />
             <Stat label="Externos" value={fmt(st.external)} hint="Dominios externos distintos a los que enlaza tu sitio." />
           </div>
 
-          <Tabs value={tab} onChange={setTab} items={[{ id: "issues", label: "Errores", icon: "alert" }, { id: "urls", label: "URLs", icon: "table" }, { id: "speed", label: "Velocidad", icon: "bolt" }, { id: "index", label: "Indexación", icon: "search" }]} />
+          <p className="text-sm"><span className="text-rose-700">{fmt(st.critical)} errores</span> · <span className="text-amber-700">{fmt(st.warning)} advertencias</span> · {fmt(st.info)} observaciones <Hint text="Las observaciones son recomendaciones y no descuentan puntos de salud técnica. Revisa su relevancia antes de cambiarlas."/></p>
+          <Tabs value={tab} onChange={setTab} items={[{ id: "summary", label: "Páginas", icon: "table" }, { id: "issues", label: "Problemas", icon: "alert" }, { id: "urls", label: "URLs · vista técnica", icon: "table" }, { id: "speed", label: "Velocidad", icon: "bolt" }, { id: "index", label: "Indexación", icon: "search" }]} />
+
+          {tab === "summary" && <div className="card overflow-hidden">
+            <div className="p-3"><input aria-label="Filtrar páginas" className="input w-full md:w-80" placeholder="Buscar URL" value={q} onChange={e=>setQ(e.target.value)}/></div>
+            <div className="overflow-auto"><table className="tbl min-w-[680px] table-fixed"><colgroup><col style={{width:"40%"}}/><col style={{width:"14%"}}/><col style={{width:"14%"}}/><col style={{width:"16%"}}/><col style={{width:"16%"}}/></colgroup><thead><tr>{['URL','Estado','Problemas','Palabras','Respuesta'].map(label=><th key={label}><Metric label={label}/></th>)}</tr></thead><tbody>
+              {filtered.slice(0,summaryLimit).map(p=><Fragment key={p.id}><tr><td><button className="max-w-full truncate text-left underline-offset-4 hover:underline" aria-expanded={expanded===p.url} onClick={()=>setExpanded(expanded===p.url?null:p.url)}>{expanded===p.url?'−':'+'} {path(p.url)}</button></td><td>{p.status || 'Sin respuesta'}</td><td>{p.issues}</td><td>{fmt(p.wordCount)} palabras</td><td>{p.responseMs} ms</td></tr>{expanded===p.url&&<tr><td colSpan={5} className="!whitespace-normal"><PageDrawer inline crawlId={data.crawlId} url={p.url} onClose={()=>setExpanded(null)} onUrl={setPageUrl} run={run}/></td></tr>}</Fragment>)}
+            </tbody></table></div>{filtered.length>summaryLimit&&<button className="btn-g m-3" onClick={()=>setSummaryLimit(n=>n+25)}>Mostrar 25 páginas más</button>}
+          </div>}
 
           {tab === "issues" && (
             <div className="stagger grid gap-4 md:grid-cols-3">
@@ -152,7 +166,7 @@ export default function AuditPage() {
                 <div key={sev} className="card p-3">
                   <div className="mb-2 flex items-center gap-2">
                     <IconBadge name={sev === "info" ? "info" : "alert"} tone={sev === "critical" ? "bad" : sev === "warning" ? "warn" : "info"} size="sm" anim="pop" pulse={sev === "critical" && issues.some((i) => i.severity === "critical")} />
-                    <span className="lbl">{sev === "critical" ? "Crítico" : sev === "warning" ? "Warning" : "Info"}</span>
+                    <span className="lbl">{SEVERITY_LABEL[sev]}</span>
                     <Hint text={SEV_HINT[sev]} />
                     <span className="ml-auto text-sm font-semibold tabular-nums">{fmt(issues.filter((i) => i.severity === sev).reduce((s, i) => s + i.count, 0))}</span>
                   </div>
@@ -209,7 +223,7 @@ export default function AuditPage() {
                     { key: "verdict", label: "Veredicto", get: (r: any) => r.verdict, render: (r: any) => <span className={r.verdict === "PASS" ? "text-emerald-600" : "text-rose-600"}>{r.verdict}</span> },
                     { key: "cov", label: "Cobertura", get: (r: any) => r.coverageState },
                     { key: "gc", label: "Canonical Google", get: (r: any) => r.googleCanonical, render: (r: any) => <span className={cx("block max-w-[260px] truncate", r.googleCanonical && r.userCanonical && r.googleCanonical !== r.userCanonical && "text-amber-600")}>{r.googleCanonical ? path(r.googleCanonical) : "–"}</span> },
-                    { key: "lc", label: "Último crawl", get: (r: any) => r.lastCrawl, render: (r: any) => fmtDate(r.lastCrawl) },
+                    { key: "lc", label: "Último análisis", get: (r: any) => r.lastCrawl, render: (r: any) => fmtDate(r.lastCrawl) },
                   ]}
                 />
               </div>
@@ -235,8 +249,8 @@ function PsiTable({ rows }: { rows: any[] }) {
         <thead>
           <tr>
             <th>URL</th><th></th><th className="num">Score</th>
-            <th className="num">LCP lab</th><th className="num">CLS lab</th><th className="num">TBT</th>
-            <th className="num">LCP campo</th><th className="num">INP campo</th><th className="num">CLS campo</th>
+            <th className="num"><Metric label="LCP lab"/></th><th className="num"><Metric label="CLS lab"/></th><th className="num"><Metric label="TBT"/></th>
+            <th className="num"><Metric label="LCP campo"/></th><th className="num"><Metric label="INP campo"/></th><th className="num"><Metric label="CLS campo"/></th>
           </tr>
         </thead>
         <tbody>
@@ -293,19 +307,20 @@ function IssueDrawer({ crawlId, issue, onClose, onUrl }: { crawlId?: string; iss
   );
 }
 
-function PageDrawer({ crawlId, url, onClose, onUrl, run }: { crawlId?: string; url: string | null; onClose: () => void; onUrl: (u: string) => void; run: (p: string, b: object) => Promise<void> }) {
+function PageDrawer({ crawlId, url, onClose, onUrl, run, inline = false }: { inline?: boolean; crawlId?: string; url: string | null; onClose: () => void; onUrl: (u: string) => void; run: (p: string, b: object) => Promise<void> }) {
   const { id, project } = useProject();
   const { data } = useApi<any>(url && crawlId ? `/api/p/${id}/audit/page?crawl=${crawlId}&url=${encodeURIComponent(url)}` : null);
   const p = data?.page;
   const row = (k: string, v: React.ReactNode) => (
     <div className="flex gap-3 py-1.5 text-sm">
-      <span className="w-28 shrink-0 text-ink-400">{k}</span>
+      <span className="w-36 shrink-0 text-ink-500"><Metric label={k}/></span>
       <span className="min-w-0 break-words">{v ?? "–"}</span>
     </div>
   );
+  const Wrapper = ({children}:{children:React.ReactNode}) => inline ? <div className="p-3">{children}</div> : <Drawer open={!!url} onClose={onClose} wide>{children}</Drawer>;
   return (
-    <Drawer open={!!url} onClose={onClose} wide>
-      <a href={url ?? "#"} target="_blank" rel="noreferrer" className="flex items-center gap-1 pr-10 text-sm text-acc hover:underline">
+    <Wrapper>
+      <a href={p?.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 pr-10 text-sm text-acc hover:underline">
         <span className="truncate">{url}</span>
         <Icon name="ext" className="h-3.5 w-3.5 shrink-0" />
       </a>
@@ -316,30 +331,24 @@ function PageDrawer({ crawlId, url, onClose, onUrl, run }: { crawlId?: string; u
             <button className="btn" disabled={!project?.gscProperty || !project?.providers?.gsc} onClick={() => run("audit/inspect", { urls: [p.url] })}><Icon name="eye" />Inspección GSC</button>
             <button className="btn" disabled={!project?.providers?.indexnow} onClick={() => api(`/api/p/${id}/indexnow`, "POST", { urls: [p.url] })}>IndexNow</button>
           </div>
-          {data.issues.length > 0 && (
-            <div className="mt-4 flex flex-wrap gap-1.5">
-              {data.issues.map((i: any) => (
-                <span key={i.id} className="chip" title={i.detail ?? ""}>
-                  <span className={cx("h-1.5 w-1.5 rounded-full", SEV[i.severity])} />
-                  {i.label}
-                </span>
-              ))}
-            </div>
-          )}
+          <div className="mt-4 space-y-2">
+            {data.issues.length ? data.issues.map((i:any)=><div key={i.id} className="border-b border-ink-100 pb-2 text-sm"><span className={SEVERITY_TEXT[i.severity]}>{SEVERITY_LABEL[i.severity]}</span> · <b>{i.label}</b>{i.code==='meta_long'?` · ${p.metaLen} caracteres · recomendado ≤155`:i.code==='title_long'?` · ${p.titleLen} caracteres · recomendado ≤60`:i.detail?` · ${i.detail}`:''}<details className="mt-1 text-xs"><summary>Cómo corregirlo</summary><p>{ISSUE_WHY[i.code]} {ISSUE_FIX[i.code]}</p></details></div>):<p className="text-sm">Sin incidencias detectadas en esta página.</p>}
+          </div>
           <div className="mt-4 divide-y divide-ink-100 dark:divide-ink-800">
-            {row("Status", <span className={statusCls(p.status)}>{p.status} {p.responseMs}ms</span>)}
-            {(p.redirects as any[]).length > 0 && row("Redirects", (p.redirects as any[]).map((r) => `${r.status} ${r.url}`).concat(p.finalUrl).join(" → "))}
-            {row("Title", <>{p.title} <span className="text-ink-400">({p.titleLen})</span></>)}
-            {row("Meta", <>{p.metaDesc} <span className="text-ink-400">({p.metaLen})</span></>)}
+            {row("Estado", <span className={statusCls(p.status)}>{p.status || "Sin respuesta"} · {p.responseMs} ms</span>)}
+            {(p.redirects as any[]).length > 0 && row("Redirecciones", (p.redirects as any[]).map((r) => `${r.status} ${r.url}`).concat(p.finalUrl).join(" → "))}
+            {row("Título", <>{p.title} <span className="text-ink-400">({p.titleLen} caracteres)</span></>)}
+            {row("Meta", <>{p.metaDesc} <span className="text-ink-400">({p.metaLen} caracteres)</span></>)}
             {row("H1", p.h1.join(" | "))}
             {row("Canonical", p.canonical ? <>{p.canonical} <span className="chip">{p.canonicalType}</span></> : "–")}
-            {row("Indexable", p.noindex ? <span className="text-rose-600">noindex</span> : "sí")}
+            {row("Indexación", p.noindex ? <span className="text-rose-600">noindex</span> : "sí")}
             {row("hreflang", (p.hreflang as any[]).map((h) => `${h.lang}`).join(", ") || "–")}
             {row("JSON-LD", p.jsonldTypes.join(", ") + (p.jsonldErrors ? ` · ${p.jsonldErrors} con error` : ""))}
-            {row("Palabras", fmt(p.wordCount))}
+            {row("Palabras", `${fmt(p.wordCount)} palabras`)}
             {row("Img sin alt", p.imgNoAlt)}
             {row("Profundidad", p.depth)}
-            {row("Links", `${p.inlinks} entrantes · ${p.outlinks} salientes`)}
+            {row("Entrantes", p.inlinks)}
+            {row("Salientes", p.outlinks)}
             {row("Sitemap", p.inSitemap ? "sí" : "no")}
           </div>
           {data.inbound.length > 0 && (
@@ -352,6 +361,6 @@ function PageDrawer({ crawlId, url, onClose, onUrl, run }: { crawlId?: string; u
           )}
         </>
       )}
-    </Drawer>
+    </Wrapper>
   );
 }

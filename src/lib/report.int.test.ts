@@ -141,8 +141,8 @@ test("informe: priorización por impacto, falsos positivos, tendencias, GSC agru
   assert.ok(idx(/Subir posiciones/) < idx(/Imágenes sin alt/));
   assert.ok(idx(/Velocidad móvil de la plantilla `\/blog\/\*`/) < idx(/Imágenes sin alt/));
   // aunque "Title largo" afecte más impresiones, es on-page menor: va después
-  assert.ok(idx(/Subir posiciones/) < idx(/Title largo/));
-  assert.ok(idx(/Velocidad móvil de la plantilla `\/blog\/\*`/) < idx(/Title largo/));
+  assert.ok(idx(/Subir posiciones/) < idx(/Título demasiado largo/));
+  assert.ok(idx(/Velocidad móvil de la plantilla `\/blog\/\*`/) < idx(/Título demasiado largo/));
   assert.match(tasks, /_Impacto [\d.]+ = [\d.]+ impr × /);
   // 6. agrupado por plantilla con cambio concreto
   assert.match(tasks, /incluir «masajes providencia» en el title y el H1/);

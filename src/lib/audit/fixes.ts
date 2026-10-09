@@ -52,7 +52,7 @@ export const ISSUE_WHY: Record<string, string> = {
   title_short: "Título muy corto: desaprovecha espacio para la keyword y para convencer al clic.",
   title_dup: "Varias páginas con el mismo título: Google no sabe cuál mostrar y compiten entre sí.",
   meta_missing: "Sin meta description: Google inventa el texto bajo el título, a veces mal.",
-  meta_long: "Más de ~160 caracteres: Google la corta. No penaliza, solo se ve incompleta.",
+  meta_long: "Más de ~155 caracteres: Google la corta. No penaliza, solo se ve incompleta.",
   meta_short: "Muy corta: desaprovecha el texto que convence al clic.",
   meta_dup: "Misma descripción en varias páginas: todas se ven iguales en Google.",
   h1_missing: "Sin H1: el encabezado principal le dice a Google y al usuario de qué trata la página.",

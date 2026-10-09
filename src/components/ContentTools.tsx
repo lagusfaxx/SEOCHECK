@@ -38,10 +38,8 @@ export function ContentTools({
       <p className="text-sm">
         <b>Recomendaciones editoriales</b> ·{" "}
         {brief?.provenance === "ai"
-          ? "Generadas con IA"
+          ? "Generado con IA"
           : "Reglas y edición manual"}
-        . Los datos medidos de tu página y de competidores aparecen en el
-        análisis; estas propuestas requieren revisión.
       </p>
       <div className="flex flex-wrap gap-2">
         <select

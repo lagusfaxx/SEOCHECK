@@ -1,3 +1,4 @@
+import { groupTasks, taskGroupKey } from "./task-groups";
 import { db } from "./db";
 import { ISSUE_LABELS } from "./audit/issues";
 import { ISSUE_WHY, ISSUE_FIX } from "./audit/fixes";
@@ -148,26 +149,15 @@ export async function projectActions(projectId: string) {
     orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
     include: { events: { orderBy: { createdAt: "desc" }, take: 10 } },
   });
-  const grouped = new Map<
-    string,
-    (typeof rows)[number] & { affected: number }
-  >();
-  for (const t of rows.filter(
-    (t) => !["resolved", "ignored"].includes(t.status),
-  )) {
-    const key = t.source === "crawl" ? (t.code ?? t.id) : t.id;
-    const group = grouped.get(key);
-    if (group) {
-      group.affected++;
-      group.priority += t.priority;
-    } else grouped.set(key, { ...t, affected: 1 });
-  }
+  const tracked = await db.trackedKeyword.findMany({ where: { projectId, active: true }, select: { checks: { orderBy: { date: "desc" }, take: 1, select: { url: true, position: true } } } });
+  const rankedUrls = new Set(tracked.flatMap(t => t.checks.filter(c => c.url && c.position != null).map(c => c.url!)));
+  const traffic = await db.gscRow.groupBy({ by: ["page"], where: { projectId, date: { gte: new Date(Date.now()-28*864e5) } }, _sum: { impressions: true } });
+  const groups = groupTasks(rows, rankedUrls, new Map(traffic.map(t=>[t.page,t._sum.impressions ?? 0])));
   return {
     tasks: rows,
-    actions: [...grouped.values()]
-      .sort((a, b) => b.priority - a.priority)
-      .slice(0, 5),
-    improved: rows.filter((t) => t.status === "resolved").slice(0, 5),
+    groups,
+    actions: groups.filter(t => !["resolved", "ignored"].includes(t.status)).slice(0, 5),
+    improved: groups.filter(t => t.status === "resolved").slice(0, 5),
   };
 }
 
@@ -177,23 +167,19 @@ export async function setTaskGroupStatus(
   status: TaskStatus,
   actor: string,
 ) {
-  const task = await db.projectTask.findFirstOrThrow({
-    where: { id: taskId, projectId },
+  if (!TASK_STATUSES.includes(status)) throw new Error("Estado de tarea inválido");
+  return db.$transaction(async tx => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${projectId}))`;
+    const task = await tx.projectTask.findFirstOrThrow({ where: { id: taskId, projectId } });
+    const candidates = task.source === "crawl" ? await tx.projectTask.findMany({ where: { projectId, source: "crawl", code: task.code } }) : [task];
+    const siblings = candidates.filter(t => taskGroupKey(t) === taskGroupKey(task) && t.status !== "resolved");
+    for (const t of siblings) {
+      if (t.status === status) continue;
+      await tx.projectTask.update({ where: { id: t.id }, data: { status, resolvedAt: status === "resolved" ? new Date() : null } });
+      await tx.taskEvent.create({ data: { taskId: t.id, status, actor, note: "Estado actualizado para el grupo de incidencias." } });
+    }
+    return { updated: siblings.length };
   });
-  const siblings =
-    task.source === "crawl"
-      ? await db.projectTask.findMany({
-          where: {
-            projectId,
-            source: "crawl",
-            code: task.code,
-            status: { notIn: ["resolved", "ignored"] },
-          },
-          select: { id: true },
-        })
-      : [{ id: task.id }];
-  for (const t of siblings) await setTaskStatus(projectId, t.id, status, actor);
-  return { updated: siblings.length };
 }
 export async function signalTask(
   projectId: string,

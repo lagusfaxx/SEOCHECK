@@ -189,3 +189,5 @@ Fixtures reales de Apify para tests: `APIFY_TOKEN=... npm run apify-fixture` (s-
 El resumen incluye un checklist persistente y hasta cinco próximas acciones; `/p/:id/tasks` conserva su historial entre auditorías. `/p/:id/guide` contiene la guía de GSC y DNS. Informes ofrece PDF ejecutivo, Markdown técnico, CSV de incidencias y versiones programadas. Contenido conserva versiones del brief y permite regenerar una sección, marcar encabezados y comparar lo implementado. Explorar guarda mapas nombrados en el proyecto.
 
 Los límites, Stripe y los requisitos de activación se describen en [docs/product-backlog.md](docs/product-backlog.md). Aplica las migraciones con `npm run db:deploy` antes de iniciar web/worker. Los precios están pendientes de definición; Checkout permanece deshabilitado mientras falte configuración. Los informes programados guardan los últimos datos disponibles y no envían correo ni disparan una auditoría nueva.
+
+Reglas de interfaz y terminología: [docs/design-principles.md](docs/design-principles.md).

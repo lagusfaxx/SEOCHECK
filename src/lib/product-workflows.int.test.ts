@@ -500,7 +500,16 @@ test(
     assert.equal(initial.tasks.length, 1);
     assert.equal(initial.tasks[0].lastCrawlId, first.id);
     assert.equal(initial.tasks[0].status, "detected");
-    await assert.rejects(() => PRODUCT_PATCHS.tasks({ id: project.id, url: new URL("http://local/tasks"), body: { taskId: initial.tasks[0].id, status: "resolved" }, user: { id: "test", email: "test@example.test" } }), /Verifica la corrección/);
+    await assert.rejects(
+      () =>
+        PRODUCT_PATCHS.tasks({
+          id: project.id,
+          url: new URL("http://local/tasks"),
+          body: { taskId: initial.tasks[0].id, status: "resolved" },
+          user: { id: "test", email: "test@example.test" },
+        }),
+      /Verifica la corrección/,
+    );
     await setTaskStatus(project.id, initial.tasks[0].id, "pending", "test");
     assert.equal((await projectActions(project.id)).tasks[0].status, "pending");
     const report = await executiveReport(project.id);
@@ -535,5 +544,97 @@ test(
         e.note?.includes("volvió a rastrear"),
       ),
     );
+  },
+);
+
+test(
+  "Cambiar una acción afecta solo su patrón; verificar una parte no resuelve el grupo",
+  { skip: !enabled },
+  async () => {
+    const p = await db.project.create({
+      data: { workspaceId: wid, name: "Grouped workflow", domain: "grupos.cl" },
+    });
+    const urls = [
+      "https://grupos.cl/products/a",
+      "https://grupos.cl/products/b",
+      "https://grupos.cl/blog/post",
+    ];
+    const c = await db.crawl.create({
+      data: {
+        projectId: p.id,
+        status: "completed",
+        startedAt: new Date(Date.now() - 10000),
+        pages: { create: urls.map((url) => ({ url, status: 200 })) },
+        issues: {
+          create: urls.map((url) => ({
+            url,
+            code: "title_long",
+            severity: "warning",
+          })),
+        },
+      },
+    });
+    const before = await projectActions(p.id);
+    assert.equal(before.tasks.length, 3);
+    assert.equal(before.groups.length, 2);
+    const products = before.groups.find((g) => g.pattern === "/products/*")!;
+    const ctx = {
+      id: p.id,
+      url: new URL("http://local/tasks"),
+      user: { id: "test", email: "test@example.test" },
+      body: { taskId: products.id, status: "ignored", group: true },
+    };
+    await PRODUCT_PATCHS.tasks(ctx);
+    let after = await projectActions(p.id);
+    assert.equal(
+      after.groups.find((g) => g.pattern === "/products/*")?.status,
+      "ignored",
+    );
+    assert.equal(
+      after.groups.find((g) => g.pattern === "/blog/*")?.status,
+      "detected",
+    );
+    await PRODUCT_PATCHS.tasks({
+      ...ctx,
+      body: { ...ctx.body, status: "pending" },
+    });
+    await db.crawl.create({
+      data: {
+        projectId: p.id,
+        status: "completed",
+        startedAt: new Date(Date.now()),
+        pages: {
+          create: [
+            { url: urls[0], status: 200 },
+            { url: urls[1], status: 0, error: "fetch_failed" },
+          ],
+        },
+      },
+    });
+    after = await projectActions(p.id);
+    const part = after.groups.find((g) => g.pattern === "/products/*")!;
+    assert.equal(part.status, "pending");
+    assert.equal(part.resolvedCount, 1);
+    assert.equal(part.affected, 1);
+    await db.crawl.create({
+      data: {
+        projectId: p.id,
+        status: "completed",
+        startedAt: new Date(Date.now() + 1000),
+        pages: {
+          create: urls.slice(0, 2).map((url) => ({ url, status: 200 })),
+        },
+      },
+    });
+    after = await projectActions(p.id);
+    assert.equal(
+      after.groups.find((g) => g.pattern === "/products/*")?.status,
+      "resolved",
+    );
+    assert.equal(
+      after.groups.find((g) => g.pattern === "/blog/*")?.status,
+      "detected",
+    );
+    await assert.rejects(() => PRODUCT_PATCHS.tasks({ ...ctx, id: otherPid }));
   },
 );

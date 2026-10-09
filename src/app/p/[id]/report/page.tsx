@@ -16,7 +16,8 @@ export default function ReportPage() {
     refreshInterval: (j?: Job | null) => (j && (j.status === "queued" || j.status === "running") ? 2000 : 0),
   });
   const running = !!last && (last.status === "queued" || last.status === "running");
-  const { data: md, mutate: refreshMd, isLoading } = useSWR(`/api/p/${id}/report`, (u: string) => fetch(u).then((r) => r.text()), { revalidateOnFocus: false });
+  const [preview, setPreview] = useState(false);
+  const { data: md, mutate: refreshMd, isLoading } = useSWR(preview ? `/api/p/${id}/report` : null, (u: string) => fetch(u).then((r) => r.text()), { revalidateOnFocus: false });
   const { data: kw } = useApi<{ runs?: { seeds: string[] }[] }>(`/api/p/${id}/keywords`);
 
   const [maxPages, setMaxPages] = useState(1000);
@@ -53,8 +54,9 @@ export default function ReportPage() {
 
   const steps = (last?.log ?? []).find((l) => l.msg === "informe completo")?.data as Step[] | undefined;
   const copy = async () => {
-    if (!md) return;
-    await navigator.clipboard.writeText(md);
+    const content = md ?? await fetch(`/api/p/${id}/report`).then(async r=>{if(!r.ok)throw new Error("No se pudo cargar el informe");return r.text();});
+    if (typeof content !== "string") throw new Error("No se pudo cargar el informe");
+    await navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -66,22 +68,22 @@ export default function ReportPage() {
       <div className="card space-y-3 p-3">
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <span className="text-ink-500">https://{project?.domain}</span>
-          <label className="flex items-center gap-1.5 text-ink-500">máx <input className="input w-24" type="number" value={maxPages} onChange={(e) => setMaxPages(Number(e.target.value))} /></label>
-          <label className="flex items-center gap-1.5 text-ink-500">conc. <input className="input w-16" type="number" value={conc} onChange={(e) => setConc(Number(e.target.value))} /></label>
+          <details><summary className="cursor-pointer">Opciones avanzadas</summary><div className="mt-3 flex flex-wrap gap-3">          <label className="flex items-center gap-1.5 text-ink-500">Máximo de URLs <input className="input w-24" type="number" value={maxPages} onChange={(e) => setMaxPages(Number(e.target.value))} /></label>
+          <label className="flex items-center gap-1.5 text-ink-500">Concurrencia <input className="input w-16" type="number" value={conc} onChange={(e) => setConc(Number(e.target.value))} /></label>
           {(["gsc", "inspect", "psi", "rank", "keywords"] as const).map((k) => (
             <label key={k} className="flex items-center gap-1.5">
               <input type="checkbox" checked={opt[k]} onChange={() => toggle(k)} />
               {STEP[k]}
             </label>
           ))}
-          <button className="btn-p ml-auto" disabled={running} onClick={start}>
-            {running ? <Spinner className="h-4 w-4" /> : <Icon name="rocket" />}
-            {running ? `${last?.progress ?? 0}% · ${last?.message ?? "en cola"}` : "Correr todo"}
+</div>
+          {opt.keywords && <textarea className="input mt-3 w-full" rows={3} placeholder="Keywords iniciales (una por línea)" value={seedText} onChange={e=>setSeeds(e.target.value)}/>}
+          </details>
+          <button className="btn ml-auto" disabled={running} onClick={start}>
+            {running ? <Spinner className="h-4 w-4" /> : <Icon name="play" />}
+            {running ? `${last?.progress ?? 0}% · ${last?.message ?? "en cola"}` : "Ejecutar análisis completo"}
           </button>
         </div>
-        {opt.keywords && (
-          <textarea className="input w-full" rows={3} placeholder="semillas (una por línea)" value={seedText} onChange={(e) => setSeeds(e.target.value)} />
-        )}
         {err && <div className="text-sm text-rose-600">{err}</div>}
         {steps && (
           <div className="flex flex-wrap gap-1.5 text-xs">
@@ -101,18 +103,19 @@ export default function ReportPage() {
       </div>
 
       <div className="card">
-        <div className="flex items-center gap-2 border-b border-ink-100 p-3 dark:border-ink-800">
-          <span className="lbl">Informe</span>
+        <div className="flex flex-wrap items-center gap-2 border-b border-ink-100 p-3 dark:border-ink-800">
+          <span className="lbl">Implementación técnica</span>
           {last && <span className="text-xs text-ink-400">{fmtDate(last.updatedAt, "datetime")}</span>}
           <button className="btn hov-spin ml-auto" onClick={() => refreshMd()}><Icon name="refresh" /></button>
-          <button className="btn" onClick={copy} disabled={!md}><Icon name={copied ? "check" : "copy"} anim={copied ? "pop" : undefined} />{copied ? "Copiado" : "Copiar"}</button>
-          <a className="btn" href={`/api/p/${id}/report?download=1`}><Icon name="down" />.md</a>
+          <button className="btn" onClick={() => copy().catch(e=>setErr(e.message))}><Icon name={copied ? "check" : "copy"} anim={copied ? "pop" : undefined} />{copied ? "Copiado" : "Copiar"}</button>
+          <a className="btn" href={`/api/p/${id}/report?download=1`}><Icon name="down" />Descargar .md</a>
+          <button className="btn" aria-expanded={preview} onClick={()=>setPreview(!preview)}>{preview ? "Cerrar vista previa" : "Vista previa"}</button>
         </div>
-        {isLoading ? (
+        {preview && (isLoading ? (
           <div className="space-y-2 p-4">{[90, 70, 80, 50, 75, 60].map((w, i) => <div key={i} style={{ width: `${w}%` }}><Skeleton className="h-3" /></div>)}</div>
         ) : (
           <pre className="anim-in max-h-[calc(100vh-280px)] overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-xs leading-relaxed">{md}</pre>
-        )}
+        ))}
       </div>
     </div>
   );

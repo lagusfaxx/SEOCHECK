@@ -38,10 +38,10 @@ export default function GscPage() {
   const cols: Col<Row>[] = [
     { key: "sel", label: "", get: (r) => (rowsSel.has(r.key) ? 1 : 0), render: (r) => <input type="checkbox" checked={rowsSel.has(r.key)} onClick={(e) => e.stopPropagation()} onChange={() => setRowsSel((s) => { const n = new Set(s); n.has(r.key) ? n.delete(r.key) : n.add(r.key); return n; })} /> },
     { key: "key", label: dim === "query" ? "Query" : "Página", get: (r) => r.key, render: (r) => <span className="block max-w-[420px] truncate" title={r.key}>{dim === "page" ? path(r.key) : r.key}</span> },
-    { key: "clicks", label: "Clicks", get: (r) => r.clicks, render: (r) => <>{fmt(r.clicks)} <Delta from={r.prevClicks} to={r.clicks} /></>, num: true },
-    { key: "impr", label: "Impr.", get: (r) => r.impressions, render: (r) => fmt(r.impressions), num: true },
+    { key: "clicks", label: "Clics", get: (r) => r.clicks, render: (r) => <>{fmt(r.clicks)} <Delta from={r.prevClicks} to={r.clicks} /></>, num: true },
+    { key: "impr", label: "Impresiones", get: (r) => r.impressions, render: (r) => fmt(r.impressions), num: true },
     { key: "ctr", label: "CTR", get: (r) => r.ctr, render: (r) => <span className={cx(r.position <= 10 && r.ctr < expected(r.position) * 0.5 && "text-rose-600")}>{pct(r.ctr)}</span>, num: true },
-    { key: "pos", label: "Pos.", get: (r) => r.position, render: (r) => <>{fmt(r.position, 1)} <Delta from={r.prevPosition == null ? null : Number(r.prevPosition)} to={r.position} lowerIsBetter /></>, num: true },
+    { key: "pos", label: "Posición", get: (r) => r.position, render: (r) => <>{fmt(r.position, 1)} <Delta from={r.prevPosition == null ? null : Number(r.prevPosition)} to={r.position} lowerIsBetter /></>, num: true },
     { key: "n", label: dim === "query" ? "Págs." : "Queries", get: (r) => r.n, render: (r) => <span className={cx(dim === "query" && r.n > 1 && "text-amber-600")}>{r.n}</span>, num: true },
   ];
 
@@ -60,19 +60,19 @@ export default function GscPage() {
         </div>
         <div className="ml-auto flex gap-2">
           {dim === "query" && rowsSel.size > 0 && (
-            <button className="btn" disabled={trackBusy} onClick={() => track()}><Icon name="rank" />Trackear {rowsSel.size}</button>
+            <button className="btn" disabled={trackBusy} onClick={() => track()}><Icon name="rank" />Monitorear {rowsSel.size}</button>
           )}
-          <button className="btn hov-spin" disabled={syncing || syncBusy} title={syncing ? "Ya hay una sincronización en curso" : undefined} onClick={() => sync()}>{syncing || syncBusy ? <Spinner className="h-3.5 w-3.5" /> : <Icon name="refresh" />}{syncing ? "Sincronizando…" : "Sync"}</button>
+          <button className="btn hov-spin" disabled={syncing || syncBusy} title={syncing ? "Ya hay una sincronización en curso" : undefined} onClick={() => sync()}>{syncing || syncBusy ? <Spinner className="h-3.5 w-3.5" /> : <Icon name="refresh" />}{syncing ? "Sincronizando…" : "Sincronizar"}</button>
         </div>
       </div>
 
       {!data?.total ? (
-        <Empty icon="gsc" tone="info" title="Aún no hay datos de Search Console">Presiona <b>Sync</b> para traer clics, impresiones y posiciones reales de Google.</Empty>
+        <Empty icon="gsc" tone="info" title="Aún no hay datos de Search Console">Presiona <b>Sincronizar</b> para traer clics, impresiones y posiciones reales de Google.</Empty>
       ) : (
         <>
           <div className="card p-4">
             <div className="mb-3 grid grid-cols-4 gap-4">
-              <Stat label="Clicks" value={fmt(tot.clicks)} hint={q ? "Suma de las consultas/páginas que calzan con el filtro." : "Totales del sitio, igual que el gráfico de Search Console. La tabla de abajo suma menos porque Google oculta las consultas poco frecuentes (anonimizadas)."} />
+              <Stat label="Clics" value={fmt(tot.clicks)} hint={q ? "Suma de las consultas/páginas que calzan con el filtro." : "Totales del sitio, igual que el gráfico de Search Console. La tabla de abajo suma menos porque Google oculta las consultas poco frecuentes (anonimizadas)."} />
               <Stat label="Impresiones" value={fmt(tot.impressions)} />
               <Stat label="CTR" value={pct(tot.ctr)} />
               <Stat label="Posición" value={fmt(tot.position, 1)} />

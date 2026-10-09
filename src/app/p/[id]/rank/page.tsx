@@ -3,7 +3,7 @@ import { RankingExtras } from "@/components/RankingExtras";
 import { useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useProject } from "@/components/Shell";
-import { api, cx, DataTable, Delta, Drawer, Empty, fmt, Icon, jobBusy, pct, Spark, Tabs, useAction, useApi, type Col, fmtDate, Spinner } from "@/components/ui";
+import { api, cx, Metric, DataTable, Delta, Drawer, Empty, fmt, Icon, jobBusy, pct, Spark, Tabs, useAction, useApi, type Col, fmtDate, Spinner } from "@/components/ui";
 
 type Check = { id: string; date: string; position: number | null; url: string | null; features: string[]; competitors: { domain: string; position: number; url: string }[] };
 type Tracked = { id: string; keyword: string; frequency: string; active: boolean; checks: Check[] };
@@ -45,13 +45,13 @@ export default function RankPage() {
   const cols: Col<R>[] = [
     { key: "sel", label: "", get: (r) => (checked.has(r.t.id) ? 1 : 0), render: (r) => <input type="checkbox" checked={checked.has(r.t.id)} onClick={(e) => e.stopPropagation()} onChange={() => setChecked((s) => { const n = new Set(s); n.has(r.t.id) ? n.delete(r.t.id) : n.add(r.t.id); return n; })} /> },
     { key: "kw", label: "Keyword", get: (r) => r.t.keyword },
-    { key: "pos", label: "Pos.", get: (r) => r.pos, render: (r) => <b className={cx("tabular-nums", r.pos != null && r.pos <= 3 && "text-emerald-600")}>{r.pos ?? (r.last ? ">100" : "…")}</b>, num: true },
-    { key: "d", label: "Δ", get: (r) => (r.prev?.position ?? 101) - (r.pos ?? 101), render: (r) => <Delta from={r.prev?.position ?? null} to={r.pos} lowerIsBetter />, num: true },
+    { key: "pos", label: "Posición", get: (r) => r.pos, render: (r) => <b className={cx("tabular-nums", r.pos != null && r.pos <= 3 && "text-emerald-600")}>{r.pos ?? (r.last ? ">100" : "…")}</b>, num: true },
+    { key: "d", label: "Cambio", get: (r) => (r.prev?.position ?? 101) - (r.pos ?? 101), render: (r) => <Delta from={r.prev?.position ?? null} to={r.pos} lowerIsBetter />, num: true },
     { key: "best", label: "Mejor", get: (r) => r.best, num: true },
     { key: "trend", label: "", get: () => 0, render: (r) => <Spark data={r.t.checks.map((c) => c.position)} invert /> },
     { key: "url", label: "URL", get: (r) => r.last?.url, render: (r) => <span className="block max-w-[260px] truncate text-ink-500">{path(r.last?.url ?? null)}</span> },
     { key: "feat", label: "SERP", get: (r) => r.last?.features.length, render: (r) => <span className="flex gap-1">{r.last?.features.map((f) => <span key={f} className="chip">{FEAT[f] ?? f}</span>)}</span> },
-    { key: "f", label: "", get: (r) => r.t.frequency, render: (r) => <span className="text-xs text-ink-400">{r.t.frequency === "daily" ? "diario" : "semanal"}</span> },
+    { key: "f", label: "Frecuencia", get: (r) => r.t.frequency, render: (r) => <span className="text-xs text-ink-400">{r.t.frequency === "daily" ? "diario" : "semanal"}</span> },
   ];
 
   const alerts = (data?.alerts ?? []).filter((a) => atab === "all" || a.type === atab);
@@ -62,7 +62,7 @@ export default function RankPage() {
       <div className="space-y-4">
         <RankingExtras />
         <div className="card flex flex-wrap items-start gap-2 p-3">
-          <textarea className="input min-h-[38px] flex-1" rows={add.includes("\n") ? 4 : 1} placeholder="keywords a trackear (una por línea)" value={add} onChange={(e) => setAdd(e.target.value)} />
+          <textarea className="input min-h-[38px] flex-1" rows={add.includes("\n") ? 4 : 1} placeholder="keywords a monitorear (una por línea)" value={add} onChange={(e) => setAdd(e.target.value)} />
           <select className="input w-auto" value={freq} onChange={(e) => setFreq(e.target.value)} title="frecuencia (por defecto la del proyecto)">
             <option value="">{(project?.settings?.rank?.frequency ?? "weekly") === "daily" ? "diario (proyecto)" : "semanal (proyecto)"}</option>
             <option value="daily">diario</option>
@@ -75,7 +75,7 @@ export default function RankPage() {
           <Tabs value={view} onChange={setView} items={[{ id: "10", label: "≤10" }, { id: "100", label: "≤100" }]} />
           <button className="btn hov-spin" disabled={!rows.length || checking || recheckBusy} title={checking ? "Ya hay una revisión en curso" : !rows.length ? "Primero agrega keywords" : undefined} onClick={() => recheck()}><Icon name="refresh" />{checking || recheckBusy ? <><Spinner className="h-3.5 w-3.5" />Revisando…</> : `Revisar ${checked.size || "todas"}`}</button>
           {checked.size > 0 && (
-            <button className="btn" onClick={async () => { if (!confirm(`¿Dejar de trackear ${checked.size}?`)) return; await api(`/api/p/${id}/rank`, "DELETE", { ids: [...checked] }); setChecked(new Set()); mutate(); }}><Icon name="trash" /></button>
+            <button className="btn" onClick={async () => { if (!confirm(`¿Dejar de monitorear ${checked.size}?`)) return; await api(`/api/p/${id}/rank`, "DELETE", { ids: [...checked] }); setChecked(new Set()); mutate(); }}><Icon name="trash" /></button>
           )}
         </div>
         {rows.length ? (
@@ -83,7 +83,7 @@ export default function RankPage() {
             <DataTable rows={view === "10" ? rows.filter((r) => r.pos != null && r.pos <= 10) : rows} cols={cols} rowKey={(r) => r.t.id} initial={{ key: "pos", dir: 1 }} onRow={(r) => setSel(r.t)} />
           </div>
         ) : (
-          <Empty icon="target" title="Sin keywords trackeadas">Agrega arriba las keywords que te importan y revisamos tu posición en Google cada semana (o cada día).</Empty>
+          <Empty icon="target" title="Aún no monitoreas keywords"><button className="btn" onClick={()=>document.querySelector<HTMLTextAreaElement>("textarea")?.focus()}>Seleccionar keywords</button></Empty>
         )}
       </div>
 
@@ -158,15 +158,15 @@ function RankDetail({ t, onChange }: { t: Tracked; onChange: () => void }) {
       )}
       {last && (
         <div className="mt-4">
-          <div className="lbl mb-1">Top 10 · {fmtDate(last.date)}</div>
+          <div className="lbl mb-1"><Metric label="Competencia"/> · Top 10 · {fmtDate(last.date)}</div>
           <table className="tbl">
             <tbody>
-              {[...last.competitors, ...(last.position && last.position <= 10 ? [{ domain: "★ tú", position: last.position, url: last.url! }] : [])]
+              {[...last.competitors, ...(last.position && last.position <= 10 ? [{ domain: "Tu sitio", position: last.position, url: last.url! }] : [])]
                 .sort((a, b) => a.position - b.position)
                 .map((c) => (
                   <tr key={c.position + c.url}>
                     <td className="w-8 tabular-nums">{c.position}</td>
-                    <td className={cx(c.domain.startsWith("★") && "font-semibold text-acc")}>{c.domain}</td>
+                    <td className={cx(c.domain === "Tu sitio" && "font-semibold text-acc")}>{c.domain}</td>
                     <td className="max-w-[320px] truncate text-ink-400">{path(c.url)}</td>
                   </tr>
                 ))}
