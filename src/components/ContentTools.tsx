@@ -34,15 +34,10 @@ export function ContentTools({
     }
   };
   return (
-    <section className="card space-y-3 p-3">
-      <p className="text-sm">
-        <b>Recomendaciones editoriales</b> ·{" "}
-        {brief?.provenance === "ai"
-          ? "Generado con IA"
-          : "Reglas y edición manual"}
-      </p>
-      <div className="flex flex-wrap gap-2">
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
         <select
+          aria-label="Sección a regenerar"
           className="input w-auto"
           value={section}
           onChange={(e) => setSection(e.target.value)}
@@ -77,16 +72,6 @@ export function ContentTools({
         >
           Regenerar solo esta sección
         </button>
-        <span className="inline-flex items-center gap-2">
-          <a
-            className="btn"
-            href={`/api/p/${id}/content/implementation?cid=${cid}`}
-            title="Descarga las instrucciones de implementación en Markdown para pasárselas a tu agente de código"
-          >
-            Enviar a implementación
-          </a>
-          <span className="text-xs text-ink-500">Destino: Claude Code (.md)</span>
-        </span>
         <button
           className="btn"
           disabled={busy || !brief}

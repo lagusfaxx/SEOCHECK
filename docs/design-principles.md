@@ -15,6 +15,6 @@ SEOCHECK es una herramienta profesional de análisis. La IA es una capacidad int
 - Evitar párrafos permanentes. Usar una frase y detalles bajo Más información cuando corresponda.
 - Mantener Keywords, Explorar, Rankings y Contenido como herramientas estructuradas. Conservar el grafo y sus acciones.
 - Separar datos observados y recomendaciones. Etiquetar discretamente contenido generado: Generado con IA. No usar IA cuando basta una regla determinista.
-- Conservar filtros, límites, configuración técnica e instrucciones para Claude Code mediante divulgación progresiva.
+- Conservar filtros, límites, configuración técnica e instrucciones de implementación para asistentes de programación mediante divulgación progresiva.
 
 Validar escritorio, móvil, teclado, estados sin datos y conjuntos grandes. El estado vacío debe indicar qué falta y cómo obtenerlo.

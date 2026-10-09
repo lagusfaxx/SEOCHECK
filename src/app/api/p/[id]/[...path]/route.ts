@@ -19,6 +19,7 @@ import { onboarding } from "@/lib/onboarding";
 import { gscAvailable, gscSites, indexNow, resolveGscProperty } from "@/lib/providers/google";
 import { disconnect, GscNotConnected, oauthConfigured, startUrl } from "@/lib/gsc-oauth";
 import { gscTargetFor, makeBrief, type ContentResult } from "@/lib/content/analyze";
+import { pageSuggestions, pageTypeFit } from "@/lib/content/suggest";
 import { parseKeywordPlannerCsv } from "@/lib/volume/csv";
 import { backfillVolumes, volumeChainStatus, writeCache } from "@/lib/volume/broker";
 import { env } from "@/lib/env";
@@ -324,6 +325,14 @@ const GETS: Record<string, H> = {
   "report/last": async ({ id }) => db.jobRun.findFirst({ where: { projectId: id, kind: QUEUES.full }, orderBy: { createdAt: "desc" } }),
   /** Para el formulario de Contenido: qué URL ya rankea para la keyword en Search Console. */
   "content/target": async ({ id, url }) => gscTargetFor(id, url.searchParams.get("keyword") ?? "", url.searchParams.get("url") || undefined),
+  "content/suggest": async ({ id, url }) => pageSuggestions(id, url.searchParams.get("keyword") ?? ""),
+  /** Tras el análisis SERP: ¿el sitio tiene una página del tipo que Google prefiere? (gratis, lee el propio sitio) */
+  "content/fit": async ({ id, url }) => {
+    const a = await ownContent(id, url.searchParams.get("cid"));
+    const r = a.result as unknown as ContentResult;
+    if (a.status !== "done" || !r?.pageType) return null;
+    return pageTypeFit(id, a.keyword, a.url, r.pageType);
+  },
   "content/one": async ({ id, url }) => {
     const { project: _p, ...a } = await ownContent(id, url.searchParams.get("cid"));
     return a;
@@ -494,7 +503,10 @@ const POSTS: Record<string, H> = {
       id, "content.rebrief",
       async () => {
         await assertBudget({ llm: est.llmBrief() }, "Regenerar brief");
-        return makeBrief(a.result as unknown as ContentResult, a.project.language, a.project.country);
+        const r = a.result as unknown as ContentResult;
+        // «Generar brief para una página nueva»: el tipo lo decide Google (SERP), no la página analizada
+        const kind = ["article", "listing", "landing", "product"].includes(body.kind) ? (body.kind as ContentResult["requestedKind"]) : undefined;
+        return makeBrief(kind ? { ...r, requestedKind: kind, mine: { ...r.mine, type: undefined } } : r, a.project.language, a.project.country);
       }
     );
     return storeBrief(a.id, brief, "regenerate");

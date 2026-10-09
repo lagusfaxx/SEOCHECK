@@ -1,5 +1,6 @@
 "use client";
 import { ContentTools } from "@/components/ContentTools";
+import { commonSchema, improvements, LEVEL_DOT, LEVEL_LABEL } from "@/lib/content/improvements";
 import { statusLabel } from "@/lib/status";
 import { useSWRConfig } from "swr";
 import { useEffect, useRef, useState } from "react";
@@ -7,7 +8,7 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type D
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useProject } from "@/components/Shell";
-import { api, Bar, contentScoreLabel, CopyBtn, cx, Empty, fmt, Hint, Icon, Score, Tabs, useApi, Spinner } from "@/components/ui";
+import { api, contentScoreLabel, CopyBtn, cx, Drawer, Empty, fmt, Hint, Icon, Score, Tabs, useAction, useApi, useLocal, Spinner } from "@/components/ui";
 
 type Block = { id: string; tag: "h2" | "h3"; text: string; notes?: string; state?: "optional" | "required" | "removed" };
 type Brief = {
@@ -24,7 +25,8 @@ type Brief = {
   title?: string;
   meta?: string;
 };
-const TYPE_LABEL: Record<string, string> = { listing: "listado", detail: "ficha", article: "artículo", home: "home" };
+const TYPE_LABEL: Record<string, string> = { listing: "listado", detail: "ficha", article: "artículo", home: "página de inicio" };
+const TYPE_PLURAL: Record<string, string> = { listing: "listados", detail: "fichas de producto", article: "artículos", home: "páginas de inicio" };
 
 const nid = () => `u${Math.random().toString(36).slice(2, 9)}`;
 const faqLd = (faq: Brief["faq"]) =>
@@ -56,6 +58,157 @@ function OutlineItem({ b, onChange, onDelete }: { b: Block; onChange: (b: Block)
   );
 }
 
+const TYPE_ONE: Record<string, string> = { listing: "un listado o categoría", detail: "una ficha de producto", article: "un artículo", home: "una página de inicio" };
+const KIND_FOR: Record<string, string> = { listing: "listing", detail: "product", article: "article", home: "landing" };
+
+/** Diagnóstico arriba: ¿es la página correcta para esta búsqueda? Domina la pantalla mientras haya problema. */
+function Diagnosis({ cid, keyword, googleType, mineType, onBrief, onContinue }: { cid: string; keyword: string; googleType: string; mineType: string; onBrief: () => void; onContinue: () => void }) {
+  const { id, refreshJobs } = useProject();
+  const { data: fit, isLoading } = useApi<{ match: { url: string; title: string | null } | null; checked: number } | null>(`/api/p/${id}/content/fit?cid=${cid}`);
+  const [busy, setBusy] = useState(false);
+  const mine = mineType === "home" ? "tu página de inicio" : TYPE_ONE[mineType] ?? "otro tipo de página";
+  return (
+    <section className="rounded-xl border border-amber-300 bg-amber-50 p-5 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+        <Icon name="alert" className="h-4 w-4" />Página posiblemente incorrecta
+      </div>
+      <h2 className="mt-2 text-xl font-semibold">Esta no parece ser la mejor página para esta búsqueda</h2>
+      <p className="mt-1 max-w-3xl text-sm">
+        Para «{keyword}», Google muestra principalmente <b>{TYPE_PLURAL[googleType]}</b>. Estás analizando {mine}.
+      </p>
+      {isLoading ? (
+        <div className="mt-4 flex items-center gap-2 text-sm"><Spinner className="h-4 w-4" />Buscando en tu sitio una página que encaje mejor…</div>
+      ) : fit?.match ? (
+        <div className="mt-4">
+          <div className="text-xs text-amber-800 dark:text-amber-300">Encontramos una página de tu sitio que encaja mejor:</div>
+          <div className="mt-1 font-semibold">{fit.match.title?.split(" | ")[0] ?? pathOf(fit.match.url)}</div>
+          <div className="break-all font-mono text-xs opacity-80">{pathOf(fit.match.url)}</div>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <a className="btn-p" href={`/p/${id}/content?keyword=${encodeURIComponent(keyword)}&url=${encodeURIComponent(fit.match.url)}`}>Analizar esta página →</a>
+            <button className="btn-g text-amber-900 underline dark:text-amber-200" onClick={onContinue}>Continuar con esta página</button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4">
+          <div className="text-sm">
+            No encontramos {TYPE_ONE[googleType]} relacionada en tu sitio{fit?.checked ? ` (revisamos ${fit.checked} candidatas)` : ""}. Recomendación: crear {TYPE_ONE[googleType]} específica para esta búsqueda.
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              className="btn-p"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  await api(`/api/p/${id}/content/rebrief`, "POST", { cid, kind: KIND_FOR[googleType] });
+                  onBrief();
+                  refreshJobs();
+                  onContinue();
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {busy ? <Spinner className="h-3.5 w-3.5" /> : <Icon name="doc" />}Generar brief para la página nueva
+            </button>
+            <button className="btn-g text-amber-900 underline dark:text-amber-200" onClick={onContinue}>Continuar con esta página</button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+const median = (xs: number[]) => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s.length ? s[Math.floor(s.length / 2)] : 0;
+};
+
+/** «Qué está funcionando en Google»: la tabla de competidores interpretada en 4-5 frases. */
+function GoogleSummary({ r }: { r: any }) {
+  const comps = r.competitors ?? [];
+  if (!comps.length) return null;
+  const types = new Map<string, number>();
+  for (const c of comps) if (c.type) types.set(c.type, (types.get(c.type) ?? 0) + 1);
+  const [topType, topN] = [...types.entries()].sort((a, b) => b[1] - a[1])[0] ?? [];
+  const words = median(comps.map((c: any) => c.editorial ?? c.words ?? 0));
+  const h2 = comps.map((c: any) => c.h2 ?? 0).sort((a: number, b: number) => a - b);
+  const lo = h2[Math.floor(h2.length * 0.2)] ?? 0, hi = h2[Math.floor(h2.length * 0.8)] ?? 0;
+  const common = commonSchema(r).map((s) => s.type);
+  const mineSchema: string[] = r.mine?.schema ?? [];
+  const lines = [
+    topType ? `${topN} de ${comps.length} resultados analizados son ${TYPE_PLURAL[topType] ?? topType}.` : null,
+    `Extensión habitual: ~${fmt(words)} palabras.`,
+    common.length ? `Schema frecuente: ${common.join(", ")}.` : "Sin un schema predominante.",
+    hi ? `Las páginas suelen usar ${lo === hi ? hi : `${lo}–${hi}`} secciones (H2).` : null,
+  ].filter(Boolean) as string[];
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <div>
+        <div className="lbl">Qué está funcionando en Google</div>
+        <ul className="mt-2 space-y-1 text-sm">{lines.map((l) => <li key={l}>{l}</li>)}</ul>
+      </div>
+      <div>
+        <div className="lbl">Tu página</div>
+        <p className="mt-2 text-sm">
+          {TYPE_LABEL[r.mine?.type] ?? "Página"} · {fmt(r.mine?.editorial ?? r.mine?.words)} palabras ·{" "}
+          {common.length ? (common.every((t: string) => mineSchema.includes(t)) ? `con ${common.join(" y ")}` : `sin ${common.filter((t: string) => !mineSchema.includes(t)).join(" ni ")}`) : mineSchema.length ? `schema: ${mineSchema.join(", ")}` : "sin schema"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+const pathOf = (u: string) => u.replace(/^https?:\/\/[^/]+/, "") || "/";
+
+/** Antes de descargar: qué cambios incluye el archivo de instrucciones y a dónde va. */
+function ImplementationSummary({ brief, url, onDownload }: { brief: Brief; url: string; onDownload: () => Promise<void> }) {
+  const [download, busy] = useAction(onDownload);
+  const heads = (brief.outline ?? []).filter((b) => b.state !== "removed");
+  const removed = (brief.outline ?? []).filter((b) => b.state === "removed").length;
+  const required = heads.filter((b) => b.state === "required").length;
+  const faq = (brief.faq ?? []).filter((f) => f.q && f.a).length;
+  const listing = brief.kind === "listing";
+  const rows: [string, string][] = [
+    ["Título", brief.title ?? brief.titles?.[0] ?? "—"],
+    ["Meta description", brief.meta ?? brief.metas?.[0] ?? "—"],
+    ...(listing
+      ? ([
+          ["Intro del listado", brief.intro ? plural(brief.intro.trim().split(/\s+/).length, "palabra", "palabras") : "—"],
+          ["Filtros", plural((brief.filters ?? []).length, "filtro", "filtros")],
+          ["Enlaces internos", plural((brief.links ?? []).length, "enlace", "enlaces")],
+        ] as [string, string][])
+      : ([["Estructura", `${plural(heads.length, "encabezado", "encabezados")} (${required} ${required === 1 ? "obligatorio" : "obligatorios"})${removed ? ` · ${removed} marcado${removed === 1 ? "" : "s"} para eliminar` : ""}`]] as [string, string][])),
+    ["Preguntas frecuentes", faq ? `${plural(faq, "pregunta", "preguntas")} con respuesta y su JSON-LD` : "—"],
+    ...((brief.notes ?? []).length ? ([["Notas", plural(brief.notes!.length, "indicación", "indicaciones")]] as [string, string][]) : []),
+  ];
+  return (
+    <div className="mt-8 space-y-5">
+      <div>
+        <h2 className="text-lg font-semibold">Preparar implementación</h2>
+        <p className="mt-1 text-sm text-ink-500">Estos cambios irán en el archivo para la página <span className="break-all">{url.replace(/^https?:\/\//, "")}</span>.</p>
+      </div>
+      <dl className="divide-y divide-ink-100 rounded-lg border border-ink-200 text-sm dark:divide-ink-800 dark:border-ink-800">
+        {rows.map(([k, v]) => (
+          <div key={k} className="grid gap-1 px-3 py-2.5 sm:grid-cols-[150px_1fr]">
+            <dt className="text-ink-500">{k}</dt>
+            <dd className="break-words">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="rounded-lg bg-ink-50 px-3 py-2.5 text-sm dark:bg-ink-800/50">
+        <div className="font-medium">Instrucciones de implementación (.md)</div>
+        <p className="text-ink-500">Un archivo Markdown con los cambios y cómo validarlos. Sirve para tu equipo o para cualquier asistente de programación.</p>
+      </div>
+      <button className="btn-p" disabled={busy} onClick={() => download()}>
+        {busy ? <Spinner className="h-3.5 w-3.5" /> : <Icon name="doc" />}Descargar instrucciones (.md)
+      </button>
+    </div>
+  );
+}
+
 export default function ContentDetail({ params }: { params: { cid: string } }) {
   const { id, refreshJobs } = useProject();
   const {mutate:invalidate}=useSWRConfig();
@@ -65,6 +218,9 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
   const [tab, setTab] = useState<"terms" | "sections" | "paa" | "comp">("terms");
   const [termFilter, setTermFilter] = useState<"missing" | "all">("missing");
   const [saving, setSaving] = useState(false);
+  // «Continuar con esta página»: el usuario ya vio el diagnóstico y decidió seguir (se recuerda por análisis)
+  const [continued, setContinued] = useLocal<boolean>(`content:continue:${params.cid}`, false);
+  const [prep, setPrep] = useState(false);
   const loaded = useRef<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -123,183 +279,115 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
       ].join("\n")
     : "";
 
-  return (
-    <div className="grid gap-4 p-4 md:p-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-      <div className="xl:col-span-2"><ContentTools cid={params.cid} brief={brief} onChange={setBrief}/></div>
-      {/* Análisis */}
-      <div className="space-y-4">
-        <div className="card flex flex-wrap items-center gap-5 p-4">
-          <div className="flex flex-col items-center gap-1">
-            <Score value={r.score} size={92} />
-            <span className="flex items-center gap-1 text-[11px] text-ink-500">
-              {contentScoreLabel(r.score)}
-              <Hint text="Puntaje de 0 a 100 que compara tu página con las 10 primeras de Google para esta keyword. Es la suma de 5 partes medidas, no una opinión de IA: términos que usan los que rankean, largo del texto, secciones comunes, preguntas de Google respondidas y datos estructurados (schema). Pasa el mouse sobre cada parte para ver cómo se calcula." />
-            </span>
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-lg font-semibold">{data.keyword}</div>
-            <a href={data.url} target="_blank" rel="noreferrer" className="block truncate text-xs text-ink-400 hover:text-acc">{data.url}</a>
-            {r.pageType && (
-              <div className="mt-0.5 text-[11px] text-ink-500">
-                Google muestra <b>{TYPE_LABEL[r.pageType]}s</b>
-                {r.mine?.type && r.mine.type !== r.pageType && <span className="text-amber-600"> · la tuya es {TYPE_LABEL[r.mine.type]}</span>}
-              </div>
-            )}
-          </div>
-          <div className="shrink-0 text-right text-sm">
-            <div className="tabular-nums"><b>{fmt(r.mine?.editorial ?? r.mine?.words)}</b> palabras</div>
-            <div className="flex items-center justify-end gap-1 text-[11px] text-ink-500">
-              objetivo ~{fmt(r.targetWords)}
-              <Hint text="Solo cuenta texto editorial: sin menús, footer, tarjetas de listado ni bloques que se repiten en todo el sitio. El objetivo es la mediana de palabras del top 10 de Google con el mismo tipo de página." />
-            </div>
-          </div>
-          <div className="grid w-full grid-cols-2 gap-3 border-t border-ink-100 pt-3 text-[11px] text-ink-500 sm:grid-cols-5 dark:border-ink-800">
-            {([
-              ["Términos clave", r.breakdown?.terms, r.pageType === "listing" ? 50 : 40, "Cuántos de los términos que usan las páginas del top 10 aparecen en tu página, y con qué frecuencia. Los más comunes pesan más."],
-              ["Largo del texto", r.breakdown?.length, 15, `Tus palabras editoriales comparadas con el objetivo (~${fmt(r.targetWords)}, la mediana del top 10). Puntaje completo al llegar al 90% del objetivo.`],
-              ["Secciones", r.breakdown?.sections, r.pageType === "listing" ? 10 : 20, "Cuántas de las secciones (H2/H3) que se repiten en el top 10 cubre tu página."],
-              ["Preguntas (PAA)", r.breakdown?.paa, 15, "Cuántas de las preguntas de «Otras preguntas de los usuarios» de Google respondes en tu página."],
-              ["Schema", r.breakdown?.schema, 10, "Si tu página tiene los datos estructurados (schema) que usa al menos un 30% del top 10."],
-            ] as [string, number, number, string][]).map(([l, v, m, help]) => (
-              <div key={l} className="cursor-help" title={help}>
-                <div className="flex items-start gap-1 leading-tight">{l} <Hint text={help} /></div>
-                <div className="tabular-nums text-ink-800 dark:text-ink-200">{v ?? 0}<span className="text-ink-400"> de {m} pts</span></div>
-                <Bar value={((v ?? 0) / m) * 100} className="mt-0.5" />
-              </div>
-            ))}
-          </div>
-        </div>
+  const fixType = r.pageType && r.mine?.type && r.mine.type !== r.pageType;
+  const problem = fixType && !continued;
+  const items = improvements(r, { ready: !!r.breakdown });
+  const counts = {
+    terms: (r.terms ?? []).filter((t: any) => t.missing).length,
+    sections: (r.sections ?? []).filter((x: any) => !x.covered).length,
+    paa: (r.paa ?? []).filter((x: any) => !x.answered).length,
+    comps: (r.competitors ?? []).length,
+  };
 
-        {r.target?.gscUrl && (
-          <div className={cx("rounded-lg px-3 py-2 text-sm", r.target.mismatch ? "bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200" : "bg-emerald-50 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-200")}>
-            {r.target.mismatch ? (
-              <>
-                <b>Ojo, canibalización:</b> para «{data.keyword}» Google ya muestra{" "}
-                <a className="underline" href={r.target.gscUrl} target="_blank" rel="noreferrer">{r.target.gscUrl}</a> ({fmt(r.target.impressions)} impresiones · posición {fmt(r.target.position, 1)}). Optimiza esa URL o diferencia bien esta.
-              </>
-            ) : (
-              <>Esta es la URL que ya rankea para «{data.keyword}» en Search Console ({fmt(r.target.impressions)} impresiones · posición {fmt(r.target.position, 1)}).</>
-            )}
-            {r.target.others?.length > 0 && <div className="mt-1 text-xs opacity-80">También aparecen: {r.target.others.map((o: any) => o.url).join(" · ")}</div>}
+  return (
+    <div className="mx-auto max-w-6xl space-y-6 p-4 md:p-6">
+      {/* 1. ¿Estoy optimizando la página correcta? */}
+      <header className="flex flex-wrap items-end gap-x-6 gap-y-2">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl font-semibold first-letter:uppercase">{data.keyword}</h1>
+          <a href={data.url} target="_blank" rel="noreferrer" className="block truncate text-sm text-ink-500 hover:text-acc">{data.url.replace(/^https?:\/\//, "")}</a>
+        </div>
+        {problem && (
+          <div className="text-sm text-ink-500" title="Puntaje de 0 a 100 frente al top 10 de Google. Con la página equivocada, subirlo no garantiza posicionar.">
+            Puntaje de esta página: <b className="tabular-nums text-ink-800 dark:text-ink-100">{r.score}/100</b> · {contentScoreLabel(r.score)}
           </div>
         )}
+      </header>
 
-        <Tabs
-          value={tab}
-          onChange={setTab}
-          items={[
-            { id: "terms", label: `Términos · faltan ${(r.terms ?? []).filter((t: any) => t.missing).length}`, title: "Palabras que usan las páginas del top 10 de Google" },
-            { id: "sections", label: `Secciones · faltan ${(r.sections ?? []).filter((s: any) => !s.covered).length}`, title: "Secciones (H2/H3) que se repiten en el top 10" },
-            { id: "paa", label: `Preguntas (PAA) · sin responder ${(r.paa ?? []).filter((p: any) => !p.answered).length}`, title: "«Otras preguntas de los usuarios» (People Also Ask): preguntas que Google muestra para esta keyword" },
-            { id: "comp", label: "Competencia", title: "Las páginas del top 10 que se usaron para comparar" },
-          ]}
-        />
+      {problem && (
+        <Diagnosis cid={data.id} keyword={data.keyword} googleType={r.pageType} mineType={r.mine.type} onBrief={() => { loaded.current = null; mutate(); }} onContinue={() => setContinued(true)} />
+      )}
 
-        <div className="card p-3">
-          {tab === "terms" && (
-            <>
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <Tabs value={termFilter} onChange={setTermFilter} items={[{ id: "missing", label: "Faltan" }, { id: "all", label: "Todos" }]} />
-                <span className="flex items-center gap-1 text-xs text-ink-500">
-                  {terms[0] ? <>«{terms[0].term} {terms[0].mine}/{terms[0].target}» = lo usas {terms[0].mine} {terms[0].mine === 1 ? "vez" : "veces"}; el top 10, ~{terms[0].target}</> : "Veces que lo usas / veces que lo usa el top 10"}
-                  <Hint text="El primer número es cuántas veces aparece el término en tu página; el segundo, la cantidad típica (mediana) en las páginas del top 10 que lo usan. Rojo: no lo usas. Amarillo: lo usas menos. Verde: llegas al objetivo. Clic para copiarlo." />
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {terms.map((t: any) => (
-                  <button
-                    key={t.term}
-                    title={`Lo usas ${t.mine} ${t.mine === 1 ? "vez" : "veces"} · el top 10 lo usa ~${t.target} ${t.target === 1 ? "vez" : "veces"} · aparece en el ${Math.round(t.coverage * 100)}% de los competidores. Clic para copiar.`}
-                    onClick={() => navigator.clipboard.writeText(t.term)}
-                    className={cx("rounded-md border px-2 py-1 text-xs transition hover:border-acc", t.missing ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300" : t.mine >= t.target ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300" : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300")}
-                    style={{ fontSize: `${11 + Math.min(4, t.coverage * 4)}px` }}
-                  >
-                    {t.term} <span className="opacity-60">{t.mine}/{t.target}</span>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-          {tab === "sections" && (
-            <div className="space-y-1">
-              {(r.sections ?? []).map((s: any) => (
-                <div key={s.label} className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-ink-50 dark:hover:bg-ink-800/50">
-                  <span className={cx("h-4 w-4 shrink-0 rounded-full text-center text-[10px] leading-4", s.covered ? "bg-emerald-500 text-white" : "border border-ink-300")}>{s.covered ? "✓" : ""}</span>
-                  <span className="min-w-0 flex-1 truncate text-sm" title={s.variants.join("\n")}>{s.label}</span>
-                  <span className="text-xs tabular-nums text-ink-400" title={`${s.count} de las páginas del top 10 tienen esta sección`}>{s.count} págs.</span>
-                  <button className="btn-g p-0.5 opacity-0 group-hover:opacity-100" onClick={() => addBlock(s.label)}><Icon name="plus" className="h-3.5 w-3.5" /></button>
-                </div>
-              ))}
-              {!(r.sections ?? []).length && <div className="text-sm text-ink-300">—</div>}
-            </div>
-          )}
-          {tab === "paa" && (
-            <div className="space-y-1">
-              {(r.paa ?? []).map((p: any) => (
-                <div key={p.q} className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-ink-50 dark:hover:bg-ink-800/50">
-                  <span className={cx("h-4 w-4 shrink-0 rounded-full text-center text-[10px] leading-4", p.answered ? "bg-emerald-500 text-white" : "border border-ink-300")}>{p.answered ? "✓" : ""}</span>
-                  <span className="flex-1 text-sm">{p.q}</span>
-                  <button className="btn-g p-0.5 opacity-0 group-hover:opacity-100" onClick={() => addBlock(p.q, "h3")}><Icon name="plus" className="h-3.5 w-3.5" /></button>
-                </div>
-              ))}
-              {(r.questions ?? []).length > 0 && <div className="lbl mt-3 px-2">Preguntas en competidores</div>}
-              {(r.questions ?? []).map((q: string) => (
-                <div key={q} className="group flex items-center gap-2 rounded-md px-2 py-1 text-sm text-ink-600 hover:bg-ink-50 dark:text-ink-300 dark:hover:bg-ink-800/50">
-                  <span className="flex-1">{q}</span>
-                  <button className="btn-g p-0.5 opacity-0 group-hover:opacity-100" onClick={() => addBlock(q, "h3")}><Icon name="plus" className="h-3.5 w-3.5" /></button>
-                </div>
-              ))}
-            </div>
-          )}
-          {tab === "comp" && (
-            <div className="overflow-auto">
-              <table className="tbl">
-                <thead><tr><th>#</th><th>Dominio</th><th>Tipo</th><th className="num" title="Palabras editoriales: sin menús, footer ni tarjetas">Palabras</th><th className="num">H2</th><th className="num">H3</th><th>Schema</th></tr></thead>
-                <tbody>
-                  {(r.competitors ?? []).map((c: any) => (
-                    <tr key={c.url}>
-                      <td>{c.position}</td>
-                      <td><a href={c.url} target="_blank" rel="noreferrer" className="hover:text-acc" title={c.title}>{c.domain}</a></td>
-                      <td className="text-xs text-ink-500">{c.type ? TYPE_LABEL[c.type] : "–"}</td>
-                      <td className="num" title={`${fmt(c.words)} palabras en total`}>{fmt(c.editorial ?? c.words)}</td>
-                      <td className="num">{c.h2}</td>
-                      <td className="num">{c.h3}</td>
-                      <td className="max-w-[200px] truncate text-xs text-ink-400">{c.schema.join(", ")}</td>
-                    </tr>
-                  ))}
-                  <tr className="font-semibold">
-                    <td>★</td><td>tu página</td><td className="text-xs">{r.mine?.type ? TYPE_LABEL[r.mine.type] : "–"}</td><td className="num">{fmt(r.mine?.editorial ?? r.mine?.words)}</td>
-                    <td className="num">{(r.mine?.headings ?? []).filter((h: any) => h.tag === "h2").length}</td>
-                    <td className="num">{(r.mine?.headings ?? []).filter((h: any) => h.tag === "h3").length}</td>
-                    <td className="text-xs">{(r.mine?.schema ?? []).join(", ")}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {(r.schema ?? []).map((s: any) => (
-                  <span key={s.type} className={cx("chip", s.mine && "!bg-emerald-100 !text-emerald-700")}>{s.type} · {s.count}</span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {saveError&&<p role="alert" className="text-rose-700">No se pudo guardar: {saveError}</p>}
-      {/* Brief */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          <span className="lbl">Brief</span>{brief?.provenance === "ai" && <span className="text-xs text-ink-500">Generado con IA</span>}
-          <span className="text-xs text-ink-400">{saving ? "guardando…" : data.status !== "done" ? data.status : ""}</span>
-          <div className="ml-auto flex gap-1">
-            <CopyBtn text={md} />
-            <button className="btn" onClick={async () => { loaded.current = null; await api(`/api/p/${id}/content/rebrief`, "POST", { cid: data.id }); mutate(); refreshJobs(); }}><Icon name="refresh" />Regenerar</button>
+      {!problem && (
+        <section className="card flex flex-wrap items-center gap-5 p-4">
+          <div className="flex flex-col items-center gap-1">
+            <Score value={r.score} size={84} />
+            <span className="flex items-center gap-1 text-[11px] text-ink-500">
+              {contentScoreLabel(r.score)}
+              <Hint text="Puntaje de 0 a 100 que compara tu página con las 10 primeras de Google para esta keyword. Es la suma de 5 partes medidas, no una opinión de IA. Abajo está traducido a qué mejorar." />
+            </span>
           </div>
+          <div className="min-w-0 flex-1 text-sm">
+            {r.pageType && (
+              <p>
+                Google muestra <b>{TYPE_PLURAL[r.pageType]}</b>
+                {fixType ? (
+                  <span className="text-amber-700 dark:text-amber-300"> y estás analizando {r.mine.type === "home" ? "tu página de inicio" : TYPE_ONE[r.mine.type]} (elegiste continuar con esta página).</span>
+                ) : (
+                  <span className="text-emerald-700 dark:text-emerald-400"> y tu página es del mismo tipo. ✓</span>
+                )}
+              </p>
+            )}
+            <p className="mt-1 text-ink-500">{fmt(r.mine?.editorial ?? r.mine?.words)} palabras · el top 10 usa ~{fmt(r.targetWords)}</p>
+          </div>
+        </section>
+      )}
+
+      {r.target?.gscUrl && (
+        <div className={cx("rounded-lg px-3 py-2 text-sm", r.target.mismatch ? "bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200" : "bg-emerald-50 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-200")}>
+          {r.target.mismatch ? (
+            <>
+              <b>Ojo, canibalización:</b> para «{data.keyword}» Google ya muestra{" "}
+              <a className="underline" href={r.target.gscUrl} target="_blank" rel="noreferrer">{r.target.gscUrl}</a> ({fmt(r.target.impressions)} impresiones · posición {fmt(r.target.position, 1)}). Optimiza esa URL o diferencia bien esta.
+            </>
+          ) : (
+            <>Esta es la URL que ya rankea para «{data.keyword}» en Search Console ({fmt(r.target.impressions)} impresiones · posición {fmt(r.target.position, 1)}).</>
+          )}
+          {r.target.others?.length > 0 && <div className="mt-1 text-xs opacity-80">También aparecen: {r.target.others.map((o: any) => o.url).join(" · ")}</div>}
         </div>
+      )}
+
+      {/* 2. ¿Qué le falta frente a Google? */}
+      <section>
+        <h2 className="lbl">Qué debes mejorar</h2>
+        <ul className="mt-2 divide-y divide-ink-100 rounded-xl border border-ink-200 bg-white dark:divide-ink-800 dark:border-ink-800 dark:bg-ink-900">
+          {items.map((it) => (
+            <li key={it.area} className="grid gap-1 px-4 py-3 sm:grid-cols-[130px_1fr_auto] sm:items-baseline sm:gap-4">
+              <span className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-ink-500">
+                <span className={cx("h-2.5 w-2.5 shrink-0 rounded-full", LEVEL_DOT[it.level])} aria-label={LEVEL_LABEL[it.level]} />
+                {it.area}
+              </span>
+              <div>
+                <div className="font-medium">{it.title}</div>
+                <div className="text-sm text-ink-500">{it.detail}</div>
+              </div>
+              <span className="text-xs tabular-nums text-ink-400">{it.points == null ? "—" : `${it.points} de ${it.max} pts`}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* 3. ¿Qué debería cambiar? */}
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-semibold">Propuesta de optimización</h2>
+            <p className="text-xs text-ink-500">
+              {brief?.provenance === "ai" ? "Generada con IA a partir del análisis de Google." : "Generada a partir del análisis de Google."} Puedes editarla: se guarda sola{saving ? " (guardando…)" : ""}.
+            </p>
+          </div>
+          <CopyBtn text={md} />
+          <button className="btn" onClick={async () => { loaded.current = null; await api(`/api/p/${id}/content/rebrief`, "POST", { cid: data.id }); mutate(); refreshJobs(); }}><Icon name="refresh" />Regenerar</button>
+          <button className="btn-p" disabled={!brief} onClick={() => setPrep(true)}>
+            Preparar implementación
+          </button>
+        </div>
+        {saveError && <p role="alert" className="text-rose-700">No se pudo guardar: {saveError}</p>}
         {!brief ? (
-          <Empty icon="content" title={<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4 text-acc" />Generando brief…</span>} />
+          <Empty icon="content" title={<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4 text-acc" />Generando propuesta…</span>} />
         ) : (
-          <>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <div className="space-y-4">
             <div className="card space-y-3 p-3">
               <div>
                 <div className="flex items-center justify-between"><span className="lbl">Title</span><span className={cx("text-xs tabular-nums", (brief.title?.length ?? 0) > 60 ? "text-rose-600" : "text-ink-400")}>{brief.title?.length ?? 0}/60</span></div>
@@ -326,7 +414,16 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
                 <div className="line-clamp-2 text-xs text-ink-600 dark:text-ink-300">{brief.meta}</div>
               </div>
             </div>
-
+              {brief.notes && brief.notes.length > 0 && (
+                <div className="card p-3">
+                  <span className="lbl">Notas</span>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-ink-600 dark:text-ink-300">
+                    {brief.notes.map((n) => <li key={n}>{n}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+            <div className="space-y-4">
             {listing ? (
               <div className="card space-y-3 p-3">
                 <div>
@@ -394,18 +491,148 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
                 </div>
               </details>
             </div>
-
-            {brief.notes && brief.notes.length > 0 && (
-              <div className="card p-3">
-                <span className="lbl">Notas</span>
-                <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-ink-600 dark:text-ink-300">
-                  {brief.notes.map((n) => <li key={n}>{n}</li>)}
-                </ul>
-              </div>
-            )}
-          </>
+            </div>
+          </div>
         )}
-      </div>
+        <details className="text-sm">
+          <summary className="cursor-pointer text-ink-500">Más herramientas: regenerar una sección, comparar con lo publicado, historial de versiones</summary>
+          <div className="mt-3"><ContentTools cid={params.cid} brief={brief} onChange={setBrief} /></div>
+        </details>
+      </section>
+
+      {/* Evidencia: todo lo técnico, plegado */}
+      <details className="group rounded-xl border border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-900">
+        <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-5 gap-y-1 px-4 py-3 [&::-webkit-details-marker]:hidden">
+          <span className="font-semibold">Datos del análisis</span>
+          <span className="text-sm text-ink-500">Términos {counts.terms} · Secciones {counts.sections} · Preguntas {counts.paa} · Competidores {counts.comps}</span>
+          <span className="ml-auto text-sm text-acc">
+            <span className="group-open:hidden">Ver análisis técnico ↓</span>
+            <span className="hidden group-open:inline">Ocultar ↑</span>
+          </span>
+        </summary>
+        <div className="space-y-4 border-t border-ink-100 p-4 dark:border-ink-800">
+          <GoogleSummary r={r} />
+          <Tabs
+            value={tab}
+            onChange={setTab}
+            items={[
+              { id: "terms", label: `Términos · ${counts.terms}`, title: "Palabras que usan las páginas del top 10 de Google" },
+              { id: "sections", label: `Secciones · ${counts.sections}`, title: "Secciones (H2/H3) que se repiten en el top 10" },
+              { id: "paa", label: `Preguntas · ${counts.paa}`, title: "«Otras preguntas de los usuarios» (People Also Ask)" },
+              { id: "comp", label: `Competidores · ${counts.comps}`, title: "Las páginas del top 10 que se usaron para comparar" },
+            ]}
+          />
+          <div>
+          {tab === "terms" && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold">{plural(counts.terms, "término por cubrir", "términos por cubrir")}</div>
+                  <p className="text-sm text-ink-500">Cada término muestra cuántas veces lo usas tú frente a cuántas veces aparece, aproximadamente, en las páginas mejor posicionadas. Clic para copiarlo.</p>
+                </div>
+                <Tabs value={termFilter} onChange={setTermFilter} items={[{ id: "missing", label: "Por cubrir" }, { id: "all", label: "Todos" }]} />
+              </div>
+              {([
+                ["En casi todos los resultados", (t: any) => t.coverage >= 0.7],
+                ["En la mayoría", (t: any) => t.coverage >= 0.4 && t.coverage < 0.7],
+                ["En algunos", (t: any) => t.coverage < 0.4],
+              ] as [string, (t: any) => boolean][]).map(([label, f]) => {
+                const group = terms.filter(f);
+                if (!group.length) return null;
+                return (
+                  <div key={label}>
+                    <div className="lbl mb-1.5">{label} · {group.length}</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {group.map((t: any) => (
+                        <button
+                          key={t.term}
+                          title={`Aparece en el ${Math.round(t.coverage * 100)}% de los competidores. Clic para copiar.`}
+                          onClick={() => navigator.clipboard.writeText(t.term)}
+                          className={cx("rounded-md border px-2 py-1 text-xs transition hover:border-acc", t.missing ? "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300" : t.mine >= t.target ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300" : "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300")}
+                        >
+                          {t.term} <span className="opacity-60">· tú {t.mine} · top ~{t.target}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              {!terms.length && <p className="text-sm text-ink-500">No hay términos por cubrir.</p>}
+            </div>
+          )}
+          {tab === "sections" && (
+            <div className="space-y-1">
+              {(r.sections ?? []).map((s: any) => (
+                <div key={s.label} className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-ink-50 dark:hover:bg-ink-800/50">
+                  <span className={cx("h-4 w-4 shrink-0 rounded-full text-center text-[10px] leading-4", s.covered ? "bg-emerald-500 text-white" : "border border-ink-300")}>{s.covered ? "✓" : ""}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm" title={s.variants.join("\n")}>{s.label}</span>
+                  <span className="text-xs tabular-nums text-ink-400" title={`${s.count} de las páginas del top 10 tienen esta sección`}>{s.count} págs.</span>
+                  <button className="btn-g p-0.5 opacity-0 group-hover:opacity-100" onClick={() => addBlock(s.label)}><Icon name="plus" className="h-3.5 w-3.5" /></button>
+                </div>
+              ))}
+              {!(r.sections ?? []).length && <div className="text-sm text-ink-300">—</div>}
+            </div>
+          )}
+          {tab === "paa" && (
+            <div className="space-y-1">
+              {(r.paa ?? []).map((p: any) => (
+                <div key={p.q} className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-ink-50 dark:hover:bg-ink-800/50">
+                  <span className={cx("h-4 w-4 shrink-0 rounded-full text-center text-[10px] leading-4", p.answered ? "bg-emerald-500 text-white" : "border border-ink-300")}>{p.answered ? "✓" : ""}</span>
+                  <span className="flex-1 text-sm">{p.q}</span>
+                  <button className="btn-g p-0.5 opacity-0 group-hover:opacity-100" onClick={() => addBlock(p.q, "h3")}><Icon name="plus" className="h-3.5 w-3.5" /></button>
+                </div>
+              ))}
+              {(r.questions ?? []).length > 0 && <div className="lbl mt-3 px-2">Preguntas en competidores</div>}
+              {(r.questions ?? []).map((q: string) => (
+                <div key={q} className="group flex items-center gap-2 rounded-md px-2 py-1 text-sm text-ink-600 hover:bg-ink-50 dark:text-ink-300 dark:hover:bg-ink-800/50">
+                  <span className="flex-1">{q}</span>
+                  <button className="btn-g p-0.5 opacity-0 group-hover:opacity-100" onClick={() => addBlock(q, "h3")}><Icon name="plus" className="h-3.5 w-3.5" /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          {tab === "comp" && (
+            <div className="overflow-auto">
+              <table className="tbl">
+                <thead><tr><th>#</th><th>Dominio</th><th>Tipo</th><th className="num" title="Palabras editoriales: sin menús, footer ni tarjetas">Palabras</th><th className="num">H2</th><th className="num">H3</th><th>Schema</th></tr></thead>
+                <tbody>
+                  {(r.competitors ?? []).map((c: any) => (
+                    <tr key={c.url}>
+                      <td>{c.position}</td>
+                      <td><a href={c.url} target="_blank" rel="noreferrer" className="hover:text-acc" title={c.title}>{c.domain}</a></td>
+                      <td className="text-xs text-ink-500">{c.type ? TYPE_LABEL[c.type] : "–"}</td>
+                      <td className="num" title={`${fmt(c.words)} palabras en total`}>{fmt(c.editorial ?? c.words)}</td>
+                      <td className="num">{c.h2}</td>
+                      <td className="num">{c.h3}</td>
+                      <td className="max-w-[200px] truncate text-xs text-ink-400">{c.schema.join(", ")}</td>
+                    </tr>
+                  ))}
+                  <tr className="font-semibold">
+                    <td>★</td><td>tu página</td><td className="text-xs">{r.mine?.type ? TYPE_LABEL[r.mine.type] : "–"}</td><td className="num">{fmt(r.mine?.editorial ?? r.mine?.words)}</td>
+                    <td className="num">{(r.mine?.headings ?? []).filter((h: any) => h.tag === "h2").length}</td>
+                    <td className="num">{(r.mine?.headings ?? []).filter((h: any) => h.tag === "h3").length}</td>
+                    <td className="text-xs">{(r.mine?.schema ?? []).join(", ")}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {(r.schema ?? []).map((s: any) => (
+                  <span key={s.type} className={cx("chip", s.mine && "!bg-emerald-100 !text-emerald-700")}>{s.type} · {s.count}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          </div>
+        </div>
+      </details>
+
+      <Drawer open={prep && !!brief} onClose={() => setPrep(false)}>
+        {brief && <ImplementationSummary brief={brief} url={data.url} onDownload={async () => {
+          await api(`/api/p/${id}/content`, "PATCH", { cid: data.id, brief });
+          window.location.href = `/api/p/${id}/content/implementation?cid=${params.cid}`;
+          setPrep(false);
+        }} />}
+      </Drawer>
     </div>
   );
 }

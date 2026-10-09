@@ -117,9 +117,9 @@ export function ReportTools() {
       )}
       {mode === "technical" && (
         <p className="text-sm text-ink-500">
-          El PDF técnico incluye evidencia e instrucciones. Abre Implementación
-          técnica para copiar o consultar el Markdown para tu agente de código
-          (integración disponible: Claude Code).
+          El PDF técnico incluye evidencia e instrucciones. Descarga el
+          Markdown técnico desde «Más opciones» para pasárselo a tu equipo o
+          a tu asistente de programación.
         </p>
       )}
       <details>
