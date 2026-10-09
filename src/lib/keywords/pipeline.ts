@@ -16,6 +16,8 @@ import { difficultyProxy, embeddingClusters, kwScore, overlapClusters } from "./
 import { topicLabels } from "./hdbscan";
 import { matchGroups } from "./reconcile";
 import { assertBudget, est } from "../budget";
+import { ProviderError } from "../providers/errors";
+import { jobLog } from "../jobctx";
 
 type Opts = {
   maxKeywords?: number;
@@ -89,6 +91,31 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
     }
   }
 
+  // SERP con cortocircuito: si Serpent está caído / sin saldo, no se insiste con cada keyword
+  // (cada intento son 3 reintentos con espera). Las que quedan en caché se siguen sirviendo.
+  const serpOff = { reason: "", fails: 0, skipped: 0 };
+  const serpOpts = { country: p.country, language: p.language };
+  const trySerp = async (term: string, label: string) => {
+    if (serpOff.reason) {
+      const cached = await getSerp(p.id, term, { ...serpOpts, cacheOnly: true });
+      if (!cached) serpOff.skipped++;
+      return cached;
+    }
+    try {
+      const serp = await getSerp(p.id, term, serpOpts);
+      serpOff.fails = 0;
+      return serp;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[keywords] ${label} "${term}": ${msg}`);
+      if (e instanceof ProviderError && !serpOff.reason && (!e.transient || ++serpOff.fails >= 3)) {
+        serpOff.reason = msg;
+        await jobLog("warn", `SERP desactivada en este research: ${msg}. Se usan sólo las SERP en caché.`);
+      }
+      return null;
+    }
+  };
+
   // SERP de los seeds → PAA + related (1ª ronda)
   await step(20, "serp seeds");
   let seedSerpOk = false;
@@ -98,11 +125,10 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
     for (const q of serp.paa) { add(q, "paa"); out?.push(normTerm(q)); }
   };
   for (const s of env.serpentKey ? run.seeds : []) {
-    try {
-      harvest(await getSerp(p.id, normTerm(s), { country: p.country, language: p.language }), round1);
+    const serp = await trySerp(normTerm(s), "serp seed");
+    if (serp) {
+      harvest(serp, round1);
       seedSerpOk = true;
-    } catch (e) {
-      console.warn("[keywords] serp seed", e);
     }
   }
 
@@ -112,11 +138,10 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   let r2 = 0;
   for (const t of round2) {
     await jobProgress(jobRunId, 22 + (r2 / Math.max(1, round2.length)) * 5, `serp ronda 2 ${r2 + 1}/${round2.length}`);
-    try {
-      harvest(await getSerp(p.id, t, { country: p.country, language: p.language }));
+    const serp = await trySerp(t, "serp ronda 2");
+    if (serp) {
+      harvest(serp);
       r2++;
-    } catch (e) {
-      console.warn("[keywords] serp ronda 2", t, e);
     }
   }
   stats.serpRound2 = r2;
@@ -170,17 +195,16 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   await Promise.all(
     serpTerms.map((k) =>
       limit(async () => {
-        try {
-          serps.set(k.term, await getSerp(p.id, k.term, { country: p.country, language: p.language }));
-        } catch (e) {
-          console.warn("[keywords] serp", k.term, e);
-        }
+        const serp = await trySerp(k.term, "serp");
+        if (serp) serps.set(k.term, serp);
         done++;
         if (done % 5 === 0) await jobProgress(jobRunId, 38 + (done / serpTerms.length) * 40, `serp ${done}/${serpTerms.length}`);
       })
     )
   );
   stats.serps = serps.size;
+  stats.serpSkipped = serpOff.skipped;
+  if (serpOff.skipped) await jobLog("warn", `${serpOff.skipped} SERP(s) omitidas porque Serpent no estaba disponible (${serpOff.reason})`);
 
   // Intent
   await step(80, "intent");
