@@ -21,6 +21,16 @@ const isHome = (u: string) => {
   }
 };
 
+/** «Hace 2 h», «Ayer», o la fecha. */
+const ago = (d: string) => {
+  const m = Math.round((Date.now() - new Date(d).getTime()) / 60000);
+  if (m < 1) return "Recién";
+  if (m < 60) return `Hace ${m} min`;
+  if (m < 24 * 60) return `Hace ${Math.round(m / 60)} h`;
+  if (m < 48 * 60) return "Ayer";
+  return fmtDate(d);
+};
+
 const CONTENT_STATUS: Record<string, string> = { queued: "en cola", running: "analizando…", brief: "generando brief…", error: "falló" };
 
 export default function ContentList() {
@@ -77,8 +87,20 @@ export default function ContentList() {
     if (warnHome && !confirm(`La URL que pusiste es la página de inicio de ${project?.domain ?? "tu sitio"}.\n\nPara una keyword como «${kw.trim()}» Google suele mostrar una página específica (ficha, categoría o artículo). ${options.length ? "Arriba hay páginas de tu sitio que calzan mejor." : ""}\n\n¿Analizar la página de inicio igual?`)) return;
     analyze();
   };
+  // los fallidos se muestran con «Reintentar» por 24 h; después salen de la lista principal
+  const recent = (data ?? []).filter((c) => c.status !== "error" || Date.now() - new Date(c.createdAt).getTime() < 864e5);
+  const [retry] = useAction(async (c: any) => {
+    const a = await api(`/api/p/${id}/content`, "POST", { url: c.url, keyword: c.keyword, pageKind: c.pageKind ?? "" });
+    await api(`/api/p/${id}/content`, "DELETE", { cid: c.id }).catch(() => {});
+    refreshJobs();
+    router.push(`/p/${id}/content/${a.id}`);
+  });
   return (
-    <div className="space-y-4 p-4 md:p-6">
+    <div className="mx-auto max-w-6xl space-y-6 p-4 md:p-6">
+      <header>
+        <h1 className="text-2xl font-semibold">Contenido</h1>
+        <p className="text-sm text-ink-500">Optimiza una página para una búsqueda de Google.</p>
+      </header>
       <form
         className="card space-y-3 p-3"
         onSubmit={(e) => {
@@ -135,31 +157,46 @@ export default function ContentList() {
           </div>
         )}
       </form>
-      {!data?.length ? (
-        <Empty icon="content" tone="info" title="Optimiza tu primera página">Pon la URL y la keyword objetivo: comparamos tu página con las que rankean en Google y generamos un brief.</Empty>
-      ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {data.map((c) => (
-            <Link key={c.id} href={`/p/${id}/content/${c.id}`} className="card group flex items-center gap-4 p-4 transition hover:border-acc">
-              <div className="flex flex-col items-center" title="Puntaje de 0 a 100 comparado con el top 10 de Google para esta keyword">
-                <Score value={c.score} size={56} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium">{c.keyword}</div>
-                {c.status === "done" && <div className="text-xs text-ink-500">{contentScoreLabel(c.score)}</div>}
-                <div className="truncate text-xs text-ink-400">{c.url.replace(/^https?:\/\//, "")}</div>
-                <div className="mt-1 text-xs text-ink-400">{c.status !== "done" ? CONTENT_STATUS[c.status] ?? c.status : fmtDate(c.createdAt)}</div>
-              </div>
-              <button
-                className="btn-g opacity-0 group-hover:opacity-100"
-                onClick={async (e) => { e.preventDefault(); await api(`/api/p/${id}/content`, "DELETE", { cid: c.id }); mutate(); }}
-              >
-                <Icon name="trash" />
-              </button>
-            </Link>
-          ))}
-        </div>
-      )}
+      <section>
+        <h2 className="lbl">Análisis recientes</h2>
+        {!recent.length ? (
+          <Empty icon="content" tone="info" title="Aún no analizas ninguna página">Escribe la búsqueda de Google que te interesa y la página que quieres que aparezca: la comparamos con las que ya están arriba y te decimos qué cambiar.</Empty>
+        ) : (
+          <ul className="mt-2 divide-y divide-ink-100 rounded-xl border border-ink-200 bg-white dark:divide-ink-800 dark:border-ink-800 dark:bg-ink-900">
+            {recent.map((c) => (
+              <li key={c.id} className="group flex items-center gap-4 px-4 py-3">
+                <Link href={`/p/${id}/content/${c.id}`} className="flex min-w-0 flex-1 items-center gap-4">
+                  <div className="w-14 shrink-0 text-center">
+                    {c.status === "done" ? <b className="text-lg tabular-nums">{c.score}</b> : c.status === "error" ? <Icon name="alert" className="mx-auto h-5 w-5 text-rose-500" /> : <Spinner className="mx-auto h-4 w-4 text-acc" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium first-letter:uppercase group-hover:text-acc">{c.keyword}</div>
+                    <div className="truncate text-sm text-ink-500">
+                      {c.status === "done" ? contentScoreLabel(c.score) : c.status === "error" ? "No se pudo completar el análisis" : CONTENT_STATUS[c.status] ?? c.status}
+                    </div>
+                  </div>
+                  <div className="hidden min-w-0 max-w-[40%] text-right text-xs text-ink-400 sm:block">
+                    <div className="truncate">{c.url.replace(/^https?:\/\//, "")}</div>
+                    <div>{ago(c.createdAt)}</div>
+                  </div>
+                </Link>
+                {c.status === "error" && (
+                  <button className="btn text-xs" disabled={analyzing} title="Vuelve a correr el análisis (consume créditos como uno nuevo)" onClick={() => retry(c)}>
+                    <Icon name="refresh" />Reintentar
+                  </button>
+                )}
+                <button
+                  className="btn-g opacity-0 group-hover:opacity-100"
+                  aria-label="Borrar análisis"
+                  onClick={async () => { if (!confirm("¿Borrar este análisis?")) return; await api(`/api/p/${id}/content`, "DELETE", { cid: c.id }); mutate(); }}
+                >
+                  <Icon name="trash" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }
