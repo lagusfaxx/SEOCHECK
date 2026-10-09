@@ -33,6 +33,30 @@ export const PLANS = {
   },
 } as const;
 export type PlanKey = keyof typeof PLANS;
+
+/**
+ * Workspace dueño de la instancia (`trusted`, creado en /setup): uso interno, sin límites de plan ni vencimiento.
+ * Fuera de PLANS a propósito: no se ofrece ni se puede contratar.
+ */
+export const INTERNAL_PLAN = {
+  label: "Interno",
+  projects: 1_000_000,
+  urls: 50_000,
+  keywords: 1_000_000,
+  rankings: 1_000_000,
+  briefs: 1_000_000,
+  reports: 1_000_000,
+  whiteLabel: true,
+} as const;
+type Limits = (typeof PLANS)[PlanKey] | typeof INTERNAL_PLAN;
+
+/** Plan efectivo de un workspace: un solo lugar para límites y vencimiento. */
+export function resolvePlan(w: { plan: string; trusted: boolean; trialEndsAt: Date; planValidUntil: Date | null }): { key: PlanKey | "internal"; limits: Limits; expired: boolean } {
+  if (w.trusted) return { key: "internal", limits: INTERNAL_PLAN, expired: false };
+  const key = isPlan(w.plan) ? w.plan : "trial";
+  const expired = key === "trial" ? Date.now() > w.trialEndsAt.getTime() : !!w.planValidUntil && Date.now() > w.planValidUntil.getTime();
+  return { key, limits: PLANS[key], expired };
+}
 export class PlanLimitError extends Error {
   status = 402;
 }
@@ -42,12 +66,7 @@ export async function workspacePlan(workspaceId: string) {
   const w = await db.workspace.findUniqueOrThrow({
     where: { id: workspaceId },
   });
-  const plan = isPlan(w.plan) ? w.plan : "trial";
-  const expired =
-    plan === "trial"
-      ? Date.now() > w.trialEndsAt.getTime()
-      : !!w.planValidUntil && Date.now() > w.planValidUntil.getTime();
-  return { workspace: w, key: plan, limits: PLANS[plan], expired };
+  return { workspace: w, ...resolvePlan(w) };
 }
 export async function projectPlan(projectId: string) {
   const p = await db.project.findUniqueOrThrow({
@@ -121,12 +140,7 @@ export async function withProjectQuota<T>(
       const w = await tx.workspace.findUniqueOrThrow({
         where: { id: p.workspaceId },
       });
-      const key = isPlan(w.plan) ? w.plan : "trial",
-        limits = PLANS[key];
-      const expired =
-        key === "trial"
-          ? Date.now() > w.trialEndsAt.getTime()
-          : !!w.planValidUntil && Date.now() > w.planValidUntil.getTime();
+      const { key, limits, expired } = resolvePlan(w);
       const since = new Date();
       since.setUTCDate(1);
       since.setUTCHours(0, 0, 0, 0);
@@ -179,20 +193,13 @@ export async function createProjectWithinPlan(
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${workspaceId}))`;
     const w = await tx.workspace.findUniqueOrThrow({
-        where: { id: workspaceId },
-      }),
-      key = isPlan(w.plan) ? w.plan : "trial";
-    if (
-      (key === "trial" && Date.now() > w.trialEndsAt.getTime()) ||
-      (w.planValidUntil && w.planValidUntil.getTime() < Date.now())
-    )
-      throw new PlanLimitError("El plan expiró");
-    if (
-      (await tx.project.count({ where: { workspaceId } })) >=
-      PLANS[key].projects
-    )
+      where: { id: workspaceId },
+    });
+    const { limits, expired } = resolvePlan(w);
+    if (expired) throw new PlanLimitError("El plan expiró");
+    if ((await tx.project.count({ where: { workspaceId } })) >= limits.projects)
       throw new PlanLimitError(
-        `Límite de ${PLANS[key].projects} proyectos del plan ${PLANS[key].label}`,
+        `Límite de ${limits.projects} ${limits.projects === 1 ? "proyecto" : "proyectos"} del plan ${limits.label}`,
       );
     return tx.project.create({ data });
   });
