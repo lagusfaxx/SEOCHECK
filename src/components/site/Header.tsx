@@ -17,14 +17,14 @@ const MENUS: Menu[] = [
   {
     label: "Productos",
     items: [{ title: "FSV / SEARCH", text: "SEO Intelligence Platform", href: "/search" }],
-    note: "Próximamente…",
+    note: "Más productos próximamente",
   },
 ];
 
 const LINKS = [
   { label: "Proyectos", href: "/work" },
   { label: "Ventures", href: "/ventures" },
-  { label: "Empresa", href: "/#empresa" },
+  { label: "Empresa", href: "/empresa" },
 ];
 
 export function Logo({ white }: { white?: boolean }) {
@@ -60,9 +60,9 @@ function Dropdown({ menu }: { menu: Menu }) {
       </button>
       {open && (
         <div className="absolute left-1/2 top-full z-50 w-80 -translate-x-1/2 pt-2">
-          <div className="rounded-xl border border-fsv-line bg-white p-2 shadow-[0_12px_32px_-12px_rgba(17,19,24,0.18)]">
+          <div className="rounded-sm border border-fsv-line bg-white p-2 shadow-[0_12px_32px_-12px_rgba(17,19,24,0.18)]">
             {menu.items.map((it) => (
-              <Link key={it.title} href={it.href} onClick={() => setOpen(false)} className="block rounded-lg px-3 py-2.5 transition hover:bg-fsv-bg">
+              <Link key={it.title} href={it.href} onClick={() => setOpen(false)} className="block rounded-sm px-3 py-2.5 transition hover:bg-fsv-bg">
                 <div className="font-display text-sm font-semibold tracking-tight">{it.title}</div>
                 <div className="text-[13px] leading-snug text-fsv-muted">{it.text}</div>
               </Link>
@@ -97,11 +97,11 @@ export function Header() {
               {l.label}
             </Link>
           ))}
-          <Link href="/#contacto" className="ml-auto rounded-lg bg-fsv-ink px-4 py-2 text-sm font-medium text-white transition hover:bg-black">
+          <Link href="/#contacto" className="ml-auto rounded-sm bg-fsv-ink px-4 py-2 text-sm font-medium text-white transition hover:bg-black">
             Contacto
           </Link>
         </nav>
-        <button className="ml-auto rounded-lg p-2 md:hidden" aria-label={mobile ? "Cerrar menú" : "Abrir menú"} aria-expanded={mobile} onClick={() => setMobile(!mobile)}>
+        <button className="ml-auto rounded-sm p-2 md:hidden" aria-label={mobile ? "Cerrar menú" : "Abrir menú"} aria-expanded={mobile} onClick={() => setMobile(!mobile)}>
           <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
             <path d={mobile ? "M6 6l12 12M18 6 6 18" : "M4 7h16M4 12h16M4 17h16"} />
           </svg>
@@ -124,7 +124,7 @@ export function Header() {
               {l.label}
             </Link>
           ))}
-          <Link href="/#contacto" onClick={() => setMobile(false)} className="mt-4 block rounded-lg bg-fsv-ink px-4 py-3 text-center font-medium text-white">
+          <Link href="/#contacto" onClick={() => setMobile(false)} className="mt-4 block rounded-sm bg-fsv-ink px-4 py-3 text-center font-medium text-white">
             Contacto
           </Link>
         </nav>

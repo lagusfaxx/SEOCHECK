@@ -18,7 +18,7 @@ export default function WorkPage() {
           <div className="mx-auto max-w-6xl px-4 pb-14 pt-14 md:px-6 md:pb-20 md:pt-20">
             <Kicker>Selected work</Kicker>
             <h1 className="mt-6 max-w-4xl font-display text-[2.4rem] font-semibold leading-[1.04] tracking-[-0.035em] md:text-6xl">Negocios que construimos y operamos.</h1>
-            <dl className="mt-10 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-fsv-line bg-fsv-line md:mt-12 lg:grid-cols-4">
+            <dl className="mt-10 grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-fsv-line bg-fsv-line md:mt-12 lg:grid-cols-4">
               {STATS.map((st) => (
                 <div key={st.short} className="bg-white p-5 md:p-6">
                   <dt className="sr-only">{st.long}</dt>

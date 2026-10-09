@@ -1,32 +1,90 @@
 import { CONTACT_HREF } from "./Footer";
 import { BusinessLogo } from "./Brands";
-import { PLATFORMS, type Business } from "@/lib/site-content";
+import { CLIENT_WORK, OWN_BUSINESSES, PLATFORMS, type Business } from "@/lib/site-content";
 
 /** Piezas compartidas del sitio público (home, /capacidades, /work). */
+
+export const findBusiness = (name: string) => [...OWN_BUSINESSES, ...CLIENT_WORK].find((b) => b.name === name);
+
+/** Fila de caso (home): sin tarjeta, con divisor fino. */
+export function CaseRow({ b, client }: { b: Business; client?: boolean }) {
+  return (
+    <article className="grid gap-3 border-b border-fsv-line py-7 md:grid-cols-12 md:items-baseline md:gap-6 md:py-9">
+      <div className="flex items-center gap-4 md:col-span-4">
+        <div className="grid h-10 w-14 shrink-0 place-items-center">
+          <BusinessLogo b={b} iconOnly className={b.name === "Barzuo" ? "h-6 max-w-[56px]" : b.name === "Starseeker" ? "h-3 max-w-[56px]" : "h-10 max-w-[56px]"} />
+        </div>
+        <div>
+          <h3 className="font-display text-xl font-semibold tracking-tight md:text-2xl">{b.name}</h3>
+          <div className="text-sm text-fsv-muted">
+            {b.kind}
+            {client && " · cliente"}
+          </div>
+        </div>
+      </div>
+      <p className="leading-relaxed text-fsv-ink/80 md:col-span-5">{b.text}</p>
+      <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-fsv-muted md:col-span-2">{b.tags}</div>
+      <div className="md:col-span-1 md:text-right">
+        {b.href && (
+          <a href={b.href} target="_blank" rel="noreferrer" className="text-sm font-medium transition hover:text-fsv-violet" aria-label={`Abrir el sitio de ${b.name}`}>
+            ↗
+          </a>
+        )}
+      </div>
+    </article>
+  );
+}
 
 export function Kicker({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <div className={`font-mono text-xs uppercase tracking-[0.2em] text-fsv-muted ${className}`}>{children}</div>;
 }
 
-export function Capability({ id, n, title, text, cta, href = CONTACT_HREF, visual }: { id: string; n: string; title: string; text: string; cta: string; href?: string; visual: React.ReactNode }) {
+export function Capability({ id, n, title, text, cta, href = CONTACT_HREF, visual, proof = [] }: { id: string; n: string; title: string; text: string; cta: string; href?: string; visual: React.ReactNode; proof?: string[] }) {
+  const projects = proof.map(findBusiness).filter((x): x is Business => !!x);
   return (
-    <article id={id} className="grid scroll-mt-20 overflow-hidden rounded-2xl border border-fsv-line bg-fsv-bg md:grid-cols-2">
-      <div className="flex flex-col p-8 md:p-12">
+    <article id={id} className="grid scroll-mt-20 gap-8 border-t border-fsv-ink py-12 md:grid-cols-12 md:gap-10 md:py-16">
+      <div className="flex flex-col md:col-span-5">
         <Kicker>{n}</Kicker>
-        <h3 className="mt-6 font-display text-3xl font-semibold leading-tight tracking-[-0.025em] md:text-4xl">{title}</h3>
+        <h2 className="mt-5 font-display text-3xl font-semibold leading-tight tracking-[-0.025em] md:text-4xl">{title}</h2>
         <p className="mt-4 max-w-md leading-relaxed text-fsv-muted">{text}</p>
-        <a href={href} className="mt-8 inline-flex w-fit items-center gap-2 font-medium text-fsv-ink underline decoration-fsv-violet decoration-2 underline-offset-[6px] transition hover:text-fsv-violet md:mt-auto md:pt-8">
+        {(projects.length > 0 || proof.includes("FSV Search")) && (
+          <div className="mt-8">
+            <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-fsv-muted">Proyectos reales</div>
+            <ul className="mt-3 divide-y divide-fsv-line border-y border-fsv-line">
+              {proof.includes("FSV Search") && (
+                <li>
+                  <a href="/search" className="flex items-center gap-3 py-3 transition hover:text-fsv-violet">
+                    <img src="/brand/fsv-search.png" alt="" className="h-4 w-auto" />
+                    <span className="ml-auto text-sm text-fsv-muted">Producto propio →</span>
+                  </a>
+                </li>
+              )}
+              {projects.map((b) => (
+                <li key={b.name} className="flex items-center gap-3 py-3">
+                  <div className="grid h-8 w-12 place-items-center">
+                    <BusinessLogo b={b} iconOnly className={b.name === "Barzuo" ? "h-5 max-w-[48px]" : "h-8 max-w-[48px]"} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-medium">{b.name}</div>
+                    <div className="truncate text-sm text-fsv-muted">{b.kind}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <a href={href} className="mt-8 inline-flex w-fit items-center gap-2 font-medium underline decoration-fsv-violet decoration-2 underline-offset-[6px] transition hover:text-fsv-violet">
           {cta} <span aria-hidden>→</span>
         </a>
       </div>
-      <div className="border-t border-fsv-line bg-white p-5 md:border-l md:border-t-0 md:p-10">{visual}</div>
+      <div className="md:col-span-7">{visual}</div>
     </article>
   );
 }
 
 function Panel({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div aria-hidden className="flex h-full min-h-[240px] flex-col rounded-xl border border-fsv-line bg-white">
+    <div aria-hidden className="flex h-full min-h-[240px] flex-col rounded-sm border border-fsv-line bg-white">
       <div className="flex items-center gap-1.5 border-b border-fsv-line px-4 py-2.5">
         <span className="h-2 w-2 rounded-full bg-fsv-line" />
         <span className="h-2 w-2 rounded-full bg-fsv-line" />
@@ -126,7 +184,7 @@ export function BusinessCard({ b, client }: { b: Business; client?: boolean }) {
       <div className="mt-auto hidden pt-4 font-mono text-[10.5px] uppercase tracking-[0.16em] text-fsv-muted sm:block">{b.tags}</div>
     </>
   );
-  const cls = "group flex h-full flex-col rounded-2xl border border-fsv-line bg-white p-5 transition md:p-6";
+  const cls = "group flex h-full flex-col rounded-sm border border-fsv-line bg-white p-5 transition md:p-6";
   return b.href ? (
     <a href={b.href} target="_blank" rel="noreferrer" className={`${cls} hover:border-fsv-ink/30`} aria-label={`${b.name} (abre su sitio)`}>
       {body}
@@ -144,7 +202,7 @@ export function Platforms() {
           <h2 className="font-display text-4xl font-semibold tracking-[-0.03em] md:text-5xl">Plataformas que manejamos</h2>
           <p className="hidden max-w-md text-lg text-fsv-muted md:block">Vendemos, postulamos, integramos, desplegamos y registramos marcas en ellas todos los días.</p>
         </div>
-        <ul className="mt-10 grid grid-cols-3 gap-px overflow-hidden rounded-2xl border border-fsv-line bg-fsv-line md:mt-12">
+        <ul className="mt-10 grid grid-cols-3 gap-px border-y border-fsv-line bg-fsv-line md:mt-12">
           {PLATFORMS.map((p) => (
             <li key={p.name} className="flex min-h-[88px] flex-col items-center justify-center gap-5 bg-white px-3 py-5 md:min-h-[150px] md:justify-between md:px-5 md:pb-6 md:pt-9">
               <div className="flex h-12 items-center">
@@ -161,16 +219,11 @@ export function Platforms() {
 
 export function SecurityBlock() {
   return (
-    <div className="grid gap-8 rounded-2xl border border-fsv-line bg-fsv-bg p-8 md:grid-cols-[auto_1fr] md:items-center md:p-12">
-      <svg viewBox="0 0 48 48" className="h-12 w-12 text-fsv-ink" fill="none" stroke="currentColor" strokeWidth={1.6} aria-hidden>
-        <path d="M24 5 8 11v11c0 10 7 17.5 16 21 9-3.5 16-11 16-21V11z" />
-        <path d="m17 24 5 5 9-10" stroke="#4B39FC" strokeWidth={2.2} />
-      </svg>
-      <div>
+    <div className="grid gap-6 md:grid-cols-12 md:gap-10">
+      <div className="font-mono text-xs uppercase tracking-[0.2em] text-fsv-muted md:col-span-5">Transversal</div>
+      <div className="md:col-span-7">
         <h3 className="font-display text-2xl font-semibold tracking-tight md:text-3xl">Software y seguridad no deberían vivir separados.</h3>
-        <p className="mt-3 max-w-2xl leading-relaxed text-fsv-muted">
-          Aplicamos una mirada de seguridad tanto a los productos que construimos como a las evaluaciones que realizamos.
-        </p>
+        <p className="mt-3 max-w-2xl leading-relaxed text-fsv-muted">Aplicamos una mirada de seguridad tanto a los productos que construimos como a las evaluaciones que realizamos.</p>
       </div>
     </div>
   );

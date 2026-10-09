@@ -15,7 +15,7 @@ export function CtaAndFooter({ title = "¿Tienes algo que construir, proteger o 
           <img src="/brand/fsv-mark-white.png" alt="" className="h-10 w-auto" />
           <h2 className="mt-10 max-w-3xl font-display text-4xl font-semibold leading-[1.05] tracking-tight md:text-6xl">{title}</h2>
           <p className="mt-5 text-lg text-white/60">{text}</p>
-          <a href={CONTACT_HREF} className="mt-10 inline-flex items-center gap-2 rounded-lg bg-fsv-violet px-6 py-3.5 font-medium text-white transition hover:brightness-110">
+          <a href={CONTACT_HREF} className="mt-10 inline-flex items-center gap-2 rounded-sm bg-fsv-violet px-6 py-3.5 font-medium text-white transition hover:brightness-110">
             Hablar con Fullstack Ventures <span aria-hidden>→</span>
           </a>
           <div className="mt-4 font-mono text-sm text-white/50">{CONTACT_EMAIL}</div>
@@ -38,7 +38,7 @@ export function CtaAndFooter({ title = "¿Tienes algo que construir, proteger o 
           </div>
           <FooterCol title="Capacidades" links={[["Software", "/capacidades#software"], ["Security", "/capacidades#security"], ["Growth", "/capacidades#growth"]]} />
           <FooterCol title="Productos" links={[["FSV Search", "/search"]]} />
-          <FooterCol title="Empresa" links={[["Nosotros", "/#empresa"], ["Proyectos", "/work"], ["Ventures", "/ventures"], ["Cuéntanos tu idea", "/ventures#postular"], ["Contacto", "/#contacto"]]} />
+          <FooterCol title="Empresa" links={[["Nosotros", "/empresa"], ["Proyectos", "/work"], ["Ventures", "/ventures"], ["Cuéntanos tu idea", "/ventures#postular"], ["Contacto", "/#contacto"]]} />
         </div>
       </footer>
     </>
