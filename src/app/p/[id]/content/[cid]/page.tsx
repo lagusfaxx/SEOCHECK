@@ -145,21 +145,6 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
                 {r.mine?.type && r.mine.type !== r.pageType && <span className="text-amber-600"> · la tuya es {TYPE_LABEL[r.mine.type]}</span>}
               </div>
             )}
-            <div className="mt-2 grid grid-cols-2 gap-3 text-[11px] text-ink-500 sm:grid-cols-5">
-              {([
-                ["Términos clave", r.breakdown?.terms, r.pageType === "listing" ? 50 : 40, "Cuántos de los términos que usan las páginas del top 10 aparecen en tu página, y con qué frecuencia. Los más comunes pesan más."],
-                ["Largo del texto", r.breakdown?.length, 15, `Tus palabras editoriales comparadas con el objetivo (~${fmt(r.targetWords)}, la mediana del top 10). Puntaje completo al llegar al 90% del objetivo.`],
-                ["Secciones", r.breakdown?.sections, r.pageType === "listing" ? 10 : 20, "Cuántas de las secciones (H2/H3) que se repiten en el top 10 cubre tu página."],
-                ["Preguntas (PAA)", r.breakdown?.paa, 15, "Cuántas de las preguntas de «Otras preguntas de los usuarios» de Google respondes en tu página."],
-                ["Schema", r.breakdown?.schema, 10, "Si tu página tiene los datos estructurados (schema) que usa al menos un 30% del top 10."],
-              ] as [string, number, number, string][]).map(([l, v, m, help]) => (
-                <div key={l} className="cursor-help" title={help}>
-                  <div className="flex items-center gap-1 truncate">{l} <Hint text={help} /></div>
-                  <div className="tabular-nums text-ink-800 dark:text-ink-200">{v ?? 0}<span className="text-ink-400"> de {m} pts</span></div>
-                  <Bar value={((v ?? 0) / m) * 100} className="mt-0.5" />
-                </div>
-              ))}
-            </div>
           </div>
           <div className="shrink-0 text-right text-sm">
             <div className="tabular-nums"><b>{fmt(r.mine?.editorial ?? r.mine?.words)}</b> palabras</div>
@@ -167,6 +152,21 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
               objetivo ~{fmt(r.targetWords)}
               <Hint text="Solo cuenta texto editorial: sin menús, footer, tarjetas de listado ni bloques que se repiten en todo el sitio. El objetivo es la mediana de palabras del top 10 de Google con el mismo tipo de página." />
             </div>
+          </div>
+          <div className="grid w-full grid-cols-2 gap-3 border-t border-ink-100 pt-3 text-[11px] text-ink-500 sm:grid-cols-5 dark:border-ink-800">
+            {([
+              ["Términos clave", r.breakdown?.terms, r.pageType === "listing" ? 50 : 40, "Cuántos de los términos que usan las páginas del top 10 aparecen en tu página, y con qué frecuencia. Los más comunes pesan más."],
+              ["Largo del texto", r.breakdown?.length, 15, `Tus palabras editoriales comparadas con el objetivo (~${fmt(r.targetWords)}, la mediana del top 10). Puntaje completo al llegar al 90% del objetivo.`],
+              ["Secciones", r.breakdown?.sections, r.pageType === "listing" ? 10 : 20, "Cuántas de las secciones (H2/H3) que se repiten en el top 10 cubre tu página."],
+              ["Preguntas (PAA)", r.breakdown?.paa, 15, "Cuántas de las preguntas de «Otras preguntas de los usuarios» de Google respondes en tu página."],
+              ["Schema", r.breakdown?.schema, 10, "Si tu página tiene los datos estructurados (schema) que usa al menos un 30% del top 10."],
+            ] as [string, number, number, string][]).map(([l, v, m, help]) => (
+              <div key={l} className="cursor-help" title={help}>
+                <div className="flex items-start gap-1 leading-tight">{l} <Hint text={help} /></div>
+                <div className="tabular-nums text-ink-800 dark:text-ink-200">{v ?? 0}<span className="text-ink-400"> de {m} pts</span></div>
+                <Bar value={((v ?? 0) / m) * 100} className="mt-0.5" />
+              </div>
+            ))}
           </div>
         </div>
 

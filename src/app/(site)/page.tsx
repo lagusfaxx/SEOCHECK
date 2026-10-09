@@ -5,8 +5,6 @@ import { CentinelaLogo } from "@/components/site/Brands";
 import { CaseRow, Kicker, findBusiness } from "@/components/site/Sections";
 import { CAPABILITIES, FEATURED, OWN_BUSINESSES, CLIENT_WORK, PROOF } from "@/lib/site-content";
 
-const MODULES = ["Auditoría", "Search Console", "Keywords", "Rankings", "Contenido"];
-
 export default function Home() {
   return (
     <>
@@ -102,14 +100,9 @@ function Capabilities() {
                 </div>
                 <div className="md:col-span-6">
                   <div className="font-display text-2xl font-semibold leading-tight tracking-[-0.02em] transition group-hover:text-fsv-violet md:text-3xl">{c.fact}</div>
-                  <p className="mt-2 hidden text-fsv-muted md:block">{c.detail}</p>
                 </div>
-                <div className="text-sm text-fsv-muted md:col-span-3">
-                  <span className="font-mono text-[11px] uppercase tracking-[0.16em]">Prueba · </span>
-                  {c.proof.join(" · ")}
-                </div>
-                <div className="hidden text-right text-fsv-muted transition group-hover:text-fsv-violet md:col-span-1 md:block" aria-hidden>
-                  →
+                <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-fsv-muted transition group-hover:text-fsv-violet md:col-span-4 md:text-right">
+                  {c.proof.join(" · ")} <span aria-hidden>→</span>
                 </div>
               </Link>
             </li>
@@ -119,14 +112,9 @@ function Capabilities() {
               <div className="font-mono text-xs uppercase tracking-[0.2em] text-fsv-muted md:col-span-2">04 / Ventures</div>
               <div className="md:col-span-6">
                 <div className="font-display text-2xl font-semibold leading-tight tracking-[-0.02em] transition group-hover:text-fsv-violet md:text-3xl">Productos y negocios propios.</div>
-                <p className="mt-2 hidden text-fsv-muted md:block">Los construimos y los operamos con nuestro propio equipo.</p>
               </div>
-              <div className="text-sm text-fsv-muted md:col-span-3">
-                <span className="font-mono text-[11px] uppercase tracking-[0.16em]">Prueba · </span>
-                Nomadbrew · Starseeker · TAUPOC
-              </div>
-              <div className="hidden text-right text-fsv-muted transition group-hover:text-fsv-violet md:col-span-1 md:block" aria-hidden>
-                →
+              <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-fsv-muted transition group-hover:text-fsv-violet md:col-span-4 md:text-right">
+                Nomadbrew · Starseeker · TAUPOC <span aria-hidden>→</span>
               </div>
             </Link>
           </li>
@@ -144,12 +132,7 @@ function Search() {
           <Kicker>Producto propio</Kicker>
           <img src="/brand/fsv-search.png" alt="FSV Search" className="mt-6 h-8 w-auto md:h-10" />
           <h2 className="mt-6 font-display text-[1.9rem] font-semibold leading-tight tracking-[-0.03em] md:text-[2.6rem]">Search intelligence para convertir datos SEO en decisiones.</h2>
-          <p className="mt-4 text-fsv-muted">Auditoría técnica, datos reales de Search Console, keywords, rankings y optimización de contenido en una sola plataforma.</p>
-          <ul className="mt-6 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] uppercase tracking-[0.16em] text-fsv-muted">
-            {MODULES.map((m) => (
-              <li key={m}>{m}</li>
-            ))}
-          </ul>
+          <p className="mt-4 text-fsv-muted">Auditoría técnica, Search Console, keywords, rankings y contenido en una sola plataforma.</p>
           <Link href="/search" className="mt-8 inline-flex items-center gap-2 rounded-sm bg-fsv-violet px-5 py-3 font-medium text-white transition hover:brightness-110">
             Conocer FSV Search <span aria-hidden>→</span>
           </Link>
@@ -177,7 +160,7 @@ function Work() {
         <ul className="mt-6 border-t border-fsv-ink">
           {featured.map((b) => (
             <li key={b.name}>
-              <CaseRow b={b} client={CLIENT_WORK.includes(b)} />
+              <CaseRow b={b} />
             </li>
           ))}
         </ul>
@@ -196,13 +179,9 @@ function Ventures() {
         </div>
         <div className="md:col-span-4 md:col-start-9 md:self-end">
           <p className="font-display text-xl font-semibold tracking-tight">¿Tienes una idea? Podemos construirla contigo.</p>
-          <p className="mt-2 text-fsv-muted">Evaluamos proyectos en los que podamos participar como socios.</p>
           <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
             <Link href="/ventures#postular" className="inline-flex items-center gap-2 rounded-sm bg-fsv-ink px-5 py-3 font-medium text-white transition hover:bg-black">
               Cuéntanos tu idea <span aria-hidden>→</span>
-            </Link>
-            <Link href="/ventures" className="font-medium underline decoration-fsv-violet decoration-2 underline-offset-[6px] transition hover:text-fsv-violet">
-              Cómo funciona
             </Link>
           </div>
         </div>
