@@ -120,9 +120,9 @@ function stepLine(key: string, st: St, d: Ob): string {
     case "audit":
       if (st === "running") return "Recorriendo el sitio…";
       if (st === "failed") return d.crawl?.reason ?? "No se pudo completar";
-      return d.crawl ? `${d.crawl.pages} URLs revisadas · salud técnica ${d.crawl.health ?? "sin puntaje"}` : "Pendiente";
+      return d.crawl ? `${d.crawl.pages} ${d.crawl.pages === 1 ? "URL revisada" : "URLs revisadas"} · salud técnica ${d.crawl.health ?? "sin puntaje"}` : "Pendiente";
     case "gsc": return d.gsc.connected && d.gsc.property ? `Conectado · ${d.gsc.property}` : d.gsc.connected ? "Conectado: falta elegir la propiedad" : "Pendiente";
-    case "keywords": return st === "running" ? "Investigando keywords…" : st === "done" ? "Research listo" : st === "failed" ? "El research falló: vuelve a intentarlo" : "Pendiente";
+    case "keywords": return st === "running" ? "Investigando keywords…" : st === "done" ? "Investigación lista" : st === "failed" ? "La investigación falló: vuelve a intentarlo" : "Pendiente";
     case "rank": return d.tracked ? `${d.tracked} keywords monitoreadas` : "Pendiente";
   }
   return "";
@@ -153,7 +153,7 @@ function AuditStep({ data, onStarted }: { data: Ob; onStarted: () => void }) {
         <Score value={data.crawl.health} size={64} />
         <div className="text-sm">
           <div className="font-medium">Salud técnica {data.crawl.health ?? "—"}{data.crawl.health != null ? "/100" : ""}</div>
-          <div className="text-ink-500">{data.crawl.healthNote ?? `${data.crawl.pages} URLs revisadas · ${data.crawl.critical} errores`}</div>
+          <div className="text-ink-500">{data.crawl.healthNote ?? `${data.crawl.pages} ${data.crawl.pages === 1 ? "URL revisada" : "URLs revisadas"} · ${data.crawl.critical} errores`}</div>
           <Link className="text-acc" href={`/p/${id}/audit`}>Ver prioridades →</Link>
         </div>
       </div>

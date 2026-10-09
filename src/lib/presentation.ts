@@ -83,6 +83,23 @@ export const METRIC_HELP: Record<string, string> = {
   "Salud técnica": HEALTH_HELP,
   Prioridad:
     "Orden de atención basado en severidad, URLs afectadas y señales de GSC o rankings disponibles. Alta requiere revisión antes que Media y Baja.",
+  Intención:
+    "Qué busca la persona: info (aprender), comercial (comparar opciones), transaccional (comprar o contratar) o navegacional (llegar a un sitio concreto).",
+  Volumen:
+    "Búsquedas mensuales promedio en Google para el país del proyecto. Un rango (ej. 1K–10K) indica que el proveedor solo entrega un tramo.",
+  "Fuente del volumen":
+    "De dónde viene el volumen: Google Ads (Keyword Planner o proveedor) o Search Console (impresiones reales de tu sitio).",
+  CPC: "Costo por clic estimado en Google Ads, en dólares. Un CPC alto suele indicar que la búsqueda tiene valor comercial.",
+  "Competencia Ads":
+    "Competencia entre anunciantes en Google Ads, de 0 (baja) a 1 (alta). No mide lo difícil que es posicionar orgánicamente.",
+  Dificultad:
+    "Estimación de 0 a 100 de lo difícil que es entrar al top 10 orgánico. Verde: hasta 35; amarillo: hasta 60; rojo: más de 60.",
+  Relevancia:
+    "Similitud de la keyword con tus palabras iniciales. Sirve para filtrar ideas lejanas; no es una probabilidad de posicionar.",
+  Oportunidad:
+    "Puntaje para ordenar keywords: combina volumen, dificultad y relevancia. Más alto = conviene atacarla antes. Sin volumen no se calcula.",
+  Fuente:
+    "Cómo se encontró la keyword: tus palabras iniciales, autocompletado de Google, preguntas (PAA), búsquedas relacionadas o Search Console.",
   Afectadas:
     "URLs individuales incluidas en esta acción. Se agrupan por el mismo problema y patrón; abre la tarea para ver la evidencia por página.",
 };

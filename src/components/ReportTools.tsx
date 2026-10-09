@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useProject } from "./Shell";
-import { api, Metric, useApi } from "./ui";
+import { api, Metric, plural, useApi } from "./ui";
 export function ReportTools() {
   const { id } = useProject();
   const { data: r } = useApi<any>(`/api/p/${id}/report/executive`);
@@ -104,9 +104,10 @@ export function ReportTools() {
                 <tr key={`${a.title}:${a.pattern}`}>
                   <td className="!whitespace-normal break-words">
                     <b>{a.title}</b>
+                    {a.pattern && <span className="ml-2 font-mono text-xs text-ink-500">{a.pattern}</span>}
                     <p className="mt-1 text-xs text-ink-500">{a.reason}</p>
                   </td>
-                  <td className="whitespace-nowrap">{a.affected} URLs</td>
+                  <td className="whitespace-nowrap">{plural(a.affected, "URL", "URLs")}</td>
                   <td>{a.priorityLabel}</td>
                 </tr>
               ))}
@@ -117,7 +118,8 @@ export function ReportTools() {
       {mode === "technical" && (
         <p className="text-sm text-ink-500">
           El PDF técnico incluye evidencia e instrucciones. Abre Implementación
-          técnica para copiar o consultar el Markdown para Claude Code.
+          técnica para copiar o consultar el Markdown para tu agente de código
+          (integración disponible: Claude Code).
         </p>
       )}
       <details>

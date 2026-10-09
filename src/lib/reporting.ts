@@ -251,7 +251,7 @@ export function executivePdf(
     doc.fontSize(11);
     doc.text(
       c
-        ? `Salud técnica: ${c.health ?? "sin datos"}/100${c.previousId ? ` (anterior: ${c.previousHealth ?? "sin datos"})` : " (primera auditoría)"}. ${c.pages} URLs auditadas.`
+        ? `Salud técnica: ${c.health ?? "sin datos"}/100${c.previousId ? ` (anterior: ${c.previousHealth ?? "sin datos"})` : " (primera auditoría)"}. ${c.pages} ${c.pages === 1 ? "URL auditada" : "URLs auditadas"}.`
         : "Todavía no hay una auditoría terminada.",
     );
     if (c?.previousId)

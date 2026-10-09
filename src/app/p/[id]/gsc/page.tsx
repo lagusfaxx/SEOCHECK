@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Area, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useProject } from "@/components/Shell";
 import { GscConnect } from "@/components/GscConnect";
-import { api, cx, DataTable, Delta, Drawer, Empty, fmt, Icon, jobBusy, pct, Stat, Tabs, useAction, useApi, type Col, Spinner } from "@/components/ui";
+import { api, cx, DataTable, Delta, Drawer, Empty, fmt, Hint, Icon, jobBusy, pct, Stat, Tabs, useAction, useApi, type Col, Spinner } from "@/components/ui";
 
 type Row = { key: string; clicks: number; impressions: number; ctr: number; position: number; n: number; prevClicks: number | null; prevPosition: number | null };
 
@@ -37,12 +37,12 @@ export default function GscPage() {
 
   const cols: Col<Row>[] = [
     { key: "sel", label: "", get: (r) => (rowsSel.has(r.key) ? 1 : 0), render: (r) => <input type="checkbox" checked={rowsSel.has(r.key)} onClick={(e) => e.stopPropagation()} onChange={() => setRowsSel((s) => { const n = new Set(s); n.has(r.key) ? n.delete(r.key) : n.add(r.key); return n; })} /> },
-    { key: "key", label: dim === "query" ? "Query" : "Página", get: (r) => r.key, render: (r) => <span className="block max-w-[420px] truncate" title={r.key}>{dim === "page" ? path(r.key) : r.key}</span> },
+    { key: "key", label: dim === "query" ? "Consulta" : "Página", get: (r) => r.key, render: (r) => <span className="block max-w-[420px] truncate" title={r.key}>{dim === "page" ? path(r.key) : r.key}</span> },
     { key: "clicks", label: "Clics", get: (r) => r.clicks, render: (r) => <>{fmt(r.clicks)} <Delta from={r.prevClicks} to={r.clicks} /></>, num: true },
     { key: "impr", label: "Impresiones", get: (r) => r.impressions, render: (r) => fmt(r.impressions), num: true },
     { key: "ctr", label: "CTR", get: (r) => r.ctr, render: (r) => <span className={cx(r.position <= 10 && r.ctr < expected(r.position) * 0.5 && "text-rose-600")}>{pct(r.ctr)}</span>, num: true },
     { key: "pos", label: "Posición", get: (r) => r.position, render: (r) => <>{fmt(r.position, 1)} <Delta from={r.prevPosition == null ? null : Number(r.prevPosition)} to={r.position} lowerIsBetter /></>, num: true },
-    { key: "n", label: dim === "query" ? "Págs." : "Queries", get: (r) => r.n, render: (r) => <span className={cx(dim === "query" && r.n > 1 && "text-amber-600")}>{r.n}</span>, num: true },
+    { key: "n", label: <span className="inline-flex items-center gap-1">{dim === "query" ? "Páginas" : "Consultas"}<Hint text={dim === "query" ? "Cuántas páginas de tu sitio aparecen en Google para esta consulta. Más de una (en amarillo) puede ser canibalización: tus páginas compiten entre sí." : "Cuántas consultas distintas hicieron aparecer esta página en Google."} /></span>, get: (r) => r.n, render: (r) => <span className={cx(dim === "query" && r.n > 1 && "text-amber-600")}>{r.n}</span>, num: true },
   ];
 
   if (!project) return null;
@@ -51,12 +51,12 @@ export default function GscPage() {
   return (
     <div className="space-y-4 p-4 md:p-6">
       <div className="flex flex-wrap items-center gap-2">
-        <Tabs value={days} onChange={setDays} items={[{ id: "7", label: "7d" }, { id: "28", label: "28d" }, { id: "90", label: "90d" }]} />
-        <Tabs value={dim} onChange={(d) => { setDim(d); setRowsSel(new Set()); }} items={[{ id: "query", label: "Queries" }, { id: "page", label: "Páginas" }]} />
-        <Tabs value={view} onChange={setView} items={[{ id: "all", label: "Todo" }, { id: "striking", label: "Pos. 5–20" }, { id: "lowctr", label: "CTR bajo" }]} />
+        <Tabs value={days} onChange={setDays} items={[{ id: "7", label: "7d", title: "Últimos 7 días" }, { id: "28", label: "28d", title: "Últimos 28 días" }, { id: "90", label: "90d", title: "Últimos 90 días" }]} />
+        <Tabs value={dim} onChange={(d) => { setDim(d); setRowsSel(new Set()); }} items={[{ id: "query", label: "Consultas", title: "Lo que la gente escribió en Google" }, { id: "page", label: "Páginas", title: "Tus páginas que aparecieron en Google" }]} />
+        <Tabs value={view} onChange={setView} items={[{ id: "all", label: "Todo" }, { id: "striking", label: "Posición 5–20", title: "Cerca de la primera página: con poco trabajo pueden subir" }, { id: "lowctr", label: "CTR bajo", title: "En el top 10 pero con menos clics de lo normal para su posición: revisa título y meta descripción" }]} />
         <div className="relative">
           <Icon name="search" className="absolute left-2.5 top-2 h-4 w-4 text-ink-400" />
-          <input className="input w-56 pl-8" value={q} onChange={(e) => setQ(e.target.value)} placeholder="contiene" />
+          <input className="input w-56 pl-8" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar" />
         </div>
         <div className="ml-auto flex gap-2">
           {dim === "query" && rowsSel.size > 0 && (
@@ -77,12 +77,16 @@ export default function GscPage() {
               <Stat label="CTR" value={pct(tot.ctr)} />
               <Stat label="Posición" value={fmt(tot.position, 1)} />
             </div>
+            <div className="mb-1 flex flex-wrap items-center gap-4 text-xs text-ink-500" aria-label="Leyenda del gráfico">
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#5b5bf6]" />Clics por día (eje izquierdo)</span>
+              <span className="flex items-center gap-1.5"><span className="h-0.5 w-3 bg-[#f59e0b]" />Posición promedio (eje derecho; más arriba es mejor)</span>
+            </div>
             <ResponsiveContainer width="100%" height={180}>
               <ComposedChart data={series} margin={{ left: -20, right: -20 }}>
                 <XAxis dataKey="d" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} minTickGap={30} />
                 <YAxis yAxisId="c" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
                 <YAxis yAxisId="p" orientation="right" reversed tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(v: any, name: any) => [name === "position" ? fmt(Number(v), 1) : fmt(Number(v)), name === "position" ? "Posición promedio" : "Clics"]} />
                 <Area yAxisId="c" dataKey="clicks" stroke="#5b5bf6" fill="#5b5bf6" fillOpacity={0.15} strokeWidth={2} />
                 <Line yAxisId="p" dataKey="position" stroke="#f59e0b" dot={false} strokeWidth={1.5} />
               </ComposedChart>
@@ -106,8 +110,9 @@ function Detail({ dim, k, days }: { dim: "query" | "page"; k: string; days: stri
   return (
     <div>
       <h2 className="break-words pr-10 text-lg font-semibold">{dim === "page" ? path(k) : k}</h2>
-      <div className="lbl mt-4">{dim === "query" ? "Páginas" : "Queries"}</div>
+      <div className="lbl mt-4">{dim === "query" ? "Páginas que aparecen para esta consulta" : "Consultas para las que aparece esta página"}</div>
       <table className="tbl mt-1">
+        <thead><tr><th>{dim === "query" ? "Página" : "Consulta"}</th><th className="num">Clics</th><th className="num">Impresiones</th><th className="num">Posición</th></tr></thead>
         <tbody>
           {data?.map((r) => (
             <tr key={r.key}>

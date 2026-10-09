@@ -62,7 +62,7 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
     crawlId = crawl.id;
     try {
       const st = await runCrawl(crawl.id);
-      return `${st.status === "partial" ? "parcial · " : ""}${st.pages} URLs · ${st.critical} críticos · ${st.warning} warnings`;
+      return `${st.status === "partial" ? "parcial · " : ""}${st.pages} URL${st.pages === 1 ? "" : "s"} · ${st.critical} críticos · ${st.warning} warnings`;
     } catch (e) {
       await db.crawl.updateMany({ where: { id: crawl.id, status: { in: ["queued", "running"] } }, data: { status: "failed", reason: e instanceof Error ? e.message : String(e), finishedAt: new Date() } });
       throw e;
@@ -95,7 +95,7 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
     const urls = await topUrls(20);
     if (!urls.length) return skip("inspect", "sin URLs del crawl");
     await runInspection(projectId, urls);
-    return `${urls.length} URLs`;
+    return `${urls.length} URL${urls.length === 1 ? "" : "s"}`;
   });
 
   await step("psi", "PageSpeed", async () => {
@@ -104,7 +104,7 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
     const urls = await topUrls(5);
     if (!urls.length) return skip("psi", "sin URLs del crawl");
     await runPsi(projectId, urls, ["mobile"]);
-    return `${urls.length} URLs (mobile)`;
+    return `${urls.length} URL${urls.length === 1 ? "" : "s"} (mobile)`;
   });
 
   await step("keywords", "keywords", async () => {

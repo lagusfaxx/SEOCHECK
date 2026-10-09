@@ -110,7 +110,7 @@ export default function AuditPage() {
         {data?.crawls?.length > 0 && (
           <select className="input ml-auto w-auto" value={data.crawlId} onChange={(e) => setCrawl(e.target.value)}>
             {data.crawls.map((c: any) => (
-              <option key={c.id} value={c.id}>{fmtDate(c.startedAt, "datetime")} · {CRAWL_STATUS[c.status]?.label ?? c.status}{c.stats?.pages != null ? ` · ${fmt(c.stats.pages)} URLs` : ""}</option>
+              <option key={c.id} value={c.id}>{fmtDate(c.startedAt, "datetime")} · {CRAWL_STATUS[c.status]?.label ?? c.status}{c.stats?.pages != null ? ` · ${fmt(c.stats.pages)} URL${c.stats.pages === 1 ? "" : "s"}` : ""}</option>
             ))}
           </select>
         )}

@@ -44,7 +44,7 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
       serpent: est.serpCalls(run.seeds.length + (opts.serpExpansion ?? 0) + (opts.serpTop ?? 0)),
       llm: est.llmIntent(opts.maxKeywords ?? 400),
     },
-    "Research de keywords"
+    "Investigación de keywords"
   );
   const stats: Record<string, number> = {};
   const step = async (pct: number, msg: string) => {

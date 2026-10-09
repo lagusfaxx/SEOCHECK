@@ -245,12 +245,12 @@ export async function buildReport(projectId: string): Promise<string> {
   const notIndexed = [...inspLatest.values()].filter((r) => r.verdict && r.verdict !== "PASS");
   const canonMismatch = [...inspLatest.values()].filter((r) => r.googleCanonical && r.userCanonical && r.googleCanonical !== r.userCanonical);
   if (notIndexed.length) {
-    const tr = hasGsc ? { traffic: notIndexed.reduce((s, r) => s + weight(r.url), 0) * 10, label: `${notIndexed.length} URLs importantes` } : trafficOf(notIndexed.map((r) => r.url));
+    const tr = hasGsc ? { traffic: notIndexed.reduce((s, r) => s + weight(r.url), 0) * 10, label: `${notIndexed.length} ${notIndexed.length === 1 ? "URL importante" : "URLs importantes"}` } : trafficOf(notIndexed.map((r) => r.url));
     tasks.push(makeTask({ title: `No indexadas según Google (${notIndexed.length} de las URLs principales)`, fix: "Revisar el estado de cobertura de cada una (sección Indexación): noindex, canonical, bloqueo o calidad.", traffic: tr.traffic, trafficLabel: tr.label, sev: 3, sevLabel: "crítico", ease: 0.6 }));
   }
   if (canonMismatch.length) {
     const tr = trafficOf(canonMismatch.map((r) => r.url));
-    tasks.push(makeTask({ title: `Google eligió otro canonical (${canonMismatch.length} URLs)`, fix: "Unificar contenido/canonical para que coincidan con lo que Google elige.", traffic: tr.traffic, trafficLabel: tr.label, sev: 2, sevLabel: "warning", ease: 0.8 }));
+    tasks.push(makeTask({ title: `Google eligió otro canonical (${canonMismatch.length} URL${canonMismatch.length === 1 ? "" : "s"})`, fix: "Unificar contenido/canonical para que coincidan con lo que Google elige.", traffic: tr.traffic, trafficLabel: tr.label, sev: 2, sevLabel: "warning", ease: 0.8 }));
   }
 
   // ---------- Search Console ----------
