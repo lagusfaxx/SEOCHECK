@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-/** Rutas que se pueden ver sin sesión. */
+/** Sitio público de Fullstack Ventures (landing y páginas de producto). */
+const SITE = [/^\/$/, /^\/search$/, /^\/ventures$/, /^\/brand\//, /^\/api\/ideas$/];
+/** Rutas de la app que se pueden ver sin sesión. */
 const PUBLIC = [/^\/login$/, /^\/setup$/, /^\/forgot$/, /^\/reset$/, /^\/api\/auth\//, /^\/api\/health$/, /^\/api\/oauth\/google\/callback$/];
 
 /**
@@ -14,6 +16,8 @@ export function middleware(req: NextRequest) {
   // healthcheck de Docker/Coolify: siempre abierto. Si responde 401, el contenedor queda "unhealthy"
   // y el proxy (Traefik) deja de enrutar el sitio: se ve "404 page not found".
   if (pathname === "/api/health") return NextResponse.next();
+  // el sitio público (landing, productos y sus imágenes) nunca va detrás de BASIC_AUTH ni de la sesión
+  if (SITE.some((r) => r.test(pathname))) return NextResponse.next();
   const cred = process.env.BASIC_AUTH;
   if (cred) {
     const h = req.headers.get("authorization");
@@ -30,7 +34,7 @@ export function middleware(req: NextRequest) {
   if (pathname.startsWith("/api/")) return NextResponse.json({ error: "Inicia sesión" }, { status: 401 });
   const url = req.nextUrl.clone();
   url.pathname = "/login";
-  url.search = pathname !== "/" ? `?next=${encodeURIComponent(pathname)}` : "";
+  url.search = `?next=${encodeURIComponent(pathname)}`;
   return NextResponse.redirect(url);
 }
 

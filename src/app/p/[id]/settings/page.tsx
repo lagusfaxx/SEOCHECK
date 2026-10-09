@@ -112,7 +112,7 @@ export default function Settings() {
       {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{err}</div>}
       <div className="flex items-center gap-2">
         <button className="btn-p" onClick={save}><Icon name={saved ? "check" : "check"} />{saved ? "Guardado" : "Guardar"}</button>
-        <button className="btn ml-auto text-rose-600" onClick={async () => { if (!confirm(`¿Eliminar ${project.domain} y todos sus datos?`)) return; await api(`/api/p/${id}/_`, "DELETE"); router.push("/"); }}>
+        <button className="btn ml-auto text-rose-600" onClick={async () => { if (!confirm(`¿Eliminar ${project.domain} y todos sus datos?`)) return; await api(`/api/p/${id}/_`, "DELETE"); router.push("/app"); }}>
           <Icon name="trash" />Eliminar proyecto
         </button>
       </div>

@@ -83,7 +83,7 @@ export async function post(path: string, body: unknown) {
 export const backTo = () => {
   const n = new URLSearchParams(window.location.search).get("next");
   // solo rutas internas (evita redirecciones abiertas a otros sitios)
-  return n && n.startsWith("/") && !n.startsWith("//") ? n : "/";
+  return n && n.startsWith("/") && !n.startsWith("//") ? n : "/app";
 };
 
 export const LoginLink = () => <Link className="text-acc" href="/login">Volver a iniciar sesión</Link>;

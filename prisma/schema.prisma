@@ -661,3 +661,21 @@ model QuotaUsage {
 
   @@index([workspaceId, resource, createdAt])
 }
+
+/// Ideas enviadas desde el formulario público de fsvc.cl/ventures.
+model IdeaSubmission {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  /// idea | app | fisico | startup
+  stage     String
+  idea      String
+  needs     String[]
+  link      String?
+  ip        String?
+  /// new | contacted | declined | accepted
+  status    String   @default("new")
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

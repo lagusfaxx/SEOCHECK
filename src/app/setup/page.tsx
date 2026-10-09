@@ -15,7 +15,7 @@ export default function Setup() {
       submit="Crear cuenta"
       onSubmit={async (v) => {
         await post("/api/auth/setup", v);
-        window.location.href = "/";
+        window.location.href = "/app";
       }}
     />
   );

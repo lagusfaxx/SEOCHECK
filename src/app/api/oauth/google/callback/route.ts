@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const base = (process.env.APP_URL ?? url.origin).replace(/\/$/, "");
-  const back = (projectId: string | null, q: string) => Response.redirect(`${base}${projectId ? `/p/${projectId}/settings` : "/"}?${q}#gsc`, 302);
+  const back = (projectId: string | null, q: string) => Response.redirect(`${base}${projectId ? `/p/${projectId}/settings` : "/app"}?${q}#gsc`, 302);
   const user = await userFromRequest(req);
   if (!user) return Response.redirect(`${base}/login`, 302);
   const err = url.searchParams.get("error");
