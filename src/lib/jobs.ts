@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { refundBriefs } from "./plans";
 
 export const WORKER = "worker";
 /** Un trabajo corriendo sin pulso por más de esto se considera colgado. */
@@ -28,7 +29,9 @@ export async function recoverInterrupted() {
   // sus reservas de presupuesto ya no corresponden
   await db.budgetReservation.deleteMany({ where: { holder: { in: dead } } });
   await db.crawl.updateMany({ where: { status: { in: ["running", "crawling"] } }, data: { status: "failed", reason: "Interrumpido: el worker se reinició antes de terminar.", finishedAt: new Date() } });
-  await db.contentAnalysis.updateMany({ where: { status: { in: ["running", "brief"] } }, data: { status: "error", result: { error: "Interrumpido: el worker se reinició antes de terminar." } } });
+  const deadContent = (await db.contentAnalysis.findMany({ where: { status: { in: ["running", "brief"] } }, select: { id: true } })).map((a) => a.id);
+  await db.contentAnalysis.updateMany({ where: { id: { in: deadContent } }, data: { status: "error", result: { error: "Interrumpido: el worker se reinició antes de terminar." } } });
+  await refundBriefs(deadContent);
   await db.keywordRun.updateMany({ where: { status: { notIn: ["queued", "done", "error"] } }, data: { status: "error" } });
   return runs.count;
 }

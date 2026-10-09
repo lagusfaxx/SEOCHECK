@@ -24,6 +24,8 @@ import {
   withProjectQuota,
   createProjectWithinPlan,
   PlanLimitError,
+  refundBriefs,
+  assertResource,
 } from "./plans";
 import { storeBrief, regenerateSection } from "./content/brief-tools";
 import { validateBusinessClaims, validateBrief } from "./content/claims";
@@ -310,6 +312,26 @@ test(
     assert.equal(results.filter((r) => r.status === "rejected").length, 1);
     await db.reportSnapshot.deleteMany({ where: { projectId: pid } });
     await assert.rejects(() => saveReport(pid), PlanLimitError);
+    await db.workspace.update({ where: { id: wid }, data: { plan: "agency" } });
+  },
+);
+test(
+  "Un análisis que falla devuelve su cupo de brief una sola vez",
+  { skip: !enabled },
+  async () => {
+    await db.workspace.update({ where: { id: wid }, data: { plan: "trial" } });
+    await db.quotaUsage.deleteMany({ where: { workspaceId: wid } });
+    await db.quotaUsage.create({ data: { workspaceId: wid, resource: "briefs", amount: 2 } });
+    const a = await withProjectQuota(pid, "briefs", 1, (tx) =>
+      tx.contentAnalysis.create({ data: { projectId: pid, url: "https://x.cl/a", keyword: "falla" } }),
+    );
+    await assert.rejects(() => assertResource(pid, "briefs", 1), PlanLimitError);
+    await refundBriefs([a.id]);
+    await refundBriefs([a.id]); // idempotente: un reintento no devuelve dos veces
+    await assertResource(pid, "briefs", 1);
+    const used = await db.quotaUsage.aggregate({ where: { workspaceId: wid, resource: "briefs" }, _sum: { amount: true } });
+    assert.equal(used._sum.amount, 2);
+    await db.contentAnalysis.delete({ where: { id: a.id } });
     await db.workspace.update({ where: { id: wid }, data: { plan: "agency" } });
   },
 );

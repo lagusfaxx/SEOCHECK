@@ -95,6 +95,21 @@ export async function assertResource(
     );
   return p;
 }
+/**
+ * Devuelve el cupo de brief de análisis que fallaron (API caída, worker reiniciado…): un fallo
+ * nuestro no debe gastar el plan. Idempotente por análisis; el reembolso lleva la fecha del
+ * análisis para que caiga en el mismo mes del cupo que consumió.
+ */
+export async function refundBriefs(contentIds: string[]) {
+  for (const id of contentIds) {
+    await db.$transaction(async (tx) => {
+      const r = await tx.contentAnalysis.updateMany({ where: { id, quotaRefunded: false }, data: { quotaRefunded: true } });
+      if (!r.count) return;
+      const a = await tx.contentAnalysis.findUniqueOrThrow({ where: { id }, select: { createdAt: true, project: { select: { workspaceId: true } } } });
+      await tx.quotaUsage.create({ data: { workspaceId: a.project.workspaceId, resource: "briefs", amount: -1, createdAt: a.createdAt } });
+    });
+  }
+}
 export async function crawlLimit(projectId: string, requested: number) {
   const p = await assertPlanActive(projectId);
   return Math.min(Math.max(1, Math.floor(requested) || 500), p.limits.urls);

@@ -15,6 +15,7 @@ import { assertBudget, BudgetError, est, releaseBudget } from "../lib/budget";
 import { collectDfsQueue, flushDfsQueue } from "../lib/volume/dataforseo";
 import { backfillVolumes, writeCache } from "../lib/volume/broker";
 import { runFull } from "../lib/fullrun";
+import { refundBriefs } from "../lib/plans";
 import { beat, keepAlive, recoverInterrupted, sweepStale } from "../lib/jobs";
 
 type Data = { projectId: string; jobRunId?: string; [k: string]: any };
@@ -99,12 +100,15 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
     case QUEUES.reportSnapshot:
       return saveReport(d.projectId);
     case QUEUES.content:
-      // si falla (también por presupuesto) el análisis queda "falló" con el motivo, nunca colgado en "en cola"
+      // si falla (también por presupuesto) el análisis queda "falló" con el motivo, nunca colgado en "en cola";
+      // se devuelve el cupo de brief y no se reintenta solo (el usuario lo relanza y ve el error)
       try {
         await assertBudget({ serpent: est.serpCalls(1), llm: est.llmBrief() }, "Optimización de contenido");
         return await analyzeContent(d.contentId, d.jobRunId);
       } catch (e) {
         await db.contentAnalysis.updateMany({ where: { id: d.contentId }, data: { status: "error", result: { error: e instanceof Error ? e.message : String(e) } } });
+        await refundBriefs([d.contentId]).catch((err) => console.warn("[content] reembolso de cupo", err));
+        if (e && typeof e === "object") (e as { noRetry?: boolean }).noRetry = true;
         throw e;
       }
   }
