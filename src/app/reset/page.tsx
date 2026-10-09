@@ -15,7 +15,7 @@ export default function Reset() {
       onSubmit={async (v) => {
         const token = new URLSearchParams(window.location.search).get("token") ?? "";
         await post("/api/auth/reset", { token, password: v.password });
-        window.location.href = "/";
+        window.location.href = "/app";
       }}
       footer={<LoginLink />}
     />
