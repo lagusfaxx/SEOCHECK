@@ -71,3 +71,31 @@ test("cobertura: un módulo cuyo último intento falló se marca como falló, no
     await db.workspace.delete({ where: { id: ws.id } });
   }
 });
+
+test("estado de APIs: sólo endpoints de cuenta, clasifica caído / sin saldo / ok", async () => {
+  const { env } = await import("./env");
+  const { providerHealth, assertProviderUp } = await import("./providers/health");
+  const paths: string[] = [];
+  let mode: "down" | "broke" | "ok" = "down";
+  const srv = http.createServer((req, res) => {
+    paths.push(req.url ?? "");
+    if (mode === "down") return res.writeHead(503).end("<html>503</html>");
+    const credits = mode === "broke" ? 0 : 12.5;
+    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ success: true, data: { credits, costPerSearch: 0.0025, freeSearches: { remaining: 0 } } }));
+  });
+  servers.push(srv);
+  await new Promise<void>((r) => srv.listen(0, "127.0.0.1", () => r()));
+  Object.assign(env as any, { serpentKey: "k", serpentBase: `http://127.0.0.1:${(srv.address() as { port: number }).port}` });
+  const one = async () => (await providerHealth({ fresh: true, only: ["serpent"] }))[0];
+  assert.equal((await one()).status, "down");
+  await assert.rejects(() => assertProviderUp("serpent"), (e: any) => e instanceof ProviderError && e.kind === "down");
+  mode = "broke";
+  assert.equal((await one()).status, "no_balance");
+  mode = "ok";
+  const ok = await one();
+  assert.equal(ok.status, "ok");
+  assert.match(ok.balance ?? "", /12\.50.*5000 búsquedas/);
+  await assertProviderUp("serpent");
+  // nunca se lanzó una búsqueda (que cobra): sólo /api/status
+  assert.ok(paths.every((p) => p.startsWith("/api/status")), paths.join(","));
+});

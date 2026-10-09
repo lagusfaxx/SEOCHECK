@@ -1,13 +1,13 @@
 "use client";
 import { NextActions } from "@/components/NextActions";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useProject } from "@/components/Shell";
-import { api, contentScoreLabel, cx, Delta, Empty, fmt, Icon, IconBadge, Score, Stat, Hint, useApi, useLocal, Spinner } from "@/components/ui";
+import { api, contentScoreLabel, cx, fmtDate, Delta, Empty, fmt, Icon, IconBadge, Score, Stat, Hint, useApi, useLocal, Spinner } from "@/components/ui";
 import { HEALTH_HELP, healthLabel } from "@/lib/presentation";
 import { Coverage } from "@/components/Coverage";
 
@@ -25,8 +25,51 @@ const DEFAULT: W[] = [
 
 const PROV: Record<string, string> = { serpent: "Serpent", dataforseo: "DataForSEO", apify: "Apify", llm: "LLM" };
 
+const HEALTH_CHIP: Record<string, [string, string]> = {
+  ok: ["Operativo", "!bg-emerald-100 !text-emerald-800"],
+  down: ["Caído", "!bg-rose-100 !text-rose-800"],
+  timeout: ["No responde", "!bg-rose-100 !text-rose-800"],
+  no_balance: ["Sin saldo", "!bg-amber-100 !text-amber-800"],
+  rate_limit: ["Límite de ritmo", "!bg-amber-100 !text-amber-800"],
+  auth: ["Credenciales", "!bg-amber-100 !text-amber-800"],
+  bad_request: ["Error", "!bg-amber-100 !text-amber-800"],
+};
+
+/** Estado en vivo de las APIs (endpoints de cuenta: no gastan saldo). */
+function ApiHealth({ rows, canRefresh, onRefresh }: { rows: any[]; canRefresh: boolean; onRefresh: () => Promise<unknown> }) {
+  const [busy, setBusy] = useState(false);
+  const live = rows.filter((h) => h.status !== "not_configured");
+  if (!live.length) return null;
+  return (
+    <div className="mt-3 border-t border-ink-100 pt-3 dark:border-ink-800">
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className="lbl">Estado de APIs</span>
+        <Hint text="Se consulta el estado de cuenta de cada proveedor, sin lanzar búsquedas: no gasta saldo. Se actualiza cada minuto." />
+        {canRefresh && (
+          <button className="btn-g ml-auto px-1.5 py-0 text-xs" disabled={busy} onClick={async () => { setBusy(true); try { await onRefresh(); } finally { setBusy(false); } }}>
+            {busy ? <Spinner /> : "Verificar ahora"}
+          </button>
+        )}
+      </div>
+      <div className="space-y-1">
+        {live.map((h) => {
+          const [label, tone] = HEALTH_CHIP[h.status] ?? [h.status, ""];
+          return (
+            <div key={h.provider} className="flex items-baseline gap-2" title={`${h.role}${h.status !== "ok" ? ` — ${h.message}` : ""}`}>
+              <span>{h.label}</span>
+              <span className={cx("chip", tone)}>{label}</span>
+              <span className="ml-auto truncate text-[11px] text-ink-400 tabular-nums">{h.balance ?? (h.latencyMs != null ? `${h.latencyMs} ms` : "")}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-1 text-[11px] text-ink-400">Verificado {fmtDate(live[0].checkedAt, "datetime")}</div>
+    </div>
+  );
+}
+
 function Spend() {
-  const { data } = useApi<any>("/api/usage", { refreshInterval: 30000 });
+  const { data, mutate } = useApi<any>("/api/usage", { refreshInterval: 30000 });
   if (!data) return null;
   return (
     <div className="space-y-2.5 text-sm">
@@ -53,6 +96,7 @@ function Spend() {
           </div>
         );
       })}
+      {data.health && <ApiHealth rows={data.health} canRefresh={data.scope === "instance"} onRefresh={async () => mutate(await api("/api/usage?fresh=1"), { revalidate: false })} />}
     </div>
   );
 }

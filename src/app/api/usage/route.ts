@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { budgetLimits, monthStart, type BudgetProvider } from "@/lib/budget";
 import { providerStates } from "@/lib/volume/state";
 import { userFromRequest, userWorkspaceIds } from "@/lib/auth";
+import { providerHealth } from "@/lib/providers/health";
 
 export const dynamic = "force-dynamic";
 
@@ -39,5 +40,8 @@ export async function GET(req: Request) {
       outputTokens: s?._sum.outputTokens ?? 0,
     };
   });
-  return Response.json({ since, scope: instanceAdmin ? "instance" : "workspace", providers, daily, states: instanceAdmin ? await providerStates() : [] });
+  // estado en vivo de las APIs (endpoints de cuenta, no cobran); el saldo sólo lo ve el dueño de la instancia
+  const fresh = instanceAdmin && new URL(req.url).searchParams.get("fresh") === "1";
+  const health = (await providerHealth({ fresh })).map((h) => (instanceAdmin ? h : { ...h, balance: undefined }));
+  return Response.json({ since, scope: instanceAdmin ? "instance" : "workspace", providers, daily, states: instanceAdmin ? await providerStates() : [], health });
 }

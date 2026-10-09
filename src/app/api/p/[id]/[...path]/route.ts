@@ -3,6 +3,8 @@ import { runInlineJob } from "@/lib/inline-job";
 import { BillingError } from "@/lib/billing";
 import { PRODUCT_GETS, PRODUCT_POSTS, PRODUCT_PATCHS, PRODUCT_DELETES, ProductError } from "@/lib/product-api";
 import { withProjectQuota, assertResource, crawlLimit, PlanLimitError, projectPlan } from "@/lib/plans";
+import { assertProviderUp } from "@/lib/providers/health";
+import { ProviderError } from "@/lib/providers/errors";
 import { storeBrief, validateBrief } from "@/lib/content/brief-tools";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
@@ -335,6 +337,7 @@ const POSTS: Record<string, H> = {
     if (!seeds.length) throw new HttpError(400, "Escribe al menos una semilla");
     await assertIdle(id, QUEUES.keywords, "una investigación de keywords");
     await assertResource(id, "keywords", 0);
+    await assertProviderUp("serpent");
     const kwOpts = { serpTop: 150, serpExpansion: 20, maxKeywords: 400, ...((((await db.project.findUniqueOrThrow({ where: { id } })).settings ?? {}) as any).keywords ?? {}) };
     await assertBudget({ serpent: est.serpCalls(seeds.length + kwOpts.serpExpansion + kwOpts.serpTop), llm: est.llmIntent(kwOpts.maxKeywords) }, "Investigación de keywords");
     // volumeLive: DataForSEO endpoint Live (solo si se pide explícitamente); por defecto standard queue
@@ -474,6 +477,7 @@ const POSTS: Record<string, H> = {
   content: async ({ id, body }) => {
     await assertResource(id,"briefs",1);
     if (!body.url || !body.keyword) throw new HttpError(400, "Falta la URL o la keyword");
+    await assertProviderUp("serpent");
     const [u] = await ownUrls(id, [body.url]);
     if (!u) throw new HttpError(400, "URL inválida");
     await assertBudget({ serpent: est.serpCalls(1), llm: est.llmBrief() }, "Optimización de contenido");
@@ -625,6 +629,7 @@ function make(table: Record<string, H>) {
       if (e instanceof AuthError) return bad(e.message,e.status);
       if (e instanceof HttpError) return bad(e.message, e.status);
       if (e instanceof GscNotConnected) return bad(e.message, 400);
+      if (e instanceof ProviderError) return bad(e.message, e.kind === "no_balance" ? 402 : 503);
       console.error(`[api] ${req.method} ${key}`, e);
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") return bad("no existe", 404);
       if (e instanceof Error && e.message.startsWith("Propiedad GSC inválida")) return bad(e.message, 400);

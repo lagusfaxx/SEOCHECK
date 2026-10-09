@@ -173,6 +173,16 @@ El costo de cada run (`usageTotalUsd`) queda en el log del job y en el registro 
 curl -X POST https://<host>/api/p/<projectId>/volumes/csv -H 'content-type: text/csv' --data-binary @"Keyword Stats.csv"
 ```
 
+**Estado de las APIs sin gastar saldo**: sólo consulta endpoints de cuenta (Serpent `GET /api/status`, DataForSEO `GET /v3/appendix/user_data`, Apify `GET /v2/users/me/limits`, OpenAI/Anthropic `GET /v1/models`, embeddings `GET /health`); nunca lanza una búsqueda.
+
+```bash
+npm run providers            # tabla: operativo / caído / sin saldo / credenciales + saldo; exit 1 si alguna falla
+npm run providers -- --json  # para monitoreo o cron
+# en Docker: docker compose exec worker npm run providers
+```
+
+En el panel del proyecto, el bloque de gasto muestra el mismo estado (cacheado 1 min, `PROVIDER_HEALTH_TTL_SECONDS`) con el botón "Verificar ahora". Lanzar un research o un brief con Serpent caído o sin saldo se rechaza al inicio, sin gastar cupo.
+
 **Comparar proveedores** (máx. 100 keywords, una por línea):
 
 ```bash

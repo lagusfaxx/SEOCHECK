@@ -13,7 +13,8 @@
     "db:deploy": "prisma migrate deploy",
     "compare-volume": "tsx scripts/compare-volume.ts",
     "apify-fixture": "tsx scripts/apify-fixture.ts",
-    "user": "tsx scripts/user.ts"
+    "user": "tsx scripts/user.ts",
+    "providers": "tsx scripts/providers.ts"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
