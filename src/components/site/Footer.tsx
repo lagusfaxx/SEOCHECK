@@ -29,7 +29,7 @@ export function CtaAndFooter({ title = "¿Tienes algo que construir, proteger o 
       <footer className="border-t border-fsv-line bg-white">
         <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 md:grid-cols-[1.4fr_repeat(3,1fr)] md:px-6">
           <div>
-            <img src="/brand/fsv-fullstack-ventures.png" alt="Fullstack Ventures" className="h-8 w-auto" />
+            <img src="/brand/fsv-mark.png" alt="Fullstack Ventures" className="h-7 w-auto" />
             <p className="mt-6 text-sm text-fsv-muted">
               © {new Date().getFullYear()} Full Stack Ventures SpA
               <br />
