@@ -9,9 +9,9 @@ const MENUS: Menu[] = [
   {
     label: "Capacidades",
     items: [
-      { title: "Software", text: "Desarrollo web, plataformas y sistemas a medida", href: "/#software" },
-      { title: "Security", text: "Pentesting y seguridad de aplicaciones", href: "/#security" },
-      { title: "Growth", text: "SEO, búsqueda y crecimiento orgánico", href: "/#growth" },
+      { title: "Software", text: "Desarrollo web, plataformas y sistemas a medida", href: "/capacidades#software" },
+      { title: "Security", text: "Pentesting y seguridad de aplicaciones", href: "/capacidades#security" },
+      { title: "Growth", text: "SEO, búsqueda y crecimiento orgánico", href: "/capacidades#growth" },
     ],
   },
   {
@@ -22,6 +22,7 @@ const MENUS: Menu[] = [
 ];
 
 const LINKS = [
+  { label: "Proyectos", href: "/work" },
   { label: "Ventures", href: "/ventures" },
   { label: "Empresa", href: "/#empresa" },
 ];

@@ -12,28 +12,31 @@ export type Business = {
 
 /** Construidos y operados por nuestro equipo. */
 export const OWN_BUSINESSES: Business[] = [
-  { name: "Nomadbrew", logo: "nomadbrew.png", kind: "Café portátil", tags: "Importación / E-commerce", text: "Llevamos a Chile las cafeteras portátiles Wacaco con compra directa a la marca, y las vendemos por Mercado Libre Full, tienda propia y venta directa." },
-  { name: "Starseeker", logo: "starseeker.png", kind: "Máquinas de espresso compactas", tags: "Importación / Marca", text: "Negociamos directo con la fábrica en Guangzhou, sin intermediarios, y lanzamos la marca en Chile con tienda propia.", href: "https://starseeker.cl" },
-  { name: "TAUPOC", logo: "taupoc.png", kind: "Natación de competencia", tags: "Importación / E-commerce", text: "Importamos trajes homologados por World Aquatics, armamos la tienda online y un equipo de nadadores federados como embajadores.", href: "https://taupoc.cl" },
-  { name: "Uzeed", logo: "uzeed.png", kind: "Directorio de contenido para adultos", tags: "Software / Next.js / Infraestructura", text: "Directorio de contenido para adultos desarrollado en Next.js, con sistema PAC y una infraestructura totalmente autoescalable.", href: "https://uzeed.cl" },
-  { name: "La Frida", logo: "la-frida.png", kind: "Gastronomía", tags: "Constitución / Operación", text: "Constituimos la sociedad y pusimos en marcha un negocio de comida mexicana." },
-  { name: "ANDES Technologies", logo: "andes-technologies.png", kind: "Proveedor del Estado", tags: "Security / Compras públicas", text: "Ciberseguridad, productos tecnológicos y retail para instituciones públicas, con licitaciones municipales adjudicadas." },
-  { name: "Centinela", logo: null, kind: "Seguridad ofensiva", tags: "Security / SaaS", text: "Desarrollamos nuestra propia plataforma de pruebas de seguridad, con control de alcance y autorización, usada en licitaciones municipales." },
-  { name: "Rent A Hacker", logo: "rent-a-hacker.png", kind: "Ciberseguridad para empresas", tags: "Security / Pentest", text: "Pruebas de penetración y auditorías de seguridad, siempre con autorización firmada.", href: "https://rentahacker.cl" },
+  { name: "Nomadbrew", logo: "nomadbrew.png", kind: "Café portátil", tags: "Importación / E-commerce", text: "Cafeteras portátiles Wacaco en Chile, en Mercado Libre Full, tienda propia y venta directa." },
+  { name: "Starseeker", logo: "starseeker.png", kind: "Máquinas de espresso compactas", tags: "Importación / Marca", text: "Máquinas de espresso compactas, directo de fábrica, con tienda propia en Chile.", href: "https://starseeker.cl" },
+  { name: "TAUPOC", logo: "taupoc.png", kind: "Natación de competencia", tags: "Importación / E-commerce", text: "Trajes de natación homologados por World Aquatics, con nadadores federados como embajadores.", href: "https://taupoc.cl" },
+  { name: "Uzeed", logo: "uzeed.png", kind: "Directorio de contenido para adultos", tags: "Software / Next.js / Infraestructura", text: "Directorio de contenido para adultos en Next.js, con sistema PAC e infraestructura totalmente autoescalable.", href: "https://uzeed.cl" },
+  { name: "La Frida", logo: "la-frida.png", kind: "Gastronomía", tags: "Gastronomía", text: "Restaurante de comida mexicana." },
+  { name: "ANDES Technologies", logo: "andes-technologies.png", kind: "Proveedor del Estado", tags: "Security / Compras públicas", text: "Ciberseguridad, tecnología y retail para instituciones públicas, con licitaciones municipales adjudicadas." },
+  { name: "Centinela", logo: null, kind: "Seguridad ofensiva", tags: "Security / SaaS", text: "Plataforma de pruebas de seguridad con control de alcance y autorización, usada en licitaciones municipales." },
+  { name: "Rent A Hacker", logo: "rent-a-hacker.png", kind: "Ciberseguridad para empresas", tags: "Security / Pentest", text: "Pentesting y auditorías de seguridad para empresas, siempre con autorización firmada.", href: "https://rentahacker.cl" },
 ];
 
 /** Construidos para un cliente. */
 export const CLIENT_WORK: Business[] = [
-  { name: "Barzuo", logo: "barzuo.png", kind: "Bar, lounge y club en Santiago", tags: "Software / Web application", text: "Desarrollamos su sistema completo (sitio, punto de venta, pantallas de cocina y barra, fidelización y karaoke) y hoy lo estamos escalando." },
+  { name: "Barzuo", logo: "barzuo.png", kind: "Bar, lounge y club en Santiago", tags: "Software / Web application", text: "Sitio, punto de venta, pantallas de cocina y barra, fidelización y karaoke, hoy en etapa de escalamiento." },
 ];
 
-/** Cifras entregadas por el equipo (CLP). */
-export const STATS: [string, string][] = [
-  ["+$20M", "invertidos en negocios propios"],
-  ["+$100M", "de retorno generado"],
-  ["+$500M", "valor estimado de los SaaS que creamos"],
-  [String(OWN_BUSINESSES.length), "negocios construidos y operados por nuestro equipo"],
+/** Cifras entregadas por el equipo (CLP). `short` es la etiqueta en móvil. */
+export const STATS: { value: string; short: string; long: string }[] = [
+  { value: "+$20M", short: "Invertidos", long: "invertidos en negocios propios" },
+  { value: "+$100M", short: "Retorno", long: "de retorno generado" },
+  { value: "+$500M", short: "Valor SaaS", long: "valor estimado de los SaaS que creamos" },
+  { value: String(OWN_BUSINESSES.length), short: "Negocios", long: "negocios construidos y operados por nuestro equipo" },
 ];
+
+/** Los 3 casos de la home: muestran cosas distintas (e-commerce, software, security). */
+export const FEATURED = ["Nomadbrew", "Uzeed", "Centinela"];
 
 export const PLATFORMS: { name: string; file: string; use: string; h: string }[] = [
   { name: "Mercado Público", file: "mercado-publico.png", use: "Licitaciones", h: "h-7" },

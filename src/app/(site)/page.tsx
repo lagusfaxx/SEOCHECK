@@ -2,16 +2,21 @@ import Link from "next/link";
 import { Header } from "@/components/site/Header";
 import { CONTACT_HREF, CtaAndFooter } from "@/components/site/Footer";
 import { BusinessLogo } from "@/components/site/Brands";
-import { CLIENT_WORK, OWN_BUSINESSES, PLATFORMS, STATS, type Business } from "@/lib/site-content";
+import { BusinessCard, Kicker } from "@/components/site/Sections";
+import { CLIENT_WORK, FEATURED, OWN_BUSINESSES, STATS } from "@/lib/site-content";
 
-const MODULES = ["Auditoría", "Search Console", "Keywords", "Rankings", "Contenido", "Reporting"];
+const MODULES = ["Auditoría", "Keywords", "Rankings", "Contenido"];
 
-const STEPS = [
-  ["Entender", "Partimos por el problema, no por la tecnología."],
-  ["Construir", "Diseñamos y desarrollamos la solución con objetivos medibles."],
-  ["Probar", "Validamos funcionalidad, seguridad y comportamiento real."],
-  ["Mejorar", "Medimos resultados y seguimos iterando."],
+const CAPS = [
+  { id: "software", n: "01 / Software", title: "Construimos productos digitales.", text: "Plataformas, SaaS, sistemas e integraciones a medida.", cta: "Desarrollo" },
+  { id: "security", n: "02 / Security", title: "Encontramos vulnerabilidades.", text: "Pentesting de aplicaciones, APIs y evaluación técnica.", cta: "Seguridad" },
+  { id: "growth", n: "03 / Growth", title: "Convertimos datos en crecimiento.", text: "SEO, automatización y análisis.", cta: "Growth" },
 ];
+
+const STEPS = ["Entender", "Construir", "Probar", "Mejorar"];
+
+/** Logos de la franja: 6 en la home, el resto en /work. */
+const TRUST = ["Barzuo", "Uzeed", "Nomadbrew", "Starseeker", "TAUPOC", "ANDES Technologies"];
 
 export default function Home() {
   return (
@@ -24,17 +29,12 @@ export default function Home() {
         <Products />
         <Proof />
         <Work />
-        <Platforms />
         <Ventures />
         <HowWeWork />
       </main>
       <CtaAndFooter />
     </>
   );
-}
-
-function Kicker({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`font-mono text-xs uppercase tracking-[0.2em] text-fsv-muted ${className}`}>{children}</div>;
 }
 
 function Hero() {
@@ -75,7 +75,7 @@ function HeroVisual() {
   return (
     <div
       aria-hidden
-      className="relative aspect-square w-full overflow-hidden rounded-2xl border border-fsv-line bg-white"
+      className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl border border-fsv-line bg-white md:aspect-square"
       style={{
         backgroundImage: "linear-gradient(#E5E7EB 1px, transparent 1px), linear-gradient(90deg, #E5E7EB 1px, transparent 1px)",
         backgroundSize: "40px 40px",
@@ -110,14 +110,20 @@ function HeroVisual() {
 
 function Trust() {
   const all = [...OWN_BUSINESSES, ...CLIENT_WORK];
+  const logos = TRUST.map((n) => all.find((b) => b.name === n)!).filter(Boolean);
   return (
     <section className="border-b border-fsv-line bg-white">
-      <div className="mx-auto max-w-6xl px-4 py-14 md:px-6">
-        <Kicker className="text-center">Empresas con las que hemos trabajado</Kicker>
-        <ul className="mt-10 grid grid-cols-2 items-center gap-x-8 gap-y-10 sm:grid-cols-5">
-          {all.map((c) => (
-            <li key={c.name} className="flex justify-center opacity-75 grayscale transition hover:opacity-100 hover:grayscale-0" title={c.name}>
-              <BusinessLogo b={c} className={c.name === "Starseeker" ? "h-6 max-w-[140px]" : c.name === "Barzuo" ? "h-9 max-w-[130px]" : c.name === "Centinela" ? "h-8" : "h-12 max-w-[130px]"} />
+      <div className="mx-auto max-w-6xl px-4 py-10 md:px-6 md:py-12">
+        <div className="flex items-baseline justify-between gap-4">
+          <Kicker>Empresas con las que hemos trabajado</Kicker>
+          <Link href="/work" className="shrink-0 text-sm font-medium transition hover:text-fsv-violet">
+            Ver todas <span aria-hidden>→</span>
+          </Link>
+        </div>
+        <ul className="mt-6 grid grid-cols-3 items-center gap-x-6 gap-y-5 md:mt-8 md:grid-cols-6">
+          {logos.map((c) => (
+            <li key={c.name} className="flex h-10 justify-center opacity-75 grayscale transition hover:opacity-100 hover:grayscale-0 md:h-12" title={c.name}>
+              <BusinessLogo b={c} className={c.name === "Starseeker" ? "h-4 self-center md:h-5" : c.name === "Barzuo" ? "h-7 self-center md:h-8" : "h-full max-w-[110px]"} />
             </li>
           ))}
         </ul>
@@ -129,152 +135,54 @@ function Trust() {
 function Capabilities() {
   return (
     <section id="capacidades" className="scroll-mt-16 bg-white">
-      <div className="mx-auto max-w-6xl px-4 pt-24 md:px-6 md:pt-32">
-        <h2 className="font-display text-4xl font-semibold tracking-[-0.03em] md:text-6xl">Tecnología de punta a punta.</h2>
-        <p className="mt-4 max-w-xl text-lg text-fsv-muted">Desde la construcción de una plataforma hasta su seguridad y crecimiento.</p>
-      </div>
-      <div className="mx-auto mt-14 max-w-6xl space-y-4 px-4 pb-24 md:px-6 md:pb-32">
-        <Capability
-          id="software"
-          n="01 / Software"
-          title="Construimos productos digitales."
-          text="Aplicaciones web, plataformas SaaS, sistemas internos, APIs, integraciones y soluciones desarrolladas a medida."
-          cta="Desarrollo de software"
-          visual={<SoftwareVisual />}
-        />
-        <Capability
-          id="security"
-          n="02 / Security"
-          title="Encontramos vulnerabilidades antes de que se conviertan en problemas."
-          text="Pentesting de aplicaciones web y APIs, revisión de seguridad y evaluación técnica."
-          cta="Ciberseguridad"
-          visual={<SecurityVisual />}
-        />
-        <Capability
-          id="growth"
-          n="03 / Growth"
-          title="Convertimos datos en crecimiento."
-          text="Herramientas, automatización y análisis para mejorar adquisición, búsqueda y rendimiento digital. Aquí nace FSV Search."
-          cta="Growth & Search"
-          href="#productos"
-          visual={<GrowthVisual />}
-        />
+      <div className="mx-auto max-w-6xl px-4 py-16 md:px-6 md:py-24">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h2 className="font-display text-[2rem] font-semibold leading-tight tracking-[-0.03em] md:text-5xl">Tecnología de punta a punta.</h2>
+            <p className="mt-3 max-w-xl text-fsv-muted md:text-lg">Desde la construcción de una plataforma hasta su seguridad y crecimiento.</p>
+          </div>
+          <Link href="/capacidades" className="hidden text-sm font-medium transition hover:text-fsv-violet md:block">
+            Ver capacidades <span aria-hidden>→</span>
+          </Link>
+        </div>
+        <ul className="mt-8 grid overflow-hidden rounded-2xl border border-fsv-line md:mt-12 md:grid-cols-3">
+          {CAPS.map((c, i) => (
+            <li key={c.id} className={i ? "border-t border-fsv-line md:border-l md:border-t-0" : ""}>
+              <Link href={`/capacidades#${c.id}`} className="group flex h-full flex-col p-6 transition hover:bg-fsv-bg md:p-8">
+                <Kicker>{c.n}</Kicker>
+                <h3 className="mt-4 font-display text-xl font-semibold leading-snug tracking-tight md:mt-6 md:text-2xl">{c.title}</h3>
+                <p className="mt-2 text-fsv-muted">{c.text}</p>
+                <span className="mt-5 text-sm font-medium transition group-hover:text-fsv-violet md:mt-auto md:pt-8">
+                  {c.cta} <span aria-hidden>→</span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+        <Link href="/capacidades" className="mt-5 inline-block text-sm font-medium md:hidden">
+          Ver capacidades <span aria-hidden>→</span>
+        </Link>
       </div>
     </section>
-  );
-}
-
-function Capability({ id, n, title, text, cta, href = CONTACT_HREF, visual }: { id: string; n: string; title: string; text: string; cta: string; href?: string; visual: React.ReactNode }) {
-  return (
-    <article id={id} className="grid scroll-mt-20 overflow-hidden rounded-2xl border border-fsv-line bg-fsv-bg md:grid-cols-2">
-      <div className="flex flex-col p-8 md:p-12">
-        <Kicker>{n}</Kicker>
-        <h3 className="mt-6 font-display text-3xl font-semibold leading-tight tracking-[-0.025em] md:text-4xl">{title}</h3>
-        <p className="mt-4 max-w-md leading-relaxed text-fsv-muted">{text}</p>
-        <a href={href} className="mt-8 inline-flex w-fit items-center gap-2 font-medium text-fsv-ink underline decoration-fsv-violet decoration-2 underline-offset-[6px] transition hover:text-fsv-violet md:mt-auto md:pt-8">
-          {cta} <span aria-hidden>→</span>
-        </a>
-      </div>
-      <div className="border-t border-fsv-line bg-white p-6 md:border-l md:border-t-0 md:p-10">{visual}</div>
-    </article>
-  );
-}
-
-function Panel({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div aria-hidden className="flex h-full min-h-[240px] flex-col rounded-xl border border-fsv-line bg-white">
-      <div className="flex items-center gap-1.5 border-b border-fsv-line px-4 py-2.5">
-        <span className="h-2 w-2 rounded-full bg-fsv-line" />
-        <span className="h-2 w-2 rounded-full bg-fsv-line" />
-        <span className="h-2 w-2 rounded-full bg-fsv-line" />
-        <span className="ml-3 font-mono text-[11px] text-fsv-muted">{label}</span>
-      </div>
-      <div className="flex-1 p-4 font-mono text-[12.5px] leading-7">{children}</div>
-    </div>
-  );
-}
-
-function SoftwareVisual() {
-  const rows: [string, string, string, string][] = [
-    ["POST", "/api/orders", "201", "48ms"],
-    ["GET", "/api/tables/12", "200", "12ms"],
-    ["PATCH", "/api/orders/884", "200", "31ms"],
-    ["POST", "/api/payments", "201", "96ms"],
-    ["GET", "/api/reports/day", "200", "54ms"],
-  ];
-  return (
-    <Panel label="api · producción">
-      {rows.map(([m, p, s, t]) => (
-        <div key={p} className="grid grid-cols-[56px_1fr_40px_44px] gap-2">
-          <span className="text-fsv-violet">{m}</span>
-          <span className="truncate">{p}</span>
-          <span className="text-emerald-600">{s}</span>
-          <span className="text-right text-fsv-muted">{t}</span>
-        </div>
-      ))}
-    </Panel>
-  );
-}
-
-function SecurityVisual() {
-  const rows: [string, string, string][] = [
-    ["Alta", "IDOR en /api/orders/{id}", "bg-rose-500"],
-    ["Media", "Cookies de sesión sin SameSite", "bg-amber-400"],
-    ["Media", "Rate limit ausente en /login", "bg-amber-400"],
-    ["Baja", "Cabeceras CSP incompletas", "bg-fsv-muted/40"],
-  ];
-  return (
-    <Panel label="informe · ejemplo de hallazgos">
-      {rows.map(([sev, txt, dot]) => (
-        <div key={txt} className="flex items-center gap-3 border-b border-fsv-line/70 py-1 last:border-0">
-          <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
-          <span className="w-12 shrink-0 text-fsv-muted">{sev}</span>
-          <span className="truncate">{txt}</span>
-        </div>
-      ))}
-    </Panel>
-  );
-}
-
-function GrowthVisual() {
-  const pts = [18, 22, 20, 27, 31, 29, 36, 41, 39, 48, 55, 61];
-  const max = 64;
-  const path = pts.map((v, i) => `${i ? "L" : "M"}${(i / (pts.length - 1)) * 300} ${100 - (v / max) * 100}`).join(" ");
-  return (
-    <Panel label="search · clics orgánicos (ejemplo)">
-      <svg viewBox="0 0 300 100" className="h-40 w-full overflow-visible" preserveAspectRatio="none">
-        {[25, 50, 75].map((y) => (
-          <line key={y} x1="0" x2="300" y1={y} y2={y} stroke="#E5E7EB" />
-        ))}
-        <path d={`${path} L300 100 L0 100 Z`} fill="#4B39FC" fillOpacity="0.08" />
-        <path d={path} stroke="#4B39FC" strokeWidth="2" fill="none" vectorEffect="non-scaling-stroke" />
-      </svg>
-      <div className="mt-2 flex justify-between text-[11px] text-fsv-muted">
-        <span>ene</span>
-        <span>jun</span>
-        <span>dic</span>
-      </div>
-    </Panel>
   );
 }
 
 function Products() {
   return (
     <section id="productos" className="scroll-mt-16 border-y border-fsv-line bg-fsv-bg">
-      <div className="mx-auto max-w-6xl px-4 py-24 md:px-6 md:py-32">
+      <div className="mx-auto max-w-6xl px-4 py-16 md:px-6 md:py-28">
         <Kicker>FSV Products</Kicker>
-        <h2 className="mt-6 max-w-3xl font-display text-4xl font-semibold tracking-[-0.03em] md:text-6xl">También construimos nuestra propia tecnología.</h2>
-        <p className="mt-4 max-w-xl text-lg text-fsv-muted">Desarrollamos productos internos cuando creemos que un problema merece una solución mejor.</p>
-
-        <div id="fsv-search" className="mt-14 overflow-hidden rounded-2xl border border-fsv-line bg-white">
-          <div className="grid gap-10 p-8 md:p-12 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
+        <h2 className="mt-5 max-w-3xl font-display text-[2rem] font-semibold leading-tight tracking-[-0.03em] md:mt-6 md:text-5xl">También construimos nuestra propia tecnología.</h2>
+        <div id="fsv-search" className="mt-8 overflow-hidden rounded-2xl border border-fsv-line bg-white md:mt-12">
+          <div className="grid gap-8 p-6 md:p-12 lg:grid-cols-[0.85fr_1.15fr] lg:items-center lg:gap-10">
             <div>
-              <img src="/brand/fsv-search.png" alt="FSV Search" className="h-9 w-auto md:h-10" />
-              <h3 className="mt-8 font-display text-3xl font-semibold leading-tight tracking-[-0.025em] md:text-4xl">Search intelligence para convertir datos SEO en decisiones.</h3>
-              <p className="mt-4 leading-relaxed text-fsv-muted">
-                Auditoría técnica, datos reales de Search Console, investigación de keywords, rankings, análisis competitivo y optimización de contenido desde una sola plataforma.
+              <img src="/brand/fsv-search.png" alt="FSV Search" className="h-8 w-auto md:h-10" />
+              <h3 className="mt-6 font-display text-2xl font-semibold leading-tight tracking-[-0.025em] md:mt-8 md:text-4xl">Search intelligence para convertir datos SEO en decisiones.</h3>
+              <p className="mt-4 hidden leading-relaxed text-fsv-muted md:block">
+                Auditoría técnica, datos reales de Search Console, keywords, rankings y optimización de contenido desde una sola plataforma.
               </p>
-              <Link href="/search" className="mt-8 inline-flex items-center gap-2 rounded-lg bg-fsv-violet px-5 py-3 font-medium text-white transition hover:brightness-110">
+              <div className="mt-5 font-mono text-[11px] uppercase tracking-[0.16em] text-fsv-muted">{MODULES.join(" · ")}</div>
+              <Link href="/search" className="mt-7 inline-flex items-center gap-2 rounded-lg bg-fsv-violet px-5 py-3 font-medium text-white transition hover:brightness-110">
                 Conocer FSV Search <span aria-hidden>→</span>
               </Link>
             </div>
@@ -282,13 +190,6 @@ function Products() {
               <img src="/brand/fsv-search-dashboard.png" alt="Dashboard de FSV Search: estado del proyecto, salud técnica, Search Console y tareas priorizadas" className="w-full transition duration-500 group-hover:scale-[1.01]" loading="lazy" />
             </Link>
           </div>
-          <ul className="grid grid-cols-2 border-t border-fsv-line font-mono text-xs uppercase tracking-[0.18em] text-fsv-muted sm:grid-cols-3 lg:grid-cols-6">
-            {MODULES.map((m) => (
-              <li key={m} className="border-b border-r border-fsv-line px-6 py-4 last:border-r-0 lg:border-b-0">
-                {m}
-              </li>
-            ))}
-          </ul>
         </div>
       </div>
     </section>
@@ -298,89 +199,49 @@ function Products() {
 function Proof() {
   return (
     <section className="bg-white">
-      <div className="mx-auto max-w-6xl px-4 py-20 md:px-6 md:py-24">
-        <Kicker>No es humo</Kicker>
-        <h2 className="mt-6 font-display text-4xl font-semibold tracking-[-0.03em] md:text-6xl">Construimos lo que usamos.</h2>
-        <p className="mt-4 max-w-xl text-lg text-fsv-muted">Negocios y SaaS construidos y operados por nuestro equipo.</p>
-        <dl className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-fsv-line bg-fsv-line sm:grid-cols-2 lg:grid-cols-4">
-          {STATS.map(([v, l]) => (
-            <div key={l} className="bg-white p-8">
-              <dt className="sr-only">{l}</dt>
-              <dd className="font-display text-5xl text-fsv-ink font-semibold tracking-[-0.03em] md:text-6xl">{v}</dd>
-              <dd className="mt-3 text-fsv-muted">{l}</dd>
+      <div className="mx-auto max-w-6xl px-4 py-16 md:px-6 md:py-24">
+        <h2 className="font-display text-[2rem] font-semibold leading-tight tracking-[-0.03em] md:text-5xl">Construimos lo que usamos.</h2>
+        <dl className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-fsv-line bg-fsv-line md:mt-12 lg:grid-cols-4">
+          {STATS.map((st) => (
+            <div key={st.short} className="bg-white p-5 md:p-8">
+              <dt className="sr-only">{st.long}</dt>
+              <dd className="font-display text-3xl font-semibold tracking-[-0.03em] text-fsv-ink md:text-5xl">{st.value}</dd>
+              <dd className="mt-1 text-sm text-fsv-muted md:mt-3 md:text-base">
+                <span className="md:hidden">{st.short}</span>
+                <span className="hidden md:inline">{st.long}</span>
+              </dd>
             </div>
           ))}
         </dl>
-        <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.18em] text-fsv-muted">Montos en pesos chilenos</p>
+        <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.18em] text-fsv-muted">Montos en pesos chilenos</p>
       </div>
     </section>
-  );
-}
-
-function WorkRow({ n, b }: { n: string; b: Business }) {
-  return (
-    <article className="grid gap-5 border-b border-fsv-line py-9 md:grid-cols-[48px_1fr_1.5fr_150px] md:items-start md:gap-10">
-      <div className="font-mono text-sm text-fsv-muted">{n}</div>
-      <div>
-        <h3 className="font-display text-2xl font-semibold uppercase tracking-tight">{b.name}</h3>
-        <div className="mt-1 text-fsv-muted">{b.kind}</div>
-      </div>
-      <div>
-        <p className="max-w-lg leading-relaxed">{b.text}</p>
-        <div className="mt-4 font-mono text-[11px] uppercase tracking-[0.18em] text-fsv-muted">{b.tags}</div>
-      </div>
-      <div className="flex items-center gap-6 md:flex-col md:items-end">
-        <BusinessLogo b={b} className={b.name === "Starseeker" ? "h-5" : b.name === "Centinela" ? "h-7" : "h-12 max-w-[140px]"} />
-        {b.href && (
-          <a href={b.href} target="_blank" rel="noreferrer" className="whitespace-nowrap text-sm font-medium transition hover:text-fsv-violet">
-            Ver proyecto <span aria-hidden>→</span>
-          </a>
-        )}
-      </div>
-    </article>
   );
 }
 
 function Work() {
+  const featured = FEATURED.map((n) => OWN_BUSINESSES.find((b) => b.name === n)!).filter(Boolean);
+  const total = OWN_BUSINESSES.length + CLIENT_WORK.length;
   return (
-    <section id="trabajo" className="scroll-mt-16 border-t border-fsv-line bg-white">
-      <div className="mx-auto max-w-6xl px-4 py-24 md:px-6 md:py-32">
+    <section id="trabajo" className="scroll-mt-16 border-t border-fsv-line bg-fsv-bg">
+      <div className="mx-auto max-w-6xl px-4 py-16 md:px-6 md:py-24">
         <Kicker>Selected work</Kicker>
-        <h2 className="mt-6 font-display text-4xl font-semibold tracking-[-0.03em] md:text-6xl">Negocios que construimos y operamos.</h2>
-        <div className="mt-14 border-t border-fsv-line">
-          {OWN_BUSINESSES.map((b, i) => (
-            <WorkRow key={b.name} n={String(i + 1).padStart(2, "0")} b={b} />
-          ))}
+        <div className="mt-5 flex flex-wrap items-end justify-between gap-4 md:mt-6">
+          <h2 className="font-display text-[2rem] font-semibold leading-tight tracking-[-0.03em] md:text-5xl">Negocios que construimos y operamos.</h2>
+          <Link href="/work" className="hidden text-sm font-medium transition hover:text-fsv-violet md:block">
+            Ver los {total} proyectos <span aria-hidden>→</span>
+          </Link>
         </div>
-        <h3 className="mt-20 font-display text-2xl font-semibold tracking-tight md:text-3xl">Construido para un cliente</h3>
-        <div className="mt-6 border-t border-fsv-line">
-          {CLIENT_WORK.map((b, i) => (
-            <WorkRow key={b.name} n={String(OWN_BUSINESSES.length + i + 1).padStart(2, "0")} b={b} />
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Platforms() {
-  return (
-    <section className="border-t border-fsv-line bg-fsv-bg">
-      <div className="mx-auto max-w-6xl px-4 py-24 md:px-6">
-        <div className="grid gap-6 md:grid-cols-2 md:items-end">
-          <h2 className="font-display text-4xl font-semibold tracking-[-0.03em] md:text-5xl">Plataformas que manejamos</h2>
-          <p className="max-w-md text-lg text-fsv-muted">Vendemos, postulamos, integramos, desplegamos y registramos marcas en ellas todos los días.</p>
-        </div>
-        <ul className="mt-12 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-fsv-line bg-fsv-line sm:grid-cols-3">
-          {PLATFORMS.map((p) => (
-            <li key={p.name} className="flex min-h-[150px] flex-col items-center justify-between gap-5 bg-white px-5 pb-6 pt-9">
-              <div className="flex h-12 items-center">
-                <img src={`/brand/platforms/${p.file}`} alt={p.name} className={`${p.h} w-auto max-w-full`} loading="lazy" />
-              </div>
-              <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-fsv-muted">{p.use}</div>
+        <ul className="mt-8 grid gap-3 md:mt-12 md:grid-cols-3">
+          {featured.map((b) => (
+            <li key={b.name}>
+              <BusinessCard b={b} />
             </li>
           ))}
         </ul>
+        <Link href="/work" className="mt-5 inline-block text-sm font-medium md:hidden">
+          Ver los {total} proyectos <span aria-hidden>→</span>
+        </Link>
       </div>
     </section>
   );
@@ -389,36 +250,23 @@ function Platforms() {
 function Ventures() {
   return (
     <section id="ventures" className="scroll-mt-16 border-t border-fsv-line bg-white">
-      <div className="mx-auto grid max-w-6xl gap-12 px-4 py-24 md:grid-cols-[1fr_1.1fr] md:px-6 md:py-32">
-        <div>
-          <Kicker>FSV / Ventures</Kicker>
-          <h2 className="mt-6 font-display text-4xl font-semibold leading-[1.05] tracking-[-0.03em] md:text-5xl">No solo trabajamos para empresas. También construimos las nuestras.</h2>
-          <p className="mt-5 max-w-md text-lg text-fsv-muted">Y si llegas con una idea, la podemos construir contigo como socios: $0 de entrada, tú sigues siendo el socio mayoritario.</p>
-          <div className="mt-9 flex flex-wrap gap-3">
-            <Link href="/ventures#postular" className="inline-flex items-center gap-2 rounded-lg bg-fsv-violet px-5 py-3 font-medium text-white transition hover:brightness-110">
-              Cuéntanos tu idea <span aria-hidden>→</span>
-            </Link>
-            <Link href="/ventures" className="rounded-lg border border-fsv-ink/15 bg-white px-5 py-3 font-medium transition hover:border-fsv-ink/40">
-              Cómo funciona
-            </Link>
+      <div className="mx-auto max-w-6xl px-4 py-16 md:px-6 md:py-24">
+        <Kicker>FSV / Ventures</Kicker>
+        <div className="mt-5 grid gap-8 md:mt-6 md:grid-cols-[1.2fr_1fr] md:items-end md:gap-12">
+          <h2 className="font-display text-[2rem] font-semibold leading-tight tracking-[-0.03em] md:text-5xl">No solo trabajamos para empresas. También construimos las nuestras.</h2>
+          <div>
+            <p className="font-display text-xl font-semibold tracking-tight">¿Tienes una idea? Podemos construirla contigo.</p>
+            <p className="mt-2 text-fsv-muted">Evaluamos proyectos en los que podamos participar como socios.</p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link href="/ventures#postular" className="inline-flex items-center gap-2 rounded-lg bg-fsv-violet px-5 py-3 font-medium text-white transition hover:brightness-110">
+                Cuéntanos tu idea <span aria-hidden>→</span>
+              </Link>
+              <Link href="/ventures" className="rounded-lg border border-fsv-ink/15 bg-white px-5 py-3 font-medium transition hover:border-fsv-ink/40">
+                Cómo funciona
+              </Link>
+            </div>
           </div>
         </div>
-        <ol className="space-y-px overflow-hidden rounded-2xl border border-fsv-line bg-fsv-line">
-          {[
-            ["Nos cuentas tu idea", "Un formulario de cinco minutos. Sin pitch ni prototipo."],
-            ["Te respondemos en la semana", "Siempre, aunque sea para decirte que no."],
-            ["Diagnóstico gratis en dos semanas", "Un informe escrito que es tuyo, trabajemos juntos o no."],
-            ["Socios o por servicio", "$0 de entrada como socios, o precio cerrado por una parte."],
-          ].map(([t, d], i) => (
-            <li key={t} className="flex gap-5 bg-fsv-bg p-6">
-              <span className="font-mono text-sm text-fsv-violet">0{i + 1}</span>
-              <div>
-                <div className="font-display text-lg font-semibold tracking-tight">{t}</div>
-                <p className="mt-1 text-fsv-muted">{d}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
       </div>
     </section>
   );
@@ -427,31 +275,21 @@ function Ventures() {
 function HowWeWork() {
   return (
     <section id="empresa" className="scroll-mt-16 border-t border-fsv-line bg-white">
-      <div className="mx-auto max-w-6xl px-4 py-24 md:px-6 md:py-32">
-        <Kicker>Empresa</Kicker>
-        <h2 className="mt-6 font-display text-4xl font-semibold tracking-[-0.03em] md:text-6xl">Cómo trabajamos</h2>
-        <ol className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-fsv-line bg-fsv-line sm:grid-cols-2 lg:grid-cols-4">
-          {STEPS.map(([t, d], i) => (
-            <li key={t} className="bg-white p-8">
-              <div className="font-mono text-sm text-fsv-violet">0{i + 1}</div>
-              <div className="mt-8 font-display text-2xl font-semibold tracking-tight">{t}</div>
-              <p className="mt-2 leading-relaxed text-fsv-muted">{d}</p>
+      <div className="mx-auto max-w-6xl px-4 py-14 md:px-6 md:py-20">
+        <h2 className="font-display text-2xl font-semibold tracking-tight md:text-3xl">Cómo trabajamos</h2>
+        <ol className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-fsv-line bg-fsv-line md:mt-8 md:grid-cols-4">
+          {STEPS.map((t, i) => (
+            <li key={t} className="flex items-baseline gap-3 bg-white px-5 py-4 md:px-6 md:py-5">
+              <span className="font-mono text-sm text-fsv-violet">0{i + 1}</span>
+              <span className="font-display text-lg font-semibold tracking-tight">{t}</span>
+              {i < STEPS.length - 1 && (
+                <span className="ml-auto hidden text-fsv-muted md:inline" aria-hidden>
+                  →
+                </span>
+              )}
             </li>
           ))}
         </ol>
-
-        <div className="mt-6 grid gap-8 rounded-2xl border border-fsv-line bg-fsv-bg p-8 md:grid-cols-[auto_1fr] md:items-center md:p-12">
-          <svg viewBox="0 0 48 48" className="h-12 w-12 text-fsv-ink" fill="none" stroke="currentColor" strokeWidth={1.6} aria-hidden>
-            <path d="M24 5 8 11v11c0 10 7 17.5 16 21 9-3.5 16-11 16-21V11z" />
-            <path d="m17 24 5 5 9-10" stroke="#4B39FC" strokeWidth={2.2} />
-          </svg>
-          <div>
-            <h3 className="font-display text-2xl font-semibold tracking-tight md:text-3xl">Software y seguridad no deberían vivir separados.</h3>
-            <p className="mt-3 max-w-2xl leading-relaxed text-fsv-muted">
-              Aplicamos una mirada de seguridad tanto a los productos que construimos como a las evaluaciones que realizamos.
-            </p>
-          </div>
-        </div>
       </div>
     </section>
   );

@@ -58,12 +58,12 @@ export default function VenturesPage() {
                 Cómo funciona
               </a>
             </div>
-            <dl className="mt-16 grid gap-px overflow-hidden rounded-2xl border border-fsv-line bg-fsv-line sm:grid-cols-2 lg:grid-cols-4">
-              {STATS.map(([v, l]) => (
-                <div key={l} className="bg-white p-6">
-                  <dt className="sr-only">{l}</dt>
-                  <dd className="font-display text-4xl font-semibold tracking-[-0.03em]">{v}</dd>
-                  <dd className="mt-2 text-sm text-fsv-muted">{l}</dd>
+            <dl className="mt-12 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-fsv-line bg-fsv-line md:mt-16 lg:grid-cols-4">
+              {STATS.map((st) => (
+                <div key={st.short} className="bg-white p-5 md:p-6">
+                  <dt className="sr-only">{st.long}</dt>
+                  <dd className="font-display text-3xl font-semibold tracking-[-0.03em] md:text-4xl">{st.value}</dd>
+                  <dd className="mt-2 text-sm text-fsv-muted"><span className="md:hidden">{st.short}</span><span className="hidden md:inline">{st.long}</span></dd>
                 </div>
               ))}
             </dl>
