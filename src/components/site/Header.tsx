@@ -22,7 +22,7 @@ const MENUS: Menu[] = [
 ];
 
 const LINKS = [
-  { label: "Ventures", href: "/#ventures" },
+  { label: "Ventures", href: "/ventures" },
   { label: "Empresa", href: "/#empresa" },
 ];
 

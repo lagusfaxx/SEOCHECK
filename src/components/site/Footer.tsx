@@ -31,14 +31,14 @@ export function CtaAndFooter({ title = "¿Tienes algo que construir, proteger o 
           <div>
             <img src="/brand/fsv-fullstack-ventures.png" alt="Fullstack Ventures" className="h-8 w-auto" />
             <p className="mt-6 text-sm text-fsv-muted">
-              © {new Date().getFullYear()} Fullstack Ventures
+              © {new Date().getFullYear()} Full Stack Ventures SpA
               <br />
               Santiago, Chile
             </p>
           </div>
           <FooterCol title="Capacidades" links={[["Software", "/#software"], ["Security", "/#security"], ["Growth", "/#growth"]]} />
           <FooterCol title="Productos" links={[["FSV Search", "/search"]]} />
-          <FooterCol title="Empresa" links={[["Nosotros", "/#empresa"], ["Ventures", "/#ventures"], ["Contacto", "/#contacto"]]} />
+          <FooterCol title="Empresa" links={[["Nosotros", "/#empresa"], ["Ventures", "/ventures"], ["Cuéntanos tu idea", "/ventures#postular"], ["Contacto", "/#contacto"]]} />
         </div>
       </footer>
     </>

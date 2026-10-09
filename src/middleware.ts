@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 /** Sitio público de Fullstack Ventures (landing y páginas de producto). */
-const SITE = [/^\/$/, /^\/search$/, /^\/brand\//];
+const SITE = [/^\/$/, /^\/search$/, /^\/ventures$/, /^\/brand\//, /^\/api\/ideas$/];
 /** Rutas de la app que se pueden ver sin sesión. */
 const PUBLIC = [/^\/login$/, /^\/setup$/, /^\/forgot$/, /^\/reset$/, /^\/api\/auth\//, /^\/api\/health$/, /^\/api\/oauth\/google\/callback$/];
 

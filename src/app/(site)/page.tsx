@@ -1,41 +1,10 @@
 import Link from "next/link";
 import { Header } from "@/components/site/Header";
 import { CONTACT_HREF, CtaAndFooter } from "@/components/site/Footer";
-
-/** Marcas reales con las que se ha trabajado (logos normalizados para fondo claro en /public/brand/clients). */
-const CLIENTS = [
-  { name: "Barzuo", file: "barzuo.png", h: "h-9" },
-  { name: "Uzeed", file: "uzeed.png", h: "h-12" },
-  { name: "ANDES Technologies", file: "andes-technologies.png", h: "h-12" },
-  { name: "Rent A Hacker", file: "rent-a-hacker.png", h: "h-10" },
-  { name: "Starseeker", file: "starseeker.png", h: "h-6" },
-  { name: "Nomadbrew", file: "nomadbrew.png", h: "h-12" },
-  { name: "TAUPOC", file: "taupoc.png", h: "h-11" },
-  { name: "sintornillo.cl", file: "sintornillo.png", h: "h-11" },
-  { name: "La Frida", file: "la-frida.png", h: "h-12" },
-];
+import { BusinessLogo } from "@/components/site/Brands";
+import { CLIENT_WORK, OWN_BUSINESSES, PLATFORMS, STATS, type Business } from "@/lib/site-content";
 
 const MODULES = ["Auditoría", "Search Console", "Keywords", "Rankings", "Contenido", "Reporting"];
-
-const WORK = [
-  {
-    n: "01",
-    client: "Barzuo",
-    kind: "Plataforma operacional",
-    text: "Sistema de comandas, clientes, QR y administración para un bar, lounge y club en Santiago.",
-    tags: "Software / Web application",
-    logo: "barzuo.png",
-  },
-  {
-    n: "02",
-    client: "Uzeed",
-    kind: "Marketplace",
-    text: "Desarrollo e infraestructura de una plataforma con mensajería, pagos, suscripciones y panel de administración.",
-    tags: "Software / Infraestructura",
-    logo: "uzeed.png",
-    href: "https://uzeed.cl",
-  },
-];
 
 const STEPS = [
   ["Entender", "Partimos por el problema, no por la tecnología."],
@@ -53,7 +22,9 @@ export default function Home() {
         <Trust />
         <Capabilities />
         <Products />
+        <Proof />
         <Work />
+        <Platforms />
         <Ventures />
         <HowWeWork />
       </main>
@@ -138,14 +109,15 @@ function HeroVisual() {
 }
 
 function Trust() {
+  const all = [...OWN_BUSINESSES, ...CLIENT_WORK];
   return (
     <section className="border-b border-fsv-line bg-white">
       <div className="mx-auto max-w-6xl px-4 py-14 md:px-6">
         <Kicker className="text-center">Empresas con las que hemos trabajado</Kicker>
-        <ul className="mt-10 grid grid-cols-2 items-center gap-x-8 gap-y-10 sm:grid-cols-3 lg:grid-cols-9">
-          {CLIENTS.map((c) => (
-            <li key={c.name} className="flex justify-center">
-              <img src={`/brand/clients/${c.file}`} alt={c.name} title={c.name} className={`${c.h} w-auto max-w-[130px] object-contain opacity-75 grayscale transition hover:opacity-100 hover:grayscale-0`} loading="lazy" />
+        <ul className="mt-10 grid grid-cols-2 items-center gap-x-8 gap-y-10 sm:grid-cols-5">
+          {all.map((c) => (
+            <li key={c.name} className="flex justify-center opacity-75 grayscale transition hover:opacity-100 hover:grayscale-0" title={c.name}>
+              <BusinessLogo b={c} className={c.name === "Starseeker" ? "h-6 max-w-[140px]" : c.name === "Barzuo" ? "h-9 max-w-[130px]" : c.name === "Centinela" ? "h-8" : "h-12 max-w-[130px]"} />
             </li>
           ))}
         </ul>
@@ -323,33 +295,67 @@ function Products() {
   );
 }
 
+function Proof() {
+  return (
+    <section className="bg-white">
+      <div className="mx-auto max-w-6xl px-4 py-20 md:px-6 md:py-24">
+        <Kicker>No es humo</Kicker>
+        <h2 className="mt-6 font-display text-4xl font-semibold tracking-[-0.03em] md:text-6xl">Construimos lo que usamos.</h2>
+        <p className="mt-4 max-w-xl text-lg text-fsv-muted">Negocios y SaaS construidos y operados por nuestro equipo.</p>
+        <dl className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-fsv-line bg-fsv-line sm:grid-cols-2 lg:grid-cols-4">
+          {STATS.map(([v, l]) => (
+            <div key={l} className="bg-white p-8">
+              <dt className="sr-only">{l}</dt>
+              <dd className="font-display text-5xl text-fsv-ink font-semibold tracking-[-0.03em] md:text-6xl">{v}</dd>
+              <dd className="mt-3 text-fsv-muted">{l}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.18em] text-fsv-muted">Montos en pesos chilenos</p>
+      </div>
+    </section>
+  );
+}
+
+function WorkRow({ n, b }: { n: string; b: Business }) {
+  return (
+    <article className="grid gap-5 border-b border-fsv-line py-9 md:grid-cols-[48px_1fr_1.5fr_150px] md:items-start md:gap-10">
+      <div className="font-mono text-sm text-fsv-muted">{n}</div>
+      <div>
+        <h3 className="font-display text-2xl font-semibold uppercase tracking-tight">{b.name}</h3>
+        <div className="mt-1 text-fsv-muted">{b.kind}</div>
+      </div>
+      <div>
+        <p className="max-w-lg leading-relaxed">{b.text}</p>
+        <div className="mt-4 font-mono text-[11px] uppercase tracking-[0.18em] text-fsv-muted">{b.tags}</div>
+      </div>
+      <div className="flex items-center gap-6 md:flex-col md:items-end">
+        <BusinessLogo b={b} className={b.name === "Starseeker" ? "h-5" : b.name === "Centinela" ? "h-7" : "h-12 max-w-[140px]"} />
+        {b.href && (
+          <a href={b.href} target="_blank" rel="noreferrer" className="whitespace-nowrap text-sm font-medium transition hover:text-fsv-violet">
+            Ver proyecto <span aria-hidden>→</span>
+          </a>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function Work() {
   return (
-    <section id="trabajo" className="scroll-mt-16 bg-white">
+    <section id="trabajo" className="scroll-mt-16 border-t border-fsv-line bg-white">
       <div className="mx-auto max-w-6xl px-4 py-24 md:px-6 md:py-32">
         <Kicker>Selected work</Kicker>
-        <h2 className="mt-6 font-display text-4xl font-semibold tracking-[-0.03em] md:text-6xl">Construimos lo que usamos.</h2>
+        <h2 className="mt-6 font-display text-4xl font-semibold tracking-[-0.03em] md:text-6xl">Negocios que construimos y operamos.</h2>
         <div className="mt-14 border-t border-fsv-line">
-          {WORK.map((w) => (
-            <article key={w.n} className="grid gap-6 border-b border-fsv-line py-10 md:grid-cols-[64px_1fr_1.4fr_150px] md:items-start md:gap-10">
-              <div className="font-mono text-sm text-fsv-muted">{w.n}</div>
-              <div>
-                <h3 className="font-display text-2xl font-semibold uppercase tracking-tight md:text-3xl">{w.client}</h3>
-                <div className="mt-1 text-fsv-muted">{w.kind}</div>
-              </div>
-              <div>
-                <p className="max-w-md leading-relaxed">{w.text}</p>
-                <div className="mt-4 font-mono text-[11px] uppercase tracking-[0.18em] text-fsv-muted">{w.tags}</div>
-              </div>
-              <div className="flex items-center gap-6 md:flex-col md:items-end">
-                <img src={`/brand/clients/${w.logo}`} alt="" className="h-12 w-auto opacity-80" loading="lazy" />
-                {w.href && (
-                  <a href={w.href} target="_blank" rel="noreferrer" className="whitespace-nowrap text-sm font-medium transition hover:text-fsv-violet">
-                    Ver proyecto <span aria-hidden>→</span>
-                  </a>
-                )}
-              </div>
-            </article>
+          {OWN_BUSINESSES.map((b, i) => (
+            <WorkRow key={b.name} n={String(i + 1).padStart(2, "0")} b={b} />
+          ))}
+        </div>
+        <h3 className="mt-20 font-display text-2xl font-semibold tracking-tight md:text-3xl">Construido para un cliente</h3>
+        <div className="mt-6 border-t border-fsv-line">
+          {CLIENT_WORK.map((b, i) => (
+            <WorkRow key={b.name} n={String(OWN_BUSINESSES.length + i + 1).padStart(2, "0")} b={b} />
           ))}
         </div>
       </div>
@@ -357,47 +363,62 @@ function Work() {
   );
 }
 
-function Ventures() {
-  const items = [
-    { name: "FSV Search", status: "Activo", text: "SEO Intelligence Platform", href: "/search", live: true },
-    { name: "Centinela", status: "Plataforma propia", text: "Plataforma de pruebas de seguridad ofensiva", live: false },
-    { name: "Próximo venture", status: "En exploración", text: "Investigamos oportunidades y validamos ideas antes de construir.", live: false, dashed: true },
-  ];
+function Platforms() {
   return (
-    <section id="ventures" className="scroll-mt-16 border-t border-fsv-line bg-fsv-bg">
-      <div className="mx-auto grid max-w-6xl gap-12 px-4 py-24 md:grid-cols-[1fr_1.2fr] md:px-6 md:py-32">
+    <section className="border-t border-fsv-line bg-fsv-bg">
+      <div className="mx-auto max-w-6xl px-4 py-24 md:px-6">
+        <div className="grid gap-6 md:grid-cols-2 md:items-end">
+          <h2 className="font-display text-4xl font-semibold tracking-[-0.03em] md:text-5xl">Plataformas que manejamos</h2>
+          <p className="max-w-md text-lg text-fsv-muted">Vendemos, postulamos, integramos, desplegamos y registramos marcas en ellas todos los días.</p>
+        </div>
+        <ul className="mt-12 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-fsv-line bg-fsv-line sm:grid-cols-3">
+          {PLATFORMS.map((p) => (
+            <li key={p.name} className="flex min-h-[150px] flex-col items-center justify-between gap-5 bg-white px-5 pb-6 pt-9">
+              <div className="flex h-12 items-center">
+                <img src={`/brand/platforms/${p.file}`} alt={p.name} className={`${p.h} w-auto max-w-full`} loading="lazy" />
+              </div>
+              <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-fsv-muted">{p.use}</div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+function Ventures() {
+  return (
+    <section id="ventures" className="scroll-mt-16 border-t border-fsv-line bg-white">
+      <div className="mx-auto grid max-w-6xl gap-12 px-4 py-24 md:grid-cols-[1fr_1.1fr] md:px-6 md:py-32">
         <div>
           <Kicker>FSV / Ventures</Kicker>
           <h2 className="mt-6 font-display text-4xl font-semibold leading-[1.05] tracking-[-0.03em] md:text-5xl">No solo trabajamos para empresas. También construimos las nuestras.</h2>
-          <p className="mt-5 max-w-md text-lg text-fsv-muted">Investigamos oportunidades, validamos ideas y desarrollamos productos digitales propios desde cero.</p>
+          <p className="mt-5 max-w-md text-lg text-fsv-muted">Y si llegas con una idea, la podemos construir contigo como socios: $0 de entrada, tú sigues siendo el socio mayoritario.</p>
+          <div className="mt-9 flex flex-wrap gap-3">
+            <Link href="/ventures#postular" className="inline-flex items-center gap-2 rounded-lg bg-fsv-violet px-5 py-3 font-medium text-white transition hover:brightness-110">
+              Cuéntanos tu idea <span aria-hidden>→</span>
+            </Link>
+            <Link href="/ventures" className="rounded-lg border border-fsv-ink/15 bg-white px-5 py-3 font-medium transition hover:border-fsv-ink/40">
+              Cómo funciona
+            </Link>
+          </div>
         </div>
-        <ul className="space-y-3">
-          {items.map((v) => {
-            const body = (
-              <>
-                <div className="flex items-center gap-3">
-                  <span className="font-display text-xl font-semibold tracking-tight">{v.name}</span>
-                  <span className={`ml-auto flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-mono text-[11px] uppercase tracking-wider ${v.live ? "bg-emerald-50 text-emerald-700" : "bg-fsv-bg text-fsv-muted"}`}>
-                    {v.live && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
-                    {v.status}
-                  </span>
-                </div>
-                <p className="mt-2 text-fsv-muted">{v.text}</p>
-              </>
-            );
-            return (
-              <li key={v.name}>
-                {v.href ? (
-                  <Link href={v.href} className="block rounded-xl border border-fsv-line bg-white p-6 transition hover:border-fsv-ink/30">
-                    {body}
-                  </Link>
-                ) : (
-                  <div className={`rounded-xl border bg-white p-6 ${v.dashed ? "border-dashed border-fsv-ink/20 bg-transparent" : "border-fsv-line"}`}>{body}</div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+        <ol className="space-y-px overflow-hidden rounded-2xl border border-fsv-line bg-fsv-line">
+          {[
+            ["Nos cuentas tu idea", "Un formulario de cinco minutos. Sin pitch ni prototipo."],
+            ["Te respondemos en la semana", "Siempre, aunque sea para decirte que no."],
+            ["Diagnóstico gratis en dos semanas", "Un informe escrito que es tuyo, trabajemos juntos o no."],
+            ["Socios o por servicio", "$0 de entrada como socios, o precio cerrado por una parte."],
+          ].map(([t, d], i) => (
+            <li key={t} className="flex gap-5 bg-fsv-bg p-6">
+              <span className="font-mono text-sm text-fsv-violet">0{i + 1}</span>
+              <div>
+                <div className="font-display text-lg font-semibold tracking-tight">{t}</div>
+                <p className="mt-1 text-fsv-muted">{d}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
       </div>
     </section>
   );
