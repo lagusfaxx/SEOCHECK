@@ -6,6 +6,7 @@ import { contentText } from "./content/clean";
 import { hostOf, normUrl, normTerm } from "./util";
 import { enqueue, QUEUES } from "./queue";
 import { withProjectQuota, assertResource } from "./plans";
+import { assertProviderUp } from "./providers/health";
 import { gscAvailable } from "./providers/google";
 import { TYPE_LABEL } from "./graph-types";
 import { db } from "./db";
@@ -236,6 +237,7 @@ export const PRODUCT_POSTS: Record<string, Handler> = {
     )
       throw invalid("Elige una URL del proyecto");
     await assertResource(id, "briefs", 1);
+    await assertProviderUp("serpent");
     await assertBudget(
       { serpent: est.serpCalls(1), llm: est.llmBrief() },
       "Brief del cluster",
