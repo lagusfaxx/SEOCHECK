@@ -20,7 +20,6 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: "General",
     items: [
-      { href:"/tasks",icon:"check",label:"Tareas",desc:"Seguimiento",intro:"Tareas persistentes, prioridades e historial entre auditorías." },
       {
         href: "", icon: "home", label: "Resumen", desc: "Estado del proyecto",
         intro: "Vista general: keywords, salud técnica, rankings y Search Console. Arrastra los bloques para ordenarlos; el botón 1/3 de cada bloque cambia su ancho.",
@@ -72,12 +71,17 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
   {
-    group: "Publicar",
+    group: "Actuar",
     items: [
       {
+        href: "/tasks", icon: "check", label: "Tareas", desc: "Qué arreglar primero",
+        intro: "Las correcciones que salen de la auditoría, Search Console y los demás módulos, ordenadas por impacto. Se mantienen entre auditorías: marca lo que vas resolviendo y la siguiente auditoría confirma si quedó bien.",
+        steps: ["Corre una auditoría (o Informe) para que aparezcan las tareas.", "Empieza por las de prioridad alta: cada una explica el problema y cómo arreglarlo.", "Márcala como resuelta; la próxima auditoría verifica la corrección."],
+      },
+      {
         href: "/social", icon: "social", label: "Social", desc: "Instagram con IA",
-        intro: "Genera imágenes con DALL-E y captions con palabras clave SEO para publicar o programar posts en Instagram, todo sin salir de la app. Requiere una cuenta de Instagram Business conectada a una Página de Facebook.",
-        steps: ["Conecta tu cuenta de Meta con el botón 'Conectar Meta'.", "En el compositor: genera una imagen con IA o pega una URL, y genera el caption con las keywords del proyecto.", "Publica ahora o programa la fecha y hora de publicación."],
+        intro: "Crea posts de Instagram con las keywords del proyecto: genera la imagen con IA (también a partir de una foto de tu producto) y el texto, y publícalos al tiro o prográmalos. Las estadísticas de tus posts ayudan a la IA a escribir mejor.",
+        steps: ["Conecta tu cuenta profesional con el botón Conectar Instagram.", "Genera o sube la imagen y genera el caption; guárdalo como borrador.", "En la lista, publica ahora o elige fecha y hora para programarlo."],
       },
     ],
   },

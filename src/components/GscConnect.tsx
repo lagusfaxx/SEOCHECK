@@ -31,7 +31,7 @@ export function GscConnect({ compact, returnTo, hideWhenConnected }: { compact?:
       window.location.replace(`${back}${window.location.search}`);
       return;
     }
-    if (q.get("gsc") === "ok") setOk("Search Console conectado. Ya puedes sincronizar los datos.");
+    if (q.get("gsc") === "ok") setOk("Search Console conectado. Estamos trayendo los últimos 90 días de datos: tarda unos minutos y después se actualiza solo cada día.");
     if (q.get("gsc_error")) setErr(q.get("gsc_error")!);
     if (q.get("gsc") || q.get("gsc_error")) window.history.replaceState(null, "", window.location.pathname + window.location.hash);
   }, [id]);

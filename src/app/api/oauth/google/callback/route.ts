@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { tokenHash, userFromRequest } from "@/lib/auth";
 import { appBaseUrl } from "@/lib/util";
 import { finish } from "@/lib/gsc-oauth";
+import { autoSyncGsc } from "@/lib/gsc-autosync";
 import { gscSites, matchGscProperty } from "@/lib/providers/google";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,7 @@ export async function GET(req: Request) {
     const sites = await gscSites(projectId).catch(() => [] as string[]);
     const match = matchGscProperty(p.gscProperty ?? p.domain, sites);
     if (match && match !== p.gscProperty) await db.project.update({ where: { id: projectId }, data: { gscProperty: match } });
+    if (match) await autoSyncGsc(projectId).catch((e) => console.error("[gsc] sincronización automática", e));
     return back(projectId, match ? "gsc=ok" : `gsc_error=${encodeURIComponent(`Conectado, pero la cuenta no tiene ninguna propiedad de ${p.domain}. Propiedades que ve: ${sites.join(", ") || "ninguna"}`)}`);
   } catch (e) {
     return back(projectId, `gsc_error=${encodeURIComponent(e instanceof Error ? e.message : String(e))}`);

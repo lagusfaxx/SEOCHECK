@@ -9,6 +9,7 @@ import { storeBrief, validateBrief } from "@/lib/content/brief-tools";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { cancelJob, enqueue, QUEUES } from "@/lib/queue";
+import { autoSyncGsc } from "@/lib/gsc-autosync";
 import { AuthError, isInstanceAdmin, memLimit, requireProject, requireUser } from "@/lib/auth";
 import { clientMessage, GENERIC_ERROR } from "@/lib/redact";
 import { sweepStale, workerAlive } from "@/lib/jobs";
@@ -536,7 +537,11 @@ const PATCHS: Record<string, H> = {
       const freq = (body.settings as any).rank?.frequency;
       if (freq === "daily" || freq === "weekly") await db.trackedKeyword.updateMany({ where: { projectId: id }, data: { frequency: freq } });
     }
-    return db.project.update({ where: { id }, data });
+    const before = data.gscProperty !== undefined ? (await db.project.findUniqueOrThrow({ where: { id }, select: { gscProperty: true } })).gscProperty : null;
+    const updated = await db.project.update({ where: { id }, data });
+    // propiedad nueva: traer sus datos sin que haya que apretar Sincronizar
+    if (updated.gscProperty && updated.gscProperty !== before) await autoSyncGsc(id).catch((e) => console.error("[gsc] sincronización automática", e));
+    return updated;
   },
 
   keywords: async ({ id, body }) => {
