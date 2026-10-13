@@ -26,11 +26,21 @@ export class MetaNotConnected extends Error {
   }
 }
 
+/** Mensaje de Meta con su código (sirve para buscarlo en la documentación). */
+function metaError(data: any, status: number) {
+  const e = data?.error;
+  const msg = e?.message ?? data?.error_message ?? `HTTP ${status}`;
+  const code = e?.code ?? data?.code;
+  return code ? `${msg} (código ${code}${e?.error_subcode ? `/${e.error_subcode}` : ""})` : msg;
+}
+
+/** Tipo de token sin revelarlo: IG = Instagram Login; EAA = token de Facebook (no sirve en graph.instagram.com). */
+const tokenKind = (t: string) => (t.startsWith("IG") ? "Instagram" : t.startsWith("EAA") ? "Facebook" : "desconocido");
+
 async function readJson(res: Response, what: string) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.error) {
-    const msg = data.error?.message ?? data.error_message ?? `HTTP ${res.status}`;
-    throw new Error(`${what}: ${msg}`);
+    throw new Error(`${what}: ${metaError(data, res.status)}`);
   }
   return data;
 }
@@ -50,6 +60,8 @@ export async function startUrl(projectId: string, userId: string, origin: string
     response_type: "code",
     scope: SCOPES,
     state,
+    // sin "Continuar con Facebook": ese camino entrega un token que graph.instagram.com no acepta
+    enable_fb_login: "0",
   });
   return `https://www.instagram.com/oauth/authorize?${params}`;
 }
@@ -84,14 +96,22 @@ export async function finish(stateRaw: string, code: string, userId: string, ori
   const token: string = long.ok ? long.data.access_token : shortToken;
   const expiresIn: number | null = long.ok ? (long.data.expires_in ?? 60 * 86400) : null;
 
-  const me = await readJson(await fetchT(`${GRAPH}/me?${new URLSearchParams({ fields: "id,user_id,username", access_token: token })}`), "No se pudo leer la cuenta de Instagram");
-  const igAccountId = String(me.user_id ?? me.id ?? "");
+  const perms = Array.isArray(short.permissions) ? short.permissions.join(",") : String(short.permissions ?? short.data?.[0]?.permissions ?? "");
+  const me = await readMe(token);
+  if (!me.ok) {
+    const diag = `token ${tokenKind(token)}${long.ok ? " de 60 días" : " corto"}, permisos: ${perms || "ninguno"}`;
+    console.error("[meta] /me falló", diag, me.errors);
+    throw new Error(
+      `No se pudo leer la cuenta de Instagram: ${me.errors[0]} [${diag}]. Revisa que la cuenta sea profesional (Empresa o Creador) y que al autorizar no hayas usado "Continuar con Facebook".`,
+    );
+  }
+  const igAccountId = String(me.data.user_id ?? me.data.id ?? "");
   if (!igAccountId) throw new Error("Instagram no devolvió el ID de la cuenta");
-  const igAccountName: string = me.username ?? igAccountId;
+  const igAccountName: string = me.data.username ?? igAccountId;
 
   const data = {
     igAccountId,
-    igScopedId: me.id ? String(me.id) : null,
+    igScopedId: me.data.id ? String(me.data.id) : null,
     igAccountName,
     accessTokenEnc: encrypt(token),
     tokenExpiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000) : null,
@@ -119,10 +139,28 @@ export async function tokenCall(path: "access_token" | "refresh_access_token", p
     if (res instanceof Error) { errors.push(res.message); continue; }
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.access_token) return { ok: true, data };
-    errors.push(data.error?.message ?? data.error_message ?? `HTTP ${res.status}`);
+    errors.push(metaError(data, res.status));
   }
   console.error(`[meta] ${path}: ningún método funcionó`, errors);
   return { ok: false, error: errors[0] ?? "sin respuesta" };
+}
+
+/** Datos de la cuenta: con versión, sin versión y con menos campos (cada variante falla distinto según la cuenta). */
+async function readMe(token: string): Promise<{ ok: true; data: any } | { ok: false; errors: string[] }> {
+  const attempts = [
+    `${GRAPH}/me?${new URLSearchParams({ fields: "id,user_id,username", access_token: token })}`,
+    `https://graph.instagram.com/me?${new URLSearchParams({ fields: "user_id,username", access_token: token })}`,
+    `https://graph.instagram.com/me?${new URLSearchParams({ fields: "id,username", access_token: token })}`,
+  ];
+  const errors: string[] = [];
+  for (const url of attempts) {
+    const res = await fetchT(url).catch((e) => e as Error);
+    if (res instanceof Error) { errors.push(res.message); continue; }
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && (data.user_id || data.id)) return { ok: true, data };
+    errors.push(metaError(data, res.status));
+  }
+  return { ok: false, errors };
 }
 
 /** Token vigente; lo renueva solo cuando quedan menos de 15 días (Instagram exige que tenga al menos 24 h). */
