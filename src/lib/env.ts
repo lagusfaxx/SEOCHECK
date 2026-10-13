@@ -33,6 +33,10 @@ export const env = {
   indexNowKey: process.env.INDEXNOW_KEY ?? "",
   userAgent: process.env.CRAWLER_UA ?? "Mozilla/5.0 (compatible; SEOCheckBot/1.0)",
   tz: process.env.TZ ?? "America/Santiago",
+  metaAppId: process.env.META_APP_ID ?? "",
+  metaAppSecret: process.env.META_APP_SECRET ?? "",
+  /** Modelo de DALL-E para generar imágenes: dall-e-3 (default) */
+  imageModel: process.env.IMAGE_MODEL || "gpt-image-1",
 };
 
 export function has(...keys: (keyof typeof env)[]) {

@@ -34,7 +34,7 @@ export function CtaAndFooter({ title = "¿Tienes algo que construir, proteger o 
           </div>
           <FooterCol title="Capacidades" links={[["Software", "/capacidades#software"], ["Security", "/capacidades#security"], ["Growth", "/capacidades#growth"]]} />
           <FooterCol title="Productos" links={[["FSV Search", "/search"]]} />
-          <FooterCol title="Empresa" links={[["Nosotros", "/empresa"], ["Proyectos", "/work"], ["Ventures", "/ventures"], ["Cuéntanos tu idea", "/ventures#postular"], ["Contacto", "/#contacto"]]} />
+          <FooterCol title="Empresa" links={[["Nosotros", "/empresa"], ["Proyectos", "/work"], ["Ventures", "/ventures"], ["Cuéntanos tu idea", "/ventures#postular"], ["Contacto", "/#contacto"], ["Privacidad", "/privacidad"]]} />
         </div>
       </footer>
     </>

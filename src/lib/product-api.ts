@@ -217,6 +217,27 @@ export const PRODUCT_GETS: Record<string, Handler> = {
       note: "Sin llamadas registradas no se estima costo. El total incluye proveedores externos; no incluye infraestructura.",
     };
   },
+  "social/connection": async ({ id }) => {
+    const { metaConfigured } = await import("./providers/meta");
+    const c = await db.metaConnection.findUnique({ where: { projectId: id }, select: { igAccountId: true, igAccountName: true, tokenExpiresAt: true, lastError: true, createdAt: true } });
+    return { configured: metaConfigured(), connected: Boolean(c), igAccountName: c?.igAccountName ?? null, tokenExpiresAt: c?.tokenExpiresAt ?? null, lastError: c?.lastError ?? null, connectedAt: c?.createdAt ?? null };
+  },
+  "social/posts": async ({ id, url }) => {
+    const status = url.searchParams.get("status") ?? undefined;
+    const posts = await db.socialPost.findMany({
+      where: { projectId: id, ...(status ? { status } : {}) },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+    const ids = posts.map((p) => p.metaPostId).filter((x): x is string => Boolean(x));
+    const stats = ids.length ? await db.igMedia.findMany({ where: { projectId: id, mediaId: { in: ids } }, select: { mediaId: true, reach: true, likes: true, comments: true, saved: true, shares: true, permalink: true } }) : [];
+    const byId = new Map(stats.map((m) => [m.mediaId, m]));
+    return posts.map((p) => ({ ...p, stats: (p.metaPostId && byId.get(p.metaPostId)) || null }));
+  },
+  "social/stats": async ({ id }) => {
+    const { instagramStats } = await import("./social");
+    return instagramStats(id);
+  },
 };
 export const PRODUCT_POSTS: Record<string, Handler> = {
   "billing/checkout": async ({ id, user, body }) =>
@@ -388,6 +409,86 @@ export const PRODUCT_POSTS: Record<string, Handler> = {
     const a = await ownContent(id, body.cid);
     return compareImplementation(a.url, a.brief as unknown as Brief);
   },
+
+  // ---- Social / Meta ----
+  "social/connect": async ({ id, user, url }) => {
+    const origin = url.origin;
+    const { startUrl } = await import("./providers/meta");
+    const redirectUrl = await startUrl(id, user.id, origin);
+    return { url: redirectUrl };
+  },
+  "social/generate-caption": async ({ id, body }) => {
+    const { generateCaption } = await import("./social");
+    const caption = await generateCaption(id, {
+      context: typeof body.context === "string" ? body.context.slice(0, 500) : "",
+      keywords: Array.isArray(body.keywords) ? (body.keywords as string[]).slice(0, 10) : [],
+      tone: ["profesional", "cercano", "inspirador"].includes(body.tone) ? body.tone : "cercano",
+    });
+    return { caption };
+  },
+  "social/generate-image": async ({ id, body }) => {
+    const { generateImage, decodeDataUrl } = await import("./social");
+    const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 2000) : "";
+    if (!prompt) throw invalid("Escribe un prompt para la imagen");
+    const reference = body.reference ? decodeDataUrl(body.reference) : undefined;
+    return generateImage(id, prompt, reference);
+  },
+  "social/upload-image": async ({ id, body }) => {
+    const { saveImage, decodeDataUrl } = await import("./social");
+    return { url: await saveImage(id, decodeDataUrl(body.image)) };
+  },
+  "social/posts": async ({ id, body }) => {
+    const caption = typeof body.caption === "string" ? body.caption.trim().slice(0, 2200) : "";
+    if (!caption) throw invalid("Escribe o genera un caption");
+    const imageUrl = typeof body.imageUrl === "string" && body.imageUrl ? body.imageUrl.slice(0, 2000) : null;
+    if (imageUrl) {
+      const own = /^\/api\/social\/image\/([a-z0-9]+)$/.exec(imageUrl);
+      if (own) {
+        if (!(await db.socialImage.count({ where: { id: own[1], projectId: id } }))) throw invalid("Imagen no encontrada");
+      } else if (!/^https:\/\//.test(imageUrl)) throw invalid("La imagen debe ser una URL https pública");
+    }
+    return db.socialPost.create({
+      data: {
+        projectId: id,
+        caption,
+        imageUrl,
+        imagePrompt: typeof body.imagePrompt === "string" ? body.imagePrompt.slice(0, 2000) : null,
+        keywords: Array.isArray(body.keywords) ? (body.keywords as unknown[]).filter((k): k is string => typeof k === "string").slice(0, 20) : [],
+        status: "draft",
+      },
+    });
+  },
+  "social/publish": async ({ id, body }) => {
+    const { publishPost } = await import("./social");
+    const post = await db.socialPost.findFirst({ where: { projectId: id, id: boundedText(body.postId) } });
+    if (!post) throw new ProductError(404, "no existe");
+    if (!post.imageUrl) throw invalid("El post no tiene imagen");
+    if (!(await publishPost(post.id, ["draft", "failed"]))) throw new ProductError(409, "Este post ya se está publicando o ya se publicó");
+    return { ok: true };
+  },
+  "social/schedule": async ({ id, body }) => {
+    const publishAt = new Date(body.scheduledAt);
+    if (Number.isNaN(publishAt.getTime())) throw invalid("Fecha de programación inválida");
+    if (publishAt < new Date(Date.now() + 60_000)) throw invalid("La fecha debe ser en el futuro");
+    if (publishAt > new Date(Date.now() + 180 * 864e5)) throw invalid("Se puede programar hasta 6 meses adelante");
+    const post = await db.socialPost.findFirst({ where: { projectId: id, id: boundedText(body.postId) } });
+    if (!post) throw new ProductError(404, "no existe");
+    if (!post.imageUrl) throw invalid("El post no tiene imagen");
+    const { metaConfigured } = await import("./providers/meta");
+    if (!metaConfigured() || !(await db.metaConnection.count({ where: { projectId: id } }))) throw invalid("Conecta Instagram antes de programar");
+    const r = await db.socialPost.updateMany({ where: { id: post.id, status: { in: ["draft", "failed"] } }, data: { status: "scheduled", scheduledAt: publishAt, errorMsg: null } });
+    if (!r.count) throw new ProductError(409, "Solo se pueden programar borradores o posts con error");
+    return { ok: true };
+  },
+  "social/sync-stats": async ({ id }) => {
+    const { syncInsights } = await import("./providers/meta");
+    return syncInsights(id);
+  },
+  "social/unschedule": async ({ id, body }) => {
+    const r = await db.socialPost.updateMany({ where: { projectId: id, id: boundedText(body.postId), status: "scheduled" }, data: { status: "draft", scheduledAt: null } });
+    if (!r.count) throw new ProductError(409, "El post ya no está programado");
+    return { ok: true };
+  },
 };
 export const PRODUCT_PATCHS: Record<string, Handler> = {
   onboarding: async ({ id, body }) => {
@@ -477,4 +578,14 @@ export const PRODUCT_DELETES: Record<string, Handler> = {
     db.exploration.deleteMany({
       where: { projectId: id, id: boundedText(body.eid) },
     }),
+  "social/connection": async ({ id }) => {
+    const { disconnect } = await import("./providers/meta");
+    await disconnect(id);
+    return { ok: true };
+  },
+  "social/posts": async ({ id, body }) => {
+    const postId = boundedText(body.postId);
+    await db.socialPost.deleteMany({ where: { projectId: id, id: postId, status: { in: ["draft", "failed", "scheduled"] } } });
+    return { ok: true };
+  },
 };
