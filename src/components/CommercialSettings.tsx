@@ -3,10 +3,10 @@ import { useEffect, useState } from "react";
 import { useProject } from "./Shell";
 import { api, useApi } from "./ui";
 export function CommercialSettings() {
-  const { id } = useProject();
+  const { id, project } = useProject();
   const { data: plan, mutate } = useApi<any>(`/api/p/${id}/plan`);
   const { data: billing } = useApi<any>(`/api/p/${id}/billing/config`);
-  const { data: costs } = useApi<any>(`/api/p/${id}/costs/jobs`);
+  const { data: costs } = useApi<any>(project?.admin ? `/api/p/${id}/costs/jobs` : null);
   const [branding, setBranding] = useState({
     name: "",
     contact: "",
@@ -37,7 +37,26 @@ export function CommercialSettings() {
   };
   return (
     <section className="card space-y-4 p-4">
-      <h2 className="font-semibold">Plan, informes y costos</h2>
+      <h2 className="font-semibold">Plan</h2>
+      {billing && !billing.enabled ? (
+        plan && (
+          <div className="space-y-2">
+            <p className="text-sm">
+              Estás en <b>{plan.limits.label}</b>: FSV Search es gratis mientras dure la beta. Si necesitas más capacidad, escríbenos a{" "}
+              <a className="text-acc underline" href="mailto:contacto@fsvc.cl">contacto@fsvc.cl</a>.
+            </p>
+            <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
+              {([["projects", "Proyectos"], ["urls", "Páginas por auditoría"], ["keywords", "Keywords"], ["rankings", "Keywords en rankings"], ["briefs", "Briefs al mes"], ["reports", "Informes al mes"]] as const).map(([k, label]) => (
+                <div key={k} className="rounded-lg border border-ink-100 px-3 py-2 dark:border-ink-800">
+                  <div className="text-xs text-ink-500">{label}</div>
+                  <div className="font-semibold tabular-nums">{plan.limits[k] >= 1_000_000 ? "Sin límite" : plan.limits[k].toLocaleString("es-CL")}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      ) : (
+        <>
       {plan && (
         <>
           <p className="text-sm">
@@ -125,6 +144,8 @@ export function CommercialSettings() {
           en Stripe antes de habilitar la compra.
         </p>
       )}
+        </>
+      )}
       {plan?.limits.whiteLabel ? (
         <form
           className="space-y-2"
@@ -201,9 +222,9 @@ export function CommercialSettings() {
           Agencia.
         </p>
       )}
-      <details>
+      {project?.admin && <details>
         <summary className="cursor-pointer text-sm">
-          Costo real por trabajo
+          Costo real por trabajo (solo administradores)
         </summary>
         <p className="my-2 text-xs text-ink-500">{costs?.note}</p>
         <table className="tbl">
@@ -248,7 +269,7 @@ export function CommercialSettings() {
             ))}
           </tbody>
         </table>
-      </details>
+      </details>}
       {error && (
         <p role="alert" className="text-rose-700">
           {error}

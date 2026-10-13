@@ -41,7 +41,7 @@ after(async () => {
 
 test("primer usuario (dueño), login, rate limit y sesión", { skip: !hasDb }, async () => {
   // sin usuarios: /me pide setup
-  assert.deepEqual(await (await authCall("me")).json(), { user: null, setup: true });
+  assert.deepEqual(await (await authCall("me")).json(), { user: null, setup: true, signup: false, google: false });
   assert.equal((await authCall("setup", { email: "dueno@agencia.cl", password: "corta" })).status, 400);
   const s = await authCall("setup", { email: "Dueno@Agencia.cl", password: "una-clave-larga-1" });
   assert.equal(s.status, 200);
@@ -73,11 +73,26 @@ test("aislamiento: un cliente no ve ni toca nada del otro", { skip: !hasDb }, as
   const owner = cookieOf(await authCall("login", { email: "dueno@agencia.cl", password: "una-clave-larga-1" }));
   // cliente B: otro usuario con su propio workspace (invitado por nadie: alta directa con registro abierto)
   process.env.SIGNUP_ENABLED = "true";
-  const sB = await authCall("signup", { email: "cliente-b@otra.cl", password: "clave-de-b-larga" });
+  // sin aceptar términos no hay cuenta
+  assert.equal((await authCall("signup", { email: "cliente-b@otra.cl", password: "clave-de-b-larga" })).status, 400);
+  const sB = await authCall("signup", { email: "cliente-b@otra.cl", password: "clave-de-b-larga", terms: true });
   assert.equal(sB.status, 200);
   delete process.env.SIGNUP_ENABLED;
-  assert.equal((await authCall("signup", { email: "c@x.cl", password: "clave-larga-c" })).status, 403); // registro cerrado por defecto
+  assert.equal((await authCall("signup", { email: "c@x.cl", password: "clave-larga-c", terms: true })).status, 403); // registro cerrado por defecto
   const userB = cookieOf(sB);
+
+  // sin confirmar el correo no puede crear proyectos; el link del correo lo verifica
+  assert.equal((await authCall("me", undefined, userB).then((r: Response) => r.json())).user.verified, false);
+  assert.equal((await call(projects.POST, "/api/projects", { method: "POST", body: JSON.stringify({ domain: "cliente-b.cl" }), cookie: userB })).status, 403);
+  const { createVerification } = await import("./auth");
+  const uB = await db.user.findUniqueOrThrow({ where: { email: "cliente-b@otra.cl" } });
+  const vt = await createVerification(uB.id);
+  const v = await call(auth.GET, `/api/auth/verify?token=${vt}`, {}, { action: "verify" });
+  assert.equal(v.status, 302);
+  assert.match(v.headers.get("location") ?? "", /verified=1/);
+  const again = await call(auth.GET, `/api/auth/verify?token=${vt}`, {}, { action: "verify" });
+  assert.match(again.headers.get("location") ?? "", /verify_error=/); // un solo uso
+  assert.equal((await authCall("me", undefined, userB).then((r: Response) => r.json())).user.verified, true);
 
   const mk = async (cookie: string, domain: string) => (await (await call(projects.POST, "/api/projects", { method: "POST", body: JSON.stringify({ domain }), cookie })).json()).id;
   projA = await mk(owner, "cliente-a.cl");

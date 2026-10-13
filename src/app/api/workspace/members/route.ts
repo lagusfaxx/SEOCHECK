@@ -1,11 +1,12 @@
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/util";
 import { AuthError, createReset, hashPassword, newToken, normEmail, rateLimit, requireUser, requireWorkspace, validEmail } from "@/lib/auth";
-import { sendMail } from "@/lib/mail";
+import { mailTemplate, sendMail } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
 
 const fail = (msg: string, status = 400) => Response.json({ error: msg }, { status });
-const appUrl = (req: Request) => (process.env.APP_URL ?? new URL(req.url).origin).replace(/\/$/, "");
+const appUrl = (req: Request) => appBaseUrl(new URL(req.url).origin);
 
 async function wsOf(req: Request, userId: string) {
   const ws = new URL(req.url).searchParams.get("workspace") ?? (await db.membership.findFirst({ where: { userId }, orderBy: { createdAt: "asc" } }))?.workspaceId;
@@ -50,7 +51,10 @@ export async function POST(req: Request) {
       link = `${appUrl(req)}/reset?token=${await createReset(user.id, 24 * 7)}&invite=1`;
     }
     await db.membership.upsert({ where: { userId_workspaceId: { userId: user.id, workspaceId: ws } }, create: { userId: user.id, workspaceId: ws, role }, update: { role } });
-    const sent = await sendMail(email, "Te invitaron a SEOCHECK", link ? `Para entrar, elige tu contraseña aquí (vence en 7 días):\n\n${link}` : `Ya tienes acceso: entra en ${appUrl(req)}/login`, link ?? undefined);
+    const m = link
+      ? mailTemplate("Te invitaron a FSV Search", [`${u.email} te agregó a su equipo. Elige tu contraseña para entrar; el link vence en 7 días.`], { label: "Elegir contraseña y entrar", url: link })
+      : mailTemplate("Tienes acceso a un nuevo equipo", [`${u.email} te agregó a su equipo en FSV Search.`], { label: "Entrar", url: `${appUrl(req)}/login` });
+    const sent = await sendMail(email, "Te invitaron a FSV Search", m.text, link ?? undefined, m.html);
     // sin proveedor de correo, quien invita recibe el link para entregarlo a mano
     return Response.json({ ok: true, email, role, link: sent === "logged" ? link : null });
   } catch (e) {

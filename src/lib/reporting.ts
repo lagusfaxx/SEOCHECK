@@ -191,7 +191,7 @@ export function executivePdf(
       bufferPages: true,
       info: {
         Title: `Informe SEO · ${r.project}`,
-        Author: r.branding.name || "SEOCHECK",
+        Author: r.branding.name || "FSV Search",
       },
     });
     doc.registerFont(
@@ -229,7 +229,7 @@ export function executivePdf(
     doc
       .fillColor(color)
       .fontSize(24)
-      .text(r.branding.name || "SEOCHECK");
+      .text(r.branding.name || "FSV Search");
     doc
       .fillColor("#222222")
       .fontSize(18)

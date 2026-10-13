@@ -1,21 +1,17 @@
 "use client";
 import Link from "next/link";
-import { useEffect } from "react";
-import { AuthForm, backTo, post } from "@/components/auth/AuthForm";
+import { AuthForm, backTo, post, useAuthConfig } from "@/components/auth/AuthForm";
 
 export default function Login() {
-  // instancia nueva sin usuarios: ir a crear el dueño
-  useEffect(() => {
-    fetch("/api/auth/me").then((r) => r.json()).then((j) => {
-      if (j.user) window.location.href = backTo();
-      else if (j.setup) window.location.href = "/setup";
-    }).catch(() => {});
-  }, []);
+  const cfg = useAuthConfig();
+  const next = typeof window === "undefined" ? undefined : new URLSearchParams(window.location.search).get("next") ?? undefined;
   return (
     <AuthForm
-      title="Iniciar sesión"
+      title="Bienvenido de vuelta"
+      intro="Entra a tu cuenta de FSV Search."
+      google={cfg?.google ? { label: "Continuar con Google", next } : null}
       fields={[
-        { name: "email", label: "Email", type: "email", autoComplete: "username" },
+        { name: "email", label: "Correo", type: "email", autoComplete: "username" },
         { name: "password", label: "Contraseña", type: "password", autoComplete: "current-password" },
       ]}
       submit="Entrar"
@@ -23,7 +19,12 @@ export default function Login() {
         await post("/api/auth/login", v);
         window.location.href = backTo();
       }}
-      footer={<Link className="text-acc" href="/forgot">¿Olvidaste tu contraseña?</Link>}
+      below={
+        <div className="mt-3 text-right text-sm">
+          <Link className="text-acc" href="/forgot">¿Olvidaste tu contraseña?</Link>
+        </div>
+      }
+      footer={cfg?.signup ? <>¿No tienes cuenta? <Link className="font-medium text-acc" href="/signup">Crea una gratis</Link></> : <>¿No tienes cuenta? <a className="font-medium text-acc" href="mailto:contacto@fsvc.cl">Pide acceso</a></>}
     />
   );
 }

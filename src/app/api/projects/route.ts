@@ -23,6 +23,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const u = await requireUser(req);
+    if (!u.verified) return fail("Confirma tu correo antes de crear un proyecto: revisa tu bandeja de entrada o pide un nuevo link", 403);
     const b = await req.json().catch(() => ({}));
     if (!b.domain) return fail("Falta el dominio");
     // en el workspace pedido (si es suyo) o en el primero del usuario

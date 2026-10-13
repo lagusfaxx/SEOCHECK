@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Header } from "@/components/site/Header";
-import { CtaAndFooter, CONTACT_EMAIL } from "@/components/site/Footer";
-import { Kicker } from "@/components/site/Sections";
+import { CONTACT_EMAIL } from "@/components/site/Footer";
+import { LegalPage } from "@/components/site/Legal";
 
 export const metadata: Metadata = {
   title: "Política de privacidad",
@@ -25,7 +24,7 @@ const SECTIONS: { title: string; body: React.ReactNode }[] = [
     title: "Datos que tratamos",
     body: (
       <ul>
-        <li><b>Cuenta:</b> nombre, correo y contraseña (guardada como hash) de quienes usan la plataforma.</li>
+        <li><b>Cuenta:</b> nombre, correo y contraseña (guardada como hash) de quienes usan la plataforma. Si entras con Google, recibimos tu nombre, correo y un identificador de tu cuenta de Google; nunca tu contraseña.</li>
         <li><b>Proyectos:</b> dominios, keywords, auditorías, rankings y contenidos que cargas o generas.</li>
         <li><b>Google Search Console</b> (si lo conectas): métricas de búsqueda de tus propiedades, con el acceso que autorizas por OAuth.</li>
         <li>
@@ -90,25 +89,5 @@ const SECTIONS: { title: string; body: React.ReactNode }[] = [
 ];
 
 export default function PrivacidadPage() {
-  return (
-    <>
-      <Header />
-      <main className="bg-white">
-        <div className="mx-auto max-w-3xl px-4 pb-20 pt-14 md:px-6 md:pt-24">
-          <Kicker>Legal</Kicker>
-          <h1 className="mt-6 font-display text-[2.2rem] font-semibold leading-[1.05] tracking-[-0.03em] md:text-[3.2rem]">Política de privacidad</h1>
-          <p className="mt-4 font-mono text-sm text-fsv-muted">Última actualización: {UPDATED}</p>
-          <div className="mt-12 space-y-10">
-            {SECTIONS.map((s) => (
-              <section key={s.title} className="border-t border-fsv-line pt-6">
-                <h2 className="font-display text-xl font-semibold tracking-tight">{s.title}</h2>
-                <div className="mt-3 space-y-3 leading-relaxed text-fsv-ink/80 [&_a]:text-fsv-violet [&_a]:underline [&_li]:ml-5 [&_li]:list-disc [&_ul]:space-y-2">{s.body}</div>
-              </section>
-            ))}
-          </div>
-        </div>
-      </main>
-      <CtaAndFooter />
-    </>
-  );
+  return <LegalPage title="Política de privacidad" updated={UPDATED} sections={SECTIONS} />;
 }

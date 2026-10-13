@@ -117,7 +117,7 @@ export default function Guide() {
       ),
     },
     {
-      title: "Conecta SEOCHECK",
+      title: "Conecta FSV Search",
       content: (
         <>
           <GscConnect />

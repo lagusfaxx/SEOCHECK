@@ -1,9 +1,10 @@
 /**
  * OAuth de Google para Search Console, por proyecto: el cliente autoriza con su propia cuenta de Google y
- * SEOCHECK guarda solo el refresh token, cifrado (AES-256-GCM). Con eso se piden tokens de acceso de corta vida.
+ * FSV Search guarda solo el refresh token, cifrado (AES-256-GCM). Con eso se piden tokens de acceso de corta vida.
  * PKCE + state atado al usuario: nadie puede completar el flujo por otro ni pegar la conexión en otro proyecto.
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { appBaseUrl } from "./util";
 import { OAuth2Client } from "google-auth-library";
 import { db } from "./db";
 import { newToken, tokenHash } from "./auth";
@@ -19,7 +20,7 @@ export class GscNotConnected extends Error {
 
 export const oauthConfigured = () => Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET && process.env.TOKEN_ENC_KEY);
 
-export const redirectUri = (origin: string) => `${(process.env.APP_URL ?? origin).replace(/\/$/, "")}/api/oauth/google/callback`;
+export const redirectUri = (origin: string) => `${appBaseUrl(origin)}/api/oauth/google/callback`;
 
 // ---------- cifrado de tokens ----------
 
@@ -76,7 +77,7 @@ export async function finish(stateRaw: string, code: string, userId: string, ori
   if (st.userId !== userId) throw new Error("La autorización la empezó otro usuario");
   const client = oauthClient(origin);
   const { tokens } = await client.getToken({ code, codeVerifier: st.codeVerifier });
-  if (!tokens.refresh_token) throw new Error("Google no entregó acceso permanente: quita el acceso de SEOCHECK en tu cuenta de Google y vuelve a conectar");
+  if (!tokens.refresh_token) throw new Error("Google no entregó acceso permanente: quita el acceso de FSV Search en tu cuenta de Google y vuelve a conectar");
   if (!(tokens.scope ?? "").includes("webmasters")) throw new Error("No se dio permiso de Search Console: al conectar, marca la casilla de Search Console");
   let email: string | null = null;
   if (tokens.id_token) {

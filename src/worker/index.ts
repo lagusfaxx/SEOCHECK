@@ -18,6 +18,7 @@ import { runFull } from "../lib/fullrun";
 import { refundBriefs } from "../lib/plans";
 import { beat, keepAlive, recoverInterrupted, sweepStale } from "../lib/jobs";
 import { publishDue } from "../lib/social";
+import { logProductionChecks } from "../lib/prodcheck";
 import { syncInsights } from "../lib/providers/meta";
 
 type Data = { projectId: string; jobRunId?: string; [k: string]: any };
@@ -131,6 +132,7 @@ const CONCURRENCY: Partial<Record<QueueName, number>> = {
 };
 
 async function main() {
+  logProductionChecks();
   const boss = await getBoss();
   const n = await recoverInterrupted();
   if (n) console.log(`[worker] ${n} trabajos interrumpidos por el reinicio quedaron marcados`);

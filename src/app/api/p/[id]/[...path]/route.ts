@@ -9,7 +9,8 @@ import { storeBrief, validateBrief } from "@/lib/content/brief-tools";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { cancelJob, enqueue, QUEUES } from "@/lib/queue";
-import { AuthError, memLimit, requireProject, requireUser } from "@/lib/auth";
+import { AuthError, isInstanceAdmin, memLimit, requireProject, requireUser } from "@/lib/auth";
+import { clientMessage, GENERIC_ERROR } from "@/lib/redact";
 import { sweepStale, workerAlive } from "@/lib/jobs";
 import { refreshCluster } from "@/lib/keywords/pipeline";
 import { ISSUE_LABELS } from "@/lib/audit/issues";
@@ -32,7 +33,7 @@ import { TRANSFORMS, type GType } from "@/lib/graph-types";
 
 export const dynamic = "force-dynamic";
 
-type Ctx = { id: string; path: string[]; url: URL; body: any; user: { id: string; email: string } };
+type Ctx = { id: string; path: string[]; url: URL; body: any; user: { id: string; email: string }; admin: boolean };
 type H = (c: Ctx) => Promise<unknown>;
 
 const ok = (data: unknown) => Response.json(data ?? { ok: true });
@@ -98,20 +99,19 @@ async function gscSeries(projectId: string, since: Date) {
 
 const GETS: Record<string, H> = {
   ...PRODUCT_GETS,
-  "": async ({ id }) => {
+  "": async ({ id, admin }) => {
     const p = await db.project.findUniqueOrThrow({ where: { id } });
     const chain = await volumeChainStatus();
-    return {
-      ...p,
-      volumeChain: chain,
-      providers: {
-        serp: Boolean(env.serpentKey), volume: chain.find((c) => c.available)?.provider ?? false, embeddings: env.embeddingsUrl ? "local" : env.openaiKey ? "openai" : "hash",
-        llm: llmStatus().available ? `${env.llmProvider}:${env.llmModel}` : false, gsc: await gscAvailable(id), psi: Boolean(env.psiKey), render: Boolean(env.browserWs), indexnow: Boolean(env.indexNowKey),
-      },
+    const providers = {
+      serp: Boolean(env.serpentKey), volume: chain.find((c) => c.available)?.provider ?? false, embeddings: env.embeddingsUrl ? "local" : env.openaiKey ? "openai" : "hash",
+      llm: llmStatus().available ? `${env.llmProvider}:${env.llmModel}` : false, gsc: await gscAvailable(id), psi: Boolean(env.psiKey), render: Boolean(env.browserWs), indexnow: Boolean(env.indexNowKey),
     };
+    // a los clientes solo qué funciones están disponibles, nunca qué proveedor o modelo hay detrás
+    if (!admin) return { ...p, admin, volumeChain: [], providers: Object.fromEntries(Object.entries(providers).map(([k, v]) => [k, Boolean(v) && v !== "hash"])) };
+    return { ...p, admin, volumeChain: chain, providers };
   },
 
-  jobs: async ({ id }) => {
+  jobs: async ({ id, admin }) => {
     await sweepStale(id);
     const [jobs, alive] = await Promise.all([
       db.jobRun.findMany({
@@ -123,7 +123,10 @@ const GETS: Record<string, H> = {
       workerAlive(),
     ]);
     // en cola sin worker vivo: que se note en vez de quedar "en cola" para siempre
-    return jobs.map((j) => (j.status === "queued" && !alive ? { ...j, message: "El worker no responde: revisa el servicio worker en Coolify" } : j));
+    return jobs.map((j) => {
+      const message = j.status === "queued" && !alive ? (admin ? "El worker no responde: revisa el servicio worker en Coolify" : "Hay demora procesando trabajos: se retomará en unos minutos") : j.message;
+      return { ...j, message: j.status === "error" ? clientMessage(message, admin) : message };
+    });
   },
 
   overview: async ({ id }) => {
@@ -312,13 +315,13 @@ const GETS: Record<string, H> = {
     return expand(id, type, url.searchParams.get("key") ?? "", t);
   },
   /** Estado de la conexión con Search Console del proyecto */
-  "gsc/connection": async ({ id }) => {
+  "gsc/connection": async ({ id, admin }) => {
     const [mode, c, p] = await Promise.all([
       gscAvailable(id),
       db.gscConnection.findUnique({ where: { projectId: id }, select: { googleEmail: true, lastError: true, createdAt: true } }),
       db.project.findUniqueOrThrow({ where: { id }, select: { gscProperty: true } }),
     ]);
-    return { oauthConfigured: oauthConfigured(), mode, email: c?.googleEmail ?? null, lastError: c?.lastError ?? null, connectedAt: c?.createdAt ?? null, property: p.gscProperty };
+    return { oauthConfigured: oauthConfigured(), mode, email: c?.googleEmail ?? null, lastError: clientMessage(c?.lastError, admin), connectedAt: c?.createdAt ?? null, property: p.gscProperty };
   },
   /** Propiedades que ve la cuenta conectada (para elegir) */
   "gsc/sites": async ({ id }) => ((await gscAvailable(id)) ? gscSites(id) : []),
@@ -333,8 +336,10 @@ const GETS: Record<string, H> = {
     if (a.status !== "done" || !r?.pageType) return null;
     return pageTypeFit(id, a.keyword, a.url, r.pageType);
   },
-  "content/one": async ({ id, url }) => {
+  "content/one": async ({ id, url, admin }) => {
     const { project: _p, ...a } = await ownContent(id, url.searchParams.get("cid"));
+    const r = a.result as { error?: string } | null;
+    if (a.status === "error" && r?.error) return { ...a, result: { ...r, error: clientMessage(r.error, admin) } };
     return a;
   },
 };
@@ -619,11 +624,13 @@ function make(table: Record<string, H>) {
     const h = table[key];
     if (!h) return bad("not found", 404);
     let user;
+    let admin = false;
     try {
       user = await requireUser(req);
       if (!memLimit(`api:${user.id}`, 600, 60_000)) return bad("Demasiadas solicitudes: espera un minuto", 429);
       // borrar el proyecto: solo owner/admin del workspace; todo lo demás, cualquier miembro
       await requireProject(user.id, params.id, req.method === "DELETE" && key === "" ? "admin" : "member");
+      admin = await isInstanceAdmin(user.id);
     } catch (e) {
       if (e instanceof AuthError) return bad(e.message, e.status);
       throw e;
@@ -634,19 +641,19 @@ function make(table: Record<string, H>) {
       body = ct.includes("json") || !ct ? await req.json().catch(() => ({})) : Buffer.from(await req.arrayBuffer());
     }
     try {
-      const r = await h({ id: params.id, path, url: new URL(req.url), body, user });
+      const r = await h({ id: params.id, path, url: new URL(req.url), body, user, admin });
       return r instanceof Response ? r : ok(r);
     } catch (e) {
       if (e instanceof BriefValidationError || e instanceof BillingError || e instanceof ProductError || e instanceof PlanLimitError) return bad(e.message,e.status);
       if (e instanceof AuthError) return bad(e.message,e.status);
       if (e instanceof HttpError) return bad(e.message, e.status);
       if (e instanceof GscNotConnected) return bad(e.message, 400);
-      if (e instanceof ProviderError) return bad(e.message, e.kind === "no_balance" ? 402 : 503);
       console.error(`[api] ${req.method} ${key}`, e);
+      if (e instanceof ProviderError) return bad(admin ? e.message : GENERIC_ERROR, e.kind === "no_balance" ? 402 : 503);
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") return bad("no existe", 404);
       if (e instanceof Error && e.message.startsWith("Propiedad GSC inválida")) return bad(e.message, 400);
-      if (e instanceof BudgetError) return bad(e.message, 402);
-      return bad(e instanceof Error ? e.message : "error", 500);
+      if (e instanceof BudgetError) return bad(admin ? e.message : GENERIC_ERROR, 402);
+      return bad(clientMessage(e instanceof Error ? e.message : "error", admin) ?? "error", 500);
     }
   };
 }

@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
-import { userFromRequest } from "@/lib/auth";
+import { tokenHash, userFromRequest } from "@/lib/auth";
+import { appBaseUrl } from "@/lib/util";
 import { finish } from "@/lib/gsc-oauth";
 import { gscSites, matchGscProperty } from "@/lib/providers/google";
 
@@ -8,15 +9,17 @@ export const dynamic = "force-dynamic";
 /** Google vuelve acá después del consentimiento. Valida, guarda la conexión y elige la propiedad del dominio. */
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const base = (process.env.APP_URL ?? url.origin).replace(/\/$/, "");
+  const base = appBaseUrl(url.origin);
   const back = (projectId: string | null, q: string) => Response.redirect(`${base}${projectId ? `/p/${projectId}/settings` : "/app"}?${q}#gsc`, 302);
   const user = await userFromRequest(req);
   if (!user) return Response.redirect(`${base}/login`, 302);
   const err = url.searchParams.get("error");
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state") ?? "";
-  if (err || !code) return back(null, `gsc_error=${encodeURIComponent(err === "access_denied" ? "Cancelaste la autorización en Google" : err ?? "Sin código de autorización")}`);
-  let projectId: string | null = null;
+  // el proyecto sale del state antes de canjearlo: si algo falla, el error se muestra en la pantalla del proyecto
+  const stateProject = state ? ((await db.oAuthState.findUnique({ where: { id: tokenHash(state) }, select: { projectId: true } }))?.projectId ?? null) : null;
+  if (err || !code) return back(stateProject, `gsc_error=${encodeURIComponent(err === "access_denied" ? "Cancelaste la autorización en Google" : err ?? "Sin código de autorización")}`);
+  let projectId = stateProject;
   try {
     projectId = await finish(state, code, user.id, url.origin);
     // elegir sola la propiedad que corresponde al dominio del proyecto

@@ -35,9 +35,28 @@ model User {
   passwordHash String
   createdAt    DateTime  @default(now())
   lastLoginAt  DateTime?
+  emailVerifiedAt DateTime?
+  termsAcceptedAt DateTime?
+  /// "sub" de Google (inicio de sesión con Google)
+  googleSub    String?   @unique
+  /// cuenta suspendida por el administrador: no puede entrar
+  disabledAt   DateTime?
   memberships  Membership[]
   sessions     Session[]
   resets       PasswordReset[]
+  verifications EmailVerification[]
+}
+
+model EmailVerification {
+  /// hash del token
+  id        String    @id
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model Membership {

@@ -40,6 +40,7 @@ type Ctx = {
   url: URL;
   body: any;
   user: { id: string; email: string };
+  admin: boolean;
 };
 type Handler = (c: Ctx) => Promise<unknown>;
 export class ProductError extends Error {
@@ -187,7 +188,8 @@ export const PRODUCT_GETS: Record<string, Handler> = {
       branding: p.limits.whiteLabel ? p.workspace.branding : {},
     };
   },
-  "costs/jobs": async ({ id }) => {
+  "costs/jobs": async ({ id, admin }) => {
+    if (!admin) throw new ProductError(404, "no existe");
     const jobs = await db.jobRun.findMany({
       where: { projectId: id },
       orderBy: { createdAt: "desc" },

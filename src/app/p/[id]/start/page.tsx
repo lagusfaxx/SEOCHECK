@@ -57,7 +57,7 @@ export default function StartPage() {
     <div className="mx-auto w-full max-w-3xl space-y-4 p-4 md:p-6">
       <div className="anim-in">
         <h1 className="text-xl font-semibold">Primeros pasos con {data.domain}</h1>
-        <p className="mt-1 text-sm text-ink-500">Cinco pasos y SEOCHECK te dice qué arreglar primero. Puedes saltar los que no apliquen y volver cuando quieras.</p>
+        <p className="mt-1 text-sm text-ink-500">Cinco pasos y FSV Search te dice qué arreglar primero. Puedes saltar los que no apliquen y volver cuando quieras.</p>
         <div className="mt-3 flex items-center gap-3">
           <div className="h-2 flex-1 overflow-hidden rounded-full bg-ink-100 dark:bg-ink-800">
             <div className="h-full rounded-full bg-acc transition-all duration-700" style={{ width: `${(doneCount / STEPS.length) * 100}%` }} />

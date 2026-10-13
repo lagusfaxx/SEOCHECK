@@ -11,5 +11,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${BASE}/ventures`, priority: 0.8 },
     { url: `${BASE}/empresa`, priority: 0.5 },
     { url: `${BASE}/privacidad`, priority: 0.2 },
+    { url: `${BASE}/terminos`, priority: 0.2 },
   ];
 }
