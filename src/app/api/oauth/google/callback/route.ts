@@ -31,6 +31,7 @@ export async function GET(req: Request) {
     if (match) await autoSyncGsc(projectId).catch((e) => console.error("[gsc] sincronización automática", e));
     return back(projectId, match ? "gsc=ok" : `gsc_error=${encodeURIComponent(`Conectado, pero la cuenta no tiene ninguna propiedad de ${p.domain}. Propiedades que ve: ${sites.join(", ") || "ninguna"}`)}`);
   } catch (e) {
+    console.error("[gsc] callback", projectId, e instanceof Error ? e.message : e);
     return back(projectId, `gsc_error=${encodeURIComponent(e instanceof Error ? e.message : String(e))}`);
   }
 }
