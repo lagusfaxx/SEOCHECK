@@ -113,7 +113,9 @@ model Project {
   alerts      Alert[]
   contents    ContentAnalysis[]
   jobs        JobRun[]
-  gscConnection GscConnection?
+  gscConnection  GscConnection?
+  metaConnection MetaConnection?
+  socialPosts    SocialPost[]
   tasks ProjectTask[]
   explorations Exploration[]
   reports ReportSnapshot[]
@@ -142,6 +144,8 @@ model OAuthState {
   projectId    String
   codeVerifier String
   expiresAt    DateTime
+  /// google | meta
+  provider     String   @default("google")
 }
 
 model JobRun {
@@ -662,6 +666,55 @@ model QuotaUsage {
   createdAt   DateTime  @default(now())
 
   @@index([workspaceId, resource, createdAt])
+}
+
+/// Conexión OAuth de Meta Business / Instagram del proyecto. Token cifrado.
+model MetaConnection {
+  projectId      String   @id
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Instagram Business Account ID
+  igAccountId    String
+  igAccountName  String
+  /// Facebook Page ID asociada a la cuenta IG
+  pageId         String?
+  /// long-lived user access token cifrado con AES-256-GCM (TOKEN_ENC_KEY)
+  accessTokenEnc String
+  /// Unix timestamp de expiración del token (60 días desde emisión)
+  tokenExpiresAt DateTime?
+  connectedBy    String?
+  lastError      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+/// Post de Instagram generado o programado desde la app.
+model SocialPost {
+  id           String    @id @default(cuid())
+  projectId    String
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// instagram
+  platform     String    @default("instagram")
+  caption      String
+  /// URL pública de la imagen (DALL-E o URL externa)
+  imageUrl     String?
+  /// Prompt usado para generar la imagen con DALL-E
+  imagePrompt  String?
+  /// Keywords del proyecto incluidas en el caption
+  keywords     String[]
+  /// draft | scheduled | published | failed
+  status       String    @default("draft")
+  /// ID del media container de Meta (paso 1 de la publicación)
+  metaMediaId  String?
+  /// ID del post publicado en Instagram
+  metaPostId   String?
+  scheduledAt  DateTime?
+  publishedAt  DateTime?
+  errorMsg     String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([projectId, status])
+  @@index([projectId, createdAt])
 }
 
 /// Ideas enviadas desde el formulario público de fsvc.cl/ventures.

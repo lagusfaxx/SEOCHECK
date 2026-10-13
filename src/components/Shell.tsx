@@ -71,6 +71,16 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
   {
+    group: "Publicar",
+    items: [
+      {
+        href: "/social", icon: "social", label: "Social", desc: "Instagram con IA",
+        intro: "Genera imágenes con DALL-E y captions con palabras clave SEO para publicar o programar posts en Instagram, todo sin salir de la app. Requiere una cuenta de Instagram Business conectada a una Página de Facebook.",
+        steps: ["Conecta tu cuenta de Meta con el botón 'Conectar Meta'.", "En el compositor: genera una imagen con IA o pega una URL, y genera el caption con las keywords del proyecto.", "Publica ahora o programa la fecha y hora de publicación."],
+      },
+    ],
+  },
+  {
     group: "Configurar",
     items: [
       {

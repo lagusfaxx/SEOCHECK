@@ -217,6 +217,20 @@ export const PRODUCT_GETS: Record<string, Handler> = {
       note: "Sin llamadas registradas no se estima costo. El total incluye proveedores externos; no incluye infraestructura.",
     };
   },
+  "social/connection": async ({ id }) => {
+    const { metaConfigured } = await import("./providers/meta");
+    const c = await db.metaConnection.findUnique({ where: { projectId: id }, select: { igAccountId: true, igAccountName: true, tokenExpiresAt: true, lastError: true, createdAt: true } });
+    return { configured: metaConfigured(), connected: Boolean(c), igAccountName: c?.igAccountName ?? null, tokenExpiresAt: c?.tokenExpiresAt ?? null, lastError: c?.lastError ?? null, connectedAt: c?.createdAt ?? null };
+  },
+  "social/posts": async ({ id, url }) => {
+    const status = url.searchParams.get("status") ?? undefined;
+    const posts = await db.socialPost.findMany({
+      where: { projectId: id, ...(status ? { status } : {}) },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+    return posts;
+  },
 };
 export const PRODUCT_POSTS: Record<string, Handler> = {
   "billing/checkout": async ({ id, user, body }) =>
@@ -388,6 +402,78 @@ export const PRODUCT_POSTS: Record<string, Handler> = {
     const a = await ownContent(id, body.cid);
     return compareImplementation(a.url, a.brief as unknown as Brief);
   },
+
+  // ---- Social / Meta ----
+  "social/connect": async ({ id, user, url }) => {
+    const origin = url.origin;
+    const { startUrl } = await import("./providers/meta");
+    const redirectUrl = await startUrl(id, user.id, origin);
+    return { url: redirectUrl };
+  },
+  "social/generate-caption": async ({ id, body }) => {
+    const { generateCaption } = await import("./social");
+    const caption = await generateCaption(id, {
+      context: typeof body.context === "string" ? body.context.slice(0, 500) : "",
+      keywords: Array.isArray(body.keywords) ? (body.keywords as string[]).slice(0, 10) : [],
+      tone: ["profesional", "cercano", "inspirador"].includes(body.tone) ? body.tone : "cercano",
+    });
+    return { caption };
+  },
+  "social/generate-image": async ({ body }) => {
+    const { generateImage } = await import("./social");
+    const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 1000) : "";
+    if (!prompt) throw invalid("Escribe un prompt para la imagen");
+    const result = await generateImage(prompt);
+    return result;
+  },
+  "social/posts": async ({ id, body }) => {
+    const caption = typeof body.caption === "string" ? body.caption.slice(0, 2200) : "";
+    const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.slice(0, 2000) : null;
+    const post = await db.socialPost.create({
+      data: {
+        projectId: id,
+        caption,
+        imageUrl,
+        imagePrompt: typeof body.imagePrompt === "string" ? body.imagePrompt.slice(0, 1000) : null,
+        keywords: Array.isArray(body.keywords) ? (body.keywords as string[]).slice(0, 20) : [],
+        status: "draft",
+      },
+    });
+    return post;
+  },
+  "social/publish": async ({ id, body }) => {
+    const { publishNow } = await import("./providers/meta");
+    const postId = boundedText(body.postId);
+    const post = await db.socialPost.findFirstOrThrow({ where: { projectId: id, id: postId } });
+    if (!post.imageUrl) throw invalid("El post no tiene imagen");
+    await db.socialPost.update({ where: { id: postId }, data: { status: "draft", errorMsg: null } });
+    try {
+      const { postId: metaPostId } = await publishNow(id, post.imageUrl, post.caption);
+      await db.socialPost.update({ where: { id: postId }, data: { status: "published", metaPostId, publishedAt: new Date() } });
+      return { ok: true, metaPostId };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await db.socialPost.update({ where: { id: postId }, data: { status: "failed", errorMsg: msg } });
+      throw e;
+    }
+  },
+  "social/schedule": async ({ id, body }) => {
+    const { schedulePost } = await import("./providers/meta");
+    const postId = boundedText(body.postId);
+    const publishAt = new Date(body.scheduledAt);
+    if (Number.isNaN(publishAt.getTime())) throw invalid("Fecha de programación inválida");
+    const post = await db.socialPost.findFirstOrThrow({ where: { projectId: id, id: postId } });
+    if (!post.imageUrl) throw invalid("El post no tiene imagen");
+    try {
+      const { containerId } = await schedulePost(id, post.imageUrl, post.caption, publishAt);
+      await db.socialPost.update({ where: { id: postId }, data: { status: "scheduled", metaMediaId: containerId, scheduledAt: publishAt } });
+      return { ok: true, containerId };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await db.socialPost.update({ where: { id: postId }, data: { status: "failed", errorMsg: msg } });
+      throw e;
+    }
+  },
 };
 export const PRODUCT_PATCHS: Record<string, Handler> = {
   onboarding: async ({ id, body }) => {
@@ -477,4 +563,14 @@ export const PRODUCT_DELETES: Record<string, Handler> = {
     db.exploration.deleteMany({
       where: { projectId: id, id: boundedText(body.eid) },
     }),
+  "social/connection": async ({ id }) => {
+    const { disconnect } = await import("./providers/meta");
+    await disconnect(id);
+    return { ok: true };
+  },
+  "social/posts": async ({ id, body }) => {
+    const postId = boundedText(body.postId);
+    await db.socialPost.deleteMany({ where: { projectId: id, id: postId, status: { in: ["draft", "failed"] } } });
+    return { ok: true };
+  },
 };
