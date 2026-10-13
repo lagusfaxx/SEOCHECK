@@ -222,7 +222,9 @@ export const PRODUCT_GETS: Record<string, Handler> = {
   "social/connection": async ({ id }) => {
     const { metaConfigured } = await import("./providers/meta");
     const c = await db.metaConnection.findUnique({ where: { projectId: id }, select: { igAccountId: true, igAccountName: true, tokenExpiresAt: true, lastError: true, createdAt: true } });
-    return { configured: metaConfigured(), connected: Boolean(c), igAccountName: c?.igAccountName ?? null, tokenExpiresAt: c?.tokenExpiresAt ?? null, lastError: c?.lastError ?? null, connectedAt: c?.createdAt ?? null };
+    const { igProfile } = await import("./providers/meta");
+    const profile = c ? await igProfile(id).catch(() => null) : null;
+    return { configured: metaConfigured(), connected: Boolean(c), igAccountName: profile?.username ?? c?.igAccountName ?? null, profile, tokenExpiresAt: c?.tokenExpiresAt ?? null, lastError: c?.lastError ?? null, connectedAt: c?.createdAt ?? null };
   },
   "social/posts": async ({ id, url }) => {
     const status = url.searchParams.get("status") ?? undefined;

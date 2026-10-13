@@ -241,6 +241,19 @@ export async function markConnectionError(projectId: string, msg: string | null)
   await db.metaConnection.updateMany({ where: { projectId }, data: { lastError: msg } });
 }
 
+// ---------- Perfil ----------
+
+export type IgProfile = { username: string; name: string | null; picture: string | null; followers: number | null; posts: number | null };
+
+/** Datos públicos del perfil conectado (se leen en vivo: la URL de la foto de Instagram vence). */
+export async function igProfile(projectId: string): Promise<IgProfile | null> {
+  const { token } = await getToken(projectId);
+  const res = await fetchT(`${GRAPH}/me?${new URLSearchParams({ fields: "username,name,profile_picture_url,followers_count,media_count", access_token: token })}`, { timeoutMs: 8000 });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok || !d.username) return null;
+  return { username: d.username, name: d.name ?? null, picture: d.profile_picture_url ?? null, followers: d.followers_count ?? null, posts: d.media_count ?? null };
+}
+
 // ---------- Estadísticas ----------
 
 const INSIGHT_METRICS = "reach,likes,comments,saved,shares,total_interactions";
