@@ -8,7 +8,7 @@ export default function Reset() {
   return (
     <AuthForm
       title={invite ? "Bienvenido: elige tu contraseña" : "Elige una contraseña nueva"}
-      intro={invite ? "Te invitaron a un equipo en SEOCHECK. Con esta contraseña vas a entrar de ahora en adelante." : "Al cambiarla se cierran las sesiones abiertas en otros dispositivos."}
+      intro={invite ? "Te invitaron a un equipo en FSV Search. Con esta contraseña vas a entrar de ahora en adelante." : "Al cambiarla se cierran las sesiones abiertas en otros dispositivos."}
       fields={[{ name: "password", label: "Contraseña", type: "password", autoComplete: "new-password", hint: "Mínimo 10 caracteres" }]}
       confirmPassword
       submit="Guardar y entrar"

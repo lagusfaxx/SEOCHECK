@@ -47,7 +47,8 @@ const STATUS_LABEL: Record<string, { label: string; color: string }> = {
 // ---------- Panel de conexión ----------
 
 function ConnectionPanel({ conn, onConnected }: { conn: Connection; onConnected: () => void }) {
-  const { id } = useProject();
+  const { id, project } = useProject();
+  const admin = Boolean(project?.admin);
   const [connecting, setConnecting] = useState(false);
   const [disconnect, disconnecting] = useAction(async () => {
     await api(`/api/p/${id}/social/connection`, "DELETE", {});
@@ -73,7 +74,13 @@ function ConnectionPanel({ conn, onConnected }: { conn: Connection; onConnected:
           <Icon name="alert" className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
           <div>
             <p className="font-medium">Instagram no está configurado</p>
-            <p className="mt-1 text-sm text-ink-500">Agrega las variables <code className="text-xs font-mono bg-ink-100 px-1 rounded">META_APP_ID</code> y <code className="text-xs font-mono bg-ink-100 px-1 rounded">META_APP_SECRET</code> en el servidor para habilitar la publicación en Instagram.</p>
+            <p className="mt-1 text-sm text-ink-500">
+              {admin ? (
+                <>Agrega las variables <code className="text-xs font-mono bg-ink-100 px-1 rounded">META_APP_ID</code> y <code className="text-xs font-mono bg-ink-100 px-1 rounded">META_APP_SECRET</code> en el servidor para habilitar la publicación en Instagram.</>
+              ) : (
+                "La publicación en Instagram todavía no está habilitada. Escríbenos a contacto@fsvc.cl y te avisamos cuando esté lista."
+              )}
+            </p>
           </div>
         </div>
       </div>

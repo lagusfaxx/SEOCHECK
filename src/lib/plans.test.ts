@@ -12,7 +12,18 @@ test("el workspace dueño de la instancia (trusted) no tiene límite de plan ni 
   assert.ok(p.limits.projects > 1000);
 });
 
-test("los clientes siguen con su plan: prueba = 1 proyecto y vence a los 14 días", () => {
+const withBilling = (on: boolean, fn: () => void) => {
+  const prev = process.env.BILLING_ENABLED;
+  process.env.BILLING_ENABLED = on ? "true" : "false";
+  try {
+    fn();
+  } finally {
+    if (prev === undefined) delete process.env.BILLING_ENABLED;
+    else process.env.BILLING_ENABLED = prev;
+  }
+};
+
+test("con cobro: prueba = 1 proyecto y vence a los 14 días", () => withBilling(true, () => {
   const t = resolvePlan({ plan: "trial", trusted: false, trialEndsAt: future, planValidUntil: null });
   assert.equal(t.key, "trial");
   assert.equal(t.limits.projects, 1);
@@ -22,7 +33,17 @@ test("los clientes siguen con su plan: prueba = 1 proyecto y vence a los 14 día
   assert.equal(seo.limits, PLANS.seo);
   assert.equal(seo.expired, true);
   assert.equal(resolvePlan({ plan: "inventado", trusted: false, trialEndsAt: future, planValidUntil: null }).key, "trial");
-});
+}));
+
+test("sin cobro: la prueba pasa a beta gratuita y nada vence", () => withBilling(false, () => {
+  const t = resolvePlan({ plan: "trial", trusted: false, trialEndsAt: past, planValidUntil: null });
+  assert.equal(t.key, "beta");
+  assert.equal(t.limits, PLANS.beta);
+  assert.equal(t.expired, false);
+  const seo = resolvePlan({ plan: "seo", trusted: false, trialEndsAt: past, planValidUntil: past });
+  assert.equal(seo.limits, PLANS.seo);
+  assert.equal(seo.expired, false);
+}));
 
 test("el plan interno no se ofrece entre los planes contratables", () => {
   assert.ok(!Object.keys(PLANS).includes("internal"));

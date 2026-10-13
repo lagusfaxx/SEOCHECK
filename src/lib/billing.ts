@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 import { db } from "./db";
 import { requireWorkspace } from "./auth";
-import { isPlan } from "./plans";
+import { billingEnabled, isPlan } from "./plans";
 export class BillingError extends Error {
   constructor(
     public status: number,
@@ -14,6 +14,7 @@ export const BILLING_PRODUCTS = ["seo", "agency", "report"] as const;
 export type BillingProduct = (typeof BILLING_PRODUCTS)[number];
 export function billingConfig() {
   return {
+    enabled: billingEnabled(),
     configured:
       !!process.env.STRIPE_SECRET_KEY &&
       !!process.env.STRIPE_WEBHOOK_SECRET &&
@@ -42,6 +43,7 @@ export async function createCheckout(
   user: { id: string; email: string },
   product: BillingProduct,
 ) {
+  if (!billingEnabled()) throw new BillingError(404, "Los pagos no están habilitados durante la beta");
   if (!BILLING_PRODUCTS.includes(product))
     throw new BillingError(400, "Producto inválido");
   if (!billingConfig().configured)
@@ -129,6 +131,7 @@ export async function createCheckout(
   }
 }
 export async function billingPortal(projectId: string, userId: string) {
+  if (!billingEnabled()) throw new BillingError(404, "Los pagos no están habilitados durante la beta");
   const p = await db.project.findUniqueOrThrow({
     where: { id: projectId },
     include: { workspace: true },

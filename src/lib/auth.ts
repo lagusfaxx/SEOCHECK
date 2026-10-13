@@ -15,6 +15,7 @@ const scrypt = promisify(_scrypt) as (pw: string, salt: Buffer, len: number, opt
 export const SESSION_COOKIE = "sc_session";
 export const SESSION_DAYS = 30;
 export const MIN_PASSWORD = 10;
+export const signupEnabled = () => process.env.SIGNUP_ENABLED === "true";
 
 export class AuthError extends Error {
   constructor(public status: number, msg: string) {
@@ -79,13 +80,13 @@ export function readCookie(header: string | null | undefined, name = SESSION_COO
   return null;
 }
 
-export type AuthUser = { id: string; email: string; name: string | null };
+export type AuthUser = { id: string; email: string; name: string | null; verified: boolean };
 
 /** Usuario de la sesión (o null). Renueva la sesión si se está por vencer. */
 export async function userFromToken(token: string | null | undefined): Promise<AuthUser | null> {
   if (!token || token.length > 100) return null;
-  const s = await db.session.findUnique({ where: { id: tokenHash(token) }, include: { user: { select: { id: true, email: true, name: true } } } });
-  if (!s) return null;
+  const s = await db.session.findUnique({ where: { id: tokenHash(token) }, include: { user: { select: { id: true, email: true, name: true, emailVerifiedAt: true, disabledAt: true } } } });
+  if (!s || s.user.disabledAt) return null;
   if (s.expiresAt < new Date()) {
     await db.session.delete({ where: { id: s.id } }).catch(() => {});
     return null;
@@ -93,7 +94,7 @@ export async function userFromToken(token: string | null | undefined): Promise<A
   // sesión deslizante: si se usa, dura 30 días más (se actualiza como mucho cada hora)
   if (Date.now() - s.lastSeenAt.getTime() > 3600_000)
     await db.session.update({ where: { id: s.id }, data: { lastSeenAt: new Date(), expiresAt: new Date(Date.now() + SESSION_DAYS * 864e5) } }).catch(() => {});
-  return s.user;
+  return { id: s.user.id, email: s.user.email, name: s.user.name, verified: Boolean(s.user.emailVerifiedAt) };
 }
 
 export const userFromRequest = (req: Request) => userFromToken(readCookie(req.headers.get("cookie")));
@@ -133,6 +134,11 @@ export async function requireWorkspace(userId: string, workspaceId: string, min:
   if (!role) throw new AuthError(404, "no existe");
   if (RANK[role] < RANK[min]) throw new AuthError(403, "Tu rol no permite esta acción");
   return role;
+}
+
+/** Dueño/admin del workspace "trusted" (el de la instancia): ve costos, proveedores y el panel /admin. */
+export async function isInstanceAdmin(userId: string): Promise<boolean> {
+  return Boolean(await db.membership.findFirst({ where: { userId, role: { in: ["owner", "admin"] }, workspace: { trusted: true } }, select: { userId: true } }));
 }
 
 export const userWorkspaceIds = async (userId: string) => (await db.membership.findMany({ where: { userId }, select: { workspaceId: true } })).map((m) => m.workspaceId);
@@ -195,7 +201,28 @@ export async function consumeReset(token: string, password: string) {
   await db.$transaction([
     db.passwordReset.update({ where: { id: r.id }, data: { usedAt: new Date() } }),
     db.user.update({ where: { id: r.userId }, data: { passwordHash } }),
+    // el link llegó a su correo: queda verificado
+    db.user.updateMany({ where: { id: r.userId, emailVerifiedAt: null }, data: { emailVerifiedAt: new Date() } }),
     db.session.deleteMany({ where: { userId: r.userId } }),
   ]);
   return r.userId;
+}
+
+// ---------- verificación de email ----------
+
+export async function createVerification(userId: string) {
+  const token = newToken();
+  await db.emailVerification.create({ data: { id: tokenHash(token), userId, expiresAt: new Date(Date.now() + 3 * 864e5) } });
+  return token;
+}
+
+/** Marca el email como verificado. Devuelve el userId o lanza si el link no sirve. */
+export async function consumeVerification(token: string) {
+  const v = await db.emailVerification.findUnique({ where: { id: tokenHash(token) } });
+  if (!v || v.usedAt || v.expiresAt < new Date()) throw new AuthError(400, "El link de verificación no es válido o ya venció: pide uno nuevo desde la app");
+  await db.$transaction([
+    db.emailVerification.update({ where: { id: v.id }, data: { usedAt: new Date() } }),
+    db.user.update({ where: { id: v.userId }, data: { emailVerifiedAt: new Date() } }),
+  ]);
+  return v.userId;
 }

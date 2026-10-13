@@ -41,6 +41,8 @@ let wid: string, pid: string, otherPid: string;
 const suffix = crypto.randomUUID();
 before(async () => {
   if (!enabled) return;
+  // estos tests cubren los cupos de la prueba y los planes pagados (con cobro activo)
+  process.env.BILLING_ENABLED = "true";
   const w = await db.workspace.create({
     data: { name: `test-product-${suffix}`, plan: "agency" },
   });
@@ -79,6 +81,7 @@ const ctx = (id = pid, body: any = {}, query = "") => ({
   body,
   url: new URL(`https://app.local/?${query}`),
   user: { id: "test", email: "test@ejemplo.cl" },
+  admin: false,
 });
 async function crawl(status = "completed", issue = true, start = Date.now()) {
   const c = await db.crawl.create({
@@ -527,6 +530,7 @@ test(
         PRODUCT_PATCHS.tasks({
           id: project.id,
           url: new URL("http://local/tasks"),
+          admin: false,
           body: { taskId: initial.tasks[0].id, status: "resolved" },
           user: { id: "test", email: "test@example.test" },
         }),
@@ -604,6 +608,7 @@ test(
       id: p.id,
       url: new URL("http://local/tasks"),
       user: { id: "test", email: "test@example.test" },
+      admin: false,
       body: { taskId: products.id, status: "ignored", group: true },
     };
     await PRODUCT_PATCHS.tasks(ctx);

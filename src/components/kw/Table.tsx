@@ -5,7 +5,7 @@ import { api, cx, DataTable, fmt, Icon, IntentChip, INTENT, type Col, fmtDate } 
 import type { Kw, KwData } from "./types";
 
 const SRC: Record<string, string> = { seed: "Semilla manual", autocomplete: "Autocomplete", gsc: "Search Console", paa: "Preguntas de Google", related: "SERP relacionada", serp: "SERP", csv: "Keyword Planner" };
-const VSRC: Record<string, string> = { gsc: "GSC impr.", dataforseo: "DataForSEO", apify: "Apify", csv: "Keyword Planner" };
+const VSRC: Record<string, string> = { gsc: "GSC impr.", dataforseo: "Google Ads", apify: "Google Ads", csv: "Keyword Planner" };
 const short = (n: number) => (n >= 1e6 ? `${n / 1e6}M` : n >= 1e3 ? `${n / 1e3}K` : String(n));
 
 export default function KwTable({ data, reload }: { data: KwData; reload: () => void }) {

@@ -8,14 +8,14 @@ import { env } from "../env";
 import { newToken, tokenHash } from "../auth";
 import { encrypt, decrypt } from "../gsc-oauth";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { fetchT } from "../util";
+import { appBaseUrl, fetchT } from "../util";
 
 const GRAPH = "https://graph.instagram.com/v21.0";
 const SCOPES = "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_insights";
 
 export const metaConfigured = () => Boolean(env.metaAppId && env.metaAppSecret && process.env.TOKEN_ENC_KEY);
 
-const appUrl = (origin?: string) => (process.env.APP_URL || origin || "").replace(/\/$/, "");
+const appUrl = appBaseUrl;
 
 export const metaRedirectUri = (origin: string) => `${appUrl(origin)}/api/oauth/meta/callback`;
 

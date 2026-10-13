@@ -7,7 +7,7 @@ import { api, cx, Icon, Spinner, useApi } from "./ui";
 type Conn = { oauthConfigured: boolean; mode: "oauth" | "sa" | null; email: string | null; lastError: string | null; property: string | null };
 
 /** Conectar Search Console con la cuenta de Google del cliente, explicando para qué sirve. */
-export function GscConnect({ compact, returnTo }: { compact?: boolean; /** volver aquí después de autorizar en Google (p. ej. el wizard) */ returnTo?: string }) {
+export function GscConnect({ compact, returnTo, hideWhenConnected }: { compact?: boolean; /** volver aquí después de autorizar en Google (p. ej. el wizard) */ returnTo?: string; hideWhenConnected?: boolean }) {
   const { id } = useProject();
   const { data: c, mutate } = useApi<Conn>(`/api/p/${id}/gsc/connection`);
   const { data: sites } = useApi<string[]>(c?.mode ? `/api/p/${id}/gsc/sites` : null);
@@ -31,12 +31,13 @@ export function GscConnect({ compact, returnTo }: { compact?: boolean; /** volve
       window.location.replace(`${back}${window.location.search}`);
       return;
     }
-    if (q.get("gsc") === "ok") setOk("Search Console conectado. Ya puedes sincronizar los datos.");
+    if (q.get("gsc") === "ok") setOk("Search Console conectado. Estamos trayendo los últimos 90 días de datos: tarda unos minutos y después se actualiza solo cada día.");
     if (q.get("gsc_error")) setErr(q.get("gsc_error")!);
     if (q.get("gsc") || q.get("gsc_error")) window.history.replaceState(null, "", window.location.pathname + window.location.hash);
   }, [id]);
 
   if (!c) return null;
+  if (hideWhenConnected && c.mode && c.property && !c.lastError && !err) return ok ? <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">{ok}</div> : null;
   const connect = async () => {
     setBusy(true);
     setErr("");
@@ -64,7 +65,7 @@ export function GscConnect({ compact, returnTo }: { compact?: boolean; /** volve
           {!c.mode && <Link className="text-xs text-acc underline" href={`/p/${id}/guide`}>Ayuda para crear Search Console</Link>}
           {!compact && !c.mode && (
             <p className="mt-0.5 text-sm text-ink-500">
-              Descubre con qué búsquedas te encuentran, qué páginas pierden tráfico y dónde tienes oportunidades. Es gratis, de Google, y SEOCHECK solo puede <b>leer</b> los datos.
+              Descubre con qué búsquedas te encuentran, qué páginas pierden tráfico y dónde tienes oportunidades. Es gratis, de Google, y FSV Search solo puede <b>leer</b> los datos.
             </p>
           )}
           {c.mode === "oauth" && <p className="mt-0.5 text-sm text-ink-500">Con la cuenta de Google <b>{c.email ?? "—"}</b>{c.property && <> · propiedad <b>{c.property}</b></>}</p>}
@@ -87,7 +88,7 @@ export function GscConnect({ compact, returnTo }: { compact?: boolean; /** volve
       )}
       {!c.oauthConfigured && !c.mode && (
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
-          El administrador de esta instalación todavía no configuró la conexión con Google (GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET y TOKEN_ENC_KEY). Ver README.
+          La conexión con Google todavía no está habilitada. Escríbenos a contacto@fsvc.cl y te avisamos cuando esté lista.
         </p>
       )}
       {!c.mode && !compact && (

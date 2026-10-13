@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { AccountNotice } from "./auth/AccountNotice";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSWRConfig } from "swr";
@@ -7,7 +8,7 @@ import NewProject from "./NewProject";
 import { GLOSSARY } from "@/lib/glossary";
 import { api, Bar, cx, Drawer, Icon, Spinner, Toaster, useApi, useLocal } from "./ui";
 
-type Project = { id: string; name: string; domain: string; country: string; language: string; gscProperty: string | null; settings: any; providers: Record<string, any> };
+type Project = { id: string; name: string; domain: string; country: string; language: string; gscProperty: string | null; settings: any; providers: Record<string, any>; admin?: boolean };
 type Job = { id: string; kind: string; status: string; progress: number; message: string | null };
 
 const Ctx = createContext<{ id: string; project?: Project; jobs: Job[]; refreshJobs: () => void }>({ id: "", jobs: [], refreshJobs: () => {} });
@@ -19,15 +20,14 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: "General",
     items: [
-      { href:"/tasks",icon:"check",label:"Tareas",desc:"Seguimiento",intro:"Tareas persistentes, prioridades e historial entre auditorías." },
       {
         href: "", icon: "home", label: "Resumen", desc: "Estado del proyecto",
-        intro: "Vista general: keywords, salud técnica, rankings, Search Console y gasto del mes. Arrastra los bloques para ordenarlos; el botón 1/3 de cada bloque cambia su ancho.",
+        intro: "Vista general: keywords, salud técnica, rankings y Search Console. Arrastra los bloques para ordenarlos; el botón 1/3 de cada bloque cambia su ancho.",
       },
       {
         href: "/report", icon: "doc", label: "Informe", desc: "Todo de una + informe", jobs: ["report.full"],
         intro: "Corre todos los módulos de una vez y arma un informe con las tareas ordenadas por prioridad. Está escrito para que tu equipo o tu asistente de programación aplique las correcciones en el sitio.",
-        steps: ["Elige qué módulos correr. Keywords viene apagado porque gasta créditos de Serpent.", "Aprieta Correr todo. Tarda unos minutos; abajo del botón ves cada paso en verde, gris (saltado) o rojo.", "Copia el informe o descárgalo en .md y entrégaselo a tu equipo o a tu asistente de programación."],
+        steps: ["Elige qué módulos correr. Keywords viene apagado porque es el módulo que más cuota consume.", "Aprieta Correr todo. Tarda unos minutos; abajo del botón ves cada paso en verde, gris (saltado) o rojo.", "Copia el informe o descárgalo en .md y entrégaselo a tu equipo o a tu asistente de programación."],
       },
     ],
   },
@@ -62,21 +62,26 @@ const NAV: { group: string; items: NavItem[] }[] = [
       {
         href: "/rank", icon: "rank", label: "Rankings", desc: "Posiciones en Google", jobs: ["rank.check"],
         intro: "Sigue la posición de tus keywords en Google (top 100) cada semana. Avisa cuando una keyword cae más de 3 posiciones, cuando dos páginas tuyas compiten por la misma keyword (canibalización) y cuando el CTR es bajo para la posición.",
-        steps: ["Agrega las keywords que te importan (una por línea).", "Se revisan solas cada semana; Revisar las actualiza ahora (gasta Serpent).", "Haz clic en una keyword para ver su historial y el top 10 actual."],
+        steps: ["Agrega las keywords que te importan (una por línea).", "Se revisan solas cada semana; Revisar las actualiza ahora (consume cuota de búsquedas).", "Haz clic en una keyword para ver su historial y el top 10 actual."],
       },
       {
         href: "/gsc", icon: "gsc", label: "Search Console", desc: "Datos reales de Google", jobs: ["gsc.sync"],
-        intro: "Clics, impresiones, CTR y posición reales por consulta y página, sacados de Google Search Console. Requiere la propiedad configurada en Ajustes y la cuenta de servicio con acceso.",
+        intro: "Clics, impresiones, CTR y posición reales por consulta y página, sacados de Google Search Console. Requiere conectar tu cuenta de Google con el botón Conectar con Google.",
       },
     ],
   },
   {
-    group: "Publicar",
+    group: "Actuar",
     items: [
       {
+        href: "/tasks", icon: "check", label: "Tareas", desc: "Qué arreglar primero",
+        intro: "Las correcciones que salen de la auditoría, Search Console y los demás módulos, ordenadas por impacto. Se mantienen entre auditorías: marca lo que vas resolviendo y la siguiente auditoría confirma si quedó bien.",
+        steps: ["Corre una auditoría (o Informe) para que aparezcan las tareas.", "Empieza por las de prioridad alta: cada una explica el problema y cómo arreglarlo.", "Márcala como resuelta; la próxima auditoría verifica la corrección."],
+      },
+      {
         href: "/social", icon: "social", label: "Social", desc: "Instagram con IA",
-        intro: "Genera imágenes con DALL-E y captions con palabras clave SEO para publicar o programar posts en Instagram, todo sin salir de la app. Requiere una cuenta de Instagram Business conectada a una Página de Facebook.",
-        steps: ["Conecta tu cuenta de Meta con el botón 'Conectar Meta'.", "En el compositor: genera una imagen con IA o pega una URL, y genera el caption con las keywords del proyecto.", "Publica ahora o programa la fecha y hora de publicación."],
+        intro: "Crea posts de Instagram con las keywords del proyecto: genera la imagen con IA (también a partir de una foto de tu producto) y el texto, y publícalos al tiro o prográmalos. Las estadísticas de tus posts ayudan a la IA a escribir mejor.",
+        steps: ["Conecta tu cuenta profesional con el botón Conectar Instagram.", "Genera o sube la imagen y genera el caption; guárdalo como borrador.", "En la lista, publica ahora o elige fecha y hora para programarlo."],
       },
     ],
   },
@@ -129,6 +134,45 @@ const termsFor = (path: string) =>
   : ["CTR", "impresiones"];
 
 /** Ayuda común de la sección: qué hace, pasos y glosario. Un solo lugar en vez de botones en cada pantalla. */
+function UserMenu({ projectId }: { projectId: string }) {
+  const [open, setOpen] = useState(false);
+  const { data } = useApi<{ user: { email: string; name: string | null } | null; admin?: boolean }>("/api/auth/me");
+  const u = data?.user;
+  if (!u) return null;
+  return (
+    <div className="relative shrink-0">
+      <button className="grid h-8 w-8 place-items-center rounded-full bg-acc-soft text-sm font-semibold uppercase text-acc" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="Menú de la cuenta" title={u.email}>
+        {(u.name || u.email).slice(0, 1)}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="card fixed right-4 top-14 z-50 w-64 p-2 text-sm shadow-xl">
+            <div className="px-2 py-1.5">
+              {u.name && <div className="font-medium">{u.name}</div>}
+              <div className="truncate text-xs text-ink-500">{u.email}</div>
+            </div>
+            <div className="my-1 h-px bg-ink-100 dark:bg-ink-800" />
+            <Link href={`/p/${projectId}/settings#account`} onClick={() => setOpen(false)} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-ink-100 dark:hover:bg-ink-800"><Icon name="gear" />Cuenta y equipo</Link>
+            {data?.admin && <Link href="/admin" className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-ink-100 dark:hover:bg-ink-800"><Icon name="shield" />Administración</Link>}
+            <a href="mailto:contacto@fsvc.cl" className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-ink-100 dark:hover:bg-ink-800"><Icon name="mail" />Soporte</a>
+            <div className="my-1 h-px bg-ink-100 dark:bg-ink-800" />
+            <button
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+              onClick={async () => {
+                await api("/api/auth/logout", "POST");
+                window.location.href = "/login";
+              }}
+            >
+              <Icon name="logout" />Cerrar sesión
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function HelpMenu({ item, path, onShowIntro }: { item?: NavItem; path: string; onShowIntro: () => void }) {
   const [open, setOpen] = useState(false);
   const terms = termsFor(path);
@@ -258,6 +302,11 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
                           <span className={cx("block truncate text-[11px] leading-tight", on ? "text-acc/70" : "text-ink-400")}>{n.desc}</span>
                         </span>
                         {busy && <Spinner className={cx("h-3.5 w-3.5 shrink-0 text-acc", slim && "md:absolute md:right-1 md:top-1")} />}
+                        {!busy && n.href === "/gsc" && project && (!project.gscProperty || !project.providers?.gsc) && (
+                          <span className={cx("shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-medium text-amber-800", slim && "md:absolute md:right-1 md:top-1 md:h-2 md:w-2 md:p-0 md:text-[0px]")} title="Search Console no está conectado">
+                            Conectar
+                          </span>
+                        )}
                       </Link>
                     );
                   })}
@@ -353,8 +402,10 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
               ))}
             </div>
             <HelpMenu item={current} path={path} onShowIntro={() => setForceIntro(introKey)} />
+            <UserMenu projectId={id} />
           </header>
           <main className="flex min-h-0 flex-1 flex-col overflow-auto">
+            <AccountNotice className="mx-4 mt-3 md:mx-6" />
             {current && showIntro && <Intro key={current.href} item={current} onClose={closeIntro} />}
             <div key={path} className="anim-in flex flex-1 flex-col">{children}</div>
           </main>

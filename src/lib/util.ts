@@ -81,3 +81,6 @@ export function urlKey(raw: string): string {
     return raw.trim().toLowerCase();
   }
 }
+
+/** URL pública de la app. APP_URL manda; vacía (docker-compose la pasa como "") cae al origen del request. */
+export const appBaseUrl = (origin?: string) => (process.env.APP_URL || origin || "").replace(/\/$/, "");

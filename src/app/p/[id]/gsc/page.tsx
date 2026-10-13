@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Area, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useProject } from "@/components/Shell";
 import { GscConnect } from "@/components/GscConnect";
@@ -45,6 +45,16 @@ export default function GscPage() {
     { key: "n", label: <span className="inline-flex items-center gap-1">{dim === "query" ? "Páginas" : "Consultas"}<Hint text={dim === "query" ? "Cuántas páginas de tu sitio aparecen en Google para esta consulta. Más de una (en amarillo) puede ser canibalización: tus páginas compiten entre sí." : "Cuántas consultas distintas hicieron aparecer esta página en Google."} /></span>, get: (r) => r.n, render: (r) => <span className={cx(dim === "query" && r.n > 1 && "text-amber-600")}>{r.n}</span>, num: true },
   ];
 
+  // conectado pero sin datos todavía: sincroniza solo una vez (sin reintentar si la última falló hace poco)
+  const autoSynced = useRef(false);
+  const connected = Boolean(project?.gscProperty && project?.providers?.gsc);
+  const recentError = jobs.some((j) => j.kind === "gsc.sync" && j.status === "error");
+  useEffect(() => {
+    if (autoSynced.current || !connected || !data || data.total || q || syncing || recentError) return;
+    autoSynced.current = true;
+    sync();
+  }, [connected, data, q, syncing, recentError, sync]);
+
   if (!project) return null;
   if (!project.gscProperty || !project.providers?.gsc) return <div className="max-w-3xl p-4 md:p-6"><GscConnect /></div>;
 
@@ -67,7 +77,11 @@ export default function GscPage() {
       </div>
 
       {!data?.total ? (
-        <Empty icon="gsc" tone="info" title="Aún no hay datos de Search Console">Presiona <b>Sincronizar</b> para traer clics, impresiones y posiciones reales de Google.</Empty>
+        syncing || syncBusy ? (
+          <Empty icon="gsc" tone="info" title="Trayendo tus datos de Search Console…">Estamos descargando los últimos 90 días de clics, impresiones y posiciones. Tarda unos minutos; después se actualiza solo cada día.</Empty>
+        ) : (
+          <Empty icon="gsc" tone="info" title="Aún no hay datos de Search Console">Si tu sitio es nuevo en Google puede que todavía no tenga datos. Se actualiza solo cada día; también puedes presionar <b>Sincronizar</b>.</Empty>
+        )
       ) : (
         <>
           <div className="card p-4">

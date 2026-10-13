@@ -116,7 +116,7 @@ export default function Settings() {
           <Icon name="trash" />Eliminar proyecto
         </button>
       </div>
-      <div id="providers" className="card grid grid-cols-2 gap-2 p-4 md:grid-cols-4">
+      {project.admin && <div id="providers" className="card grid grid-cols-2 gap-2 p-4 md:grid-cols-4">
         {PROVIDERS.map(([k, label]) => {
           const v = project.providers?.[k];
           const on = Boolean(v) && v !== "hash";
@@ -128,7 +128,7 @@ export default function Settings() {
             </div>
           );
         })}
-      </div>
+      </div>}
       <GscConnect />
       <TeamCard />
       <AccountCard />

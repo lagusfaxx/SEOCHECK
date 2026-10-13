@@ -1,6 +1,17 @@
 import { db } from "./db";
 
 export const PLANS = {
+  /** Mientras BILLING_ENABLED no sea "true": cuentas gratis sin vencimiento, con cupo mensual moderado (cuida el gasto en APIs). */
+  beta: {
+    label: "Beta gratuita",
+    projects: 2,
+    urls: 500,
+    keywords: 500,
+    rankings: 50,
+    briefs: 10,
+    reports: 5,
+    whiteLabel: false,
+  },
   trial: {
     label: "Prueba (14 días)",
     projects: 1,
@@ -34,6 +45,9 @@ export const PLANS = {
 } as const;
 export type PlanKey = keyof typeof PLANS;
 
+/** Cobro con Stripe. Apagado: nadie ve precios ni checkout y la prueba de 14 días pasa a ser la beta gratuita. */
+export const billingEnabled = () => process.env.BILLING_ENABLED === "true";
+
 /**
  * Workspace dueño de la instancia (`trusted`, creado en /setup): uso interno, sin límites de plan ni vencimiento.
  * Fuera de PLANS a propósito: no se ofrece ni se puede contratar.
@@ -53,7 +67,13 @@ type Limits = (typeof PLANS)[PlanKey] | typeof INTERNAL_PLAN;
 /** Plan efectivo de un workspace: un solo lugar para límites y vencimiento. */
 export function resolvePlan(w: { plan: string; trusted: boolean; trialEndsAt: Date; planValidUntil: Date | null }): { key: PlanKey | "internal"; limits: Limits; expired: boolean } {
   if (w.trusted) return { key: "internal", limits: INTERNAL_PLAN, expired: false };
-  const key = isPlan(w.plan) ? w.plan : "trial";
+  let key: PlanKey = isPlan(w.plan) ? w.plan : "trial";
+  if (!billingEnabled()) {
+    // sin cobro nada vence: la prueba es la beta y los planes asignados a mano no caducan
+    if (key === "trial") key = "beta";
+    return { key, limits: PLANS[key], expired: false };
+  }
+  if (key === "beta") return { key, limits: PLANS.beta, expired: false };
   const expired = key === "trial" ? Date.now() > w.trialEndsAt.getTime() : !!w.planValidUntil && Date.now() > w.planValidUntil.getTime();
   return { key, limits: PLANS[key], expired };
 }
@@ -110,7 +130,7 @@ export async function assertResource(
           )._sum.amount ?? 0);
   if (current + extra > p.limits[resource])
     throw new PlanLimitError(
-      `Límite de ${resource} del plan ${p.limits.label}: ${current}/${p.limits[resource]}. Reduce la selección o cambia de plan.`,
+      `Límite de ${resource} del plan ${p.limits.label}: ${current}/${p.limits[resource]}. ${billingEnabled() ? "Reduce la selección o cambia de plan." : "Reduce la selección o escríbenos a contacto@fsvc.cl si necesitas más."}`,
     );
   return p;
 }
@@ -188,7 +208,7 @@ export async function withProjectQuota<T>(
           throw new PlanLimitError(
             expired
               ? "La vigencia del plan terminó. Tus datos permanecen disponibles."
-              : `Límite de ${resource}: ${count}/${limits[resource]}.`,
+              : `Límite de ${resource}: ${count}/${limits[resource]}.${billingEnabled() ? "" : " Escríbenos a contacto@fsvc.cl si necesitas más."}`,
           );
       }
       const result = await create(tx);

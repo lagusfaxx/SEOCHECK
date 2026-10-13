@@ -76,7 +76,7 @@ export function AccountCard() {
   const [next, setNext] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   return (
-    <div className="card space-y-3 p-4">
+    <div id="account" className="card scroll-mt-4 space-y-3 p-4">
       <div className="flex items-center">
         <div>
           <div className="font-semibold">Tu cuenta</div>

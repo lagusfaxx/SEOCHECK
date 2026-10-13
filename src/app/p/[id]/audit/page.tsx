@@ -102,7 +102,7 @@ export default function AuditPage() {
         <details className="text-sm"><summary className="cursor-pointer">Opciones avanzadas</summary><div className="mt-3 flex flex-wrap gap-3">
         <label className="flex items-center gap-1 text-xs text-ink-500">Máximo de URLs<input className="input w-20" type="number" value={opt.maxPages} onChange={(e) => setOpt({ ...opt, maxPages: Number(e.target.value) })} /></label>
         <label className="flex items-center gap-1 text-xs text-ink-500">Concurrencia<input className="input w-14" type="number" min={1} max={20} value={opt.concurrency} onChange={(e) => setOpt({ ...opt, concurrency: Number(e.target.value) })} /></label>
-        <label className={cx("flex items-center gap-1 text-xs", project?.providers?.render ? "text-ink-500" : "text-ink-300")} title={project?.providers?.render ? "" : "requiere BROWSER_WS_ENDPOINT"}>
+        <label className={cx("flex items-center gap-1 text-xs", project?.providers?.render ? "text-ink-500" : "text-ink-300")} title={project?.providers?.render ? "" : "no disponible en esta instalación"}>
           <input type="checkbox" disabled={!project?.providers?.render} checked={opt.render} onChange={(e) => setOpt({ ...opt, render: e.target.checked })} />Renderizar JavaScript
         </label>
         </div></details>

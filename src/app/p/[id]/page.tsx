@@ -1,15 +1,17 @@
 "use client";
 import { NextActions } from "@/components/NextActions";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useProject } from "@/components/Shell";
-import { api, contentScoreLabel, cx, fmtDate, Delta, Empty, fmt, Icon, IconBadge, Score, Stat, Hint, useApi, useLocal, Spinner } from "@/components/ui";
+import { api, contentScoreLabel, cx, Delta, Empty, fmt, Icon, IconBadge, Score, Stat, Hint, useApi, useLocal, Spinner } from "@/components/ui";
 import { HEALTH_HELP, healthLabel } from "@/lib/presentation";
 import { Coverage } from "@/components/Coverage";
+import { GscConnect } from "@/components/GscConnect";
+import { Spend } from "@/components/admin/Spend";
 
 type W = { id: string; w: 1 | 2 | 3 };
 const DEFAULT: W[] = [
@@ -22,84 +24,6 @@ const DEFAULT: W[] = [
   { id: "content", w: 1 },
   { id: "spend", w: 1 },
 ];
-
-const PROV: Record<string, string> = { serpent: "Serpent", dataforseo: "DataForSEO", apify: "Apify", llm: "LLM" };
-
-const HEALTH_CHIP: Record<string, [string, string]> = {
-  ok: ["Operativo", "!bg-emerald-100 !text-emerald-800"],
-  down: ["Caído", "!bg-rose-100 !text-rose-800"],
-  timeout: ["No responde", "!bg-rose-100 !text-rose-800"],
-  no_balance: ["Sin saldo", "!bg-amber-100 !text-amber-800"],
-  rate_limit: ["Límite de ritmo", "!bg-amber-100 !text-amber-800"],
-  auth: ["Credenciales", "!bg-amber-100 !text-amber-800"],
-  bad_request: ["Error", "!bg-amber-100 !text-amber-800"],
-};
-
-/** Estado en vivo de las APIs (endpoints de cuenta: no gastan saldo). */
-function ApiHealth({ rows, canRefresh, onRefresh }: { rows: any[]; canRefresh: boolean; onRefresh: () => Promise<unknown> }) {
-  const [busy, setBusy] = useState(false);
-  const live = rows.filter((h) => h.status !== "not_configured");
-  if (!live.length) return null;
-  return (
-    <div className="mt-3 border-t border-ink-100 pt-3 dark:border-ink-800">
-      <div className="mb-1.5 flex items-center gap-2">
-        <span className="lbl">Estado de APIs</span>
-        <Hint text="Se consulta el estado de cuenta de cada proveedor, sin lanzar búsquedas: no gasta saldo. Se actualiza cada minuto." />
-        {canRefresh && (
-          <button className="btn-g ml-auto px-1.5 py-0 text-xs" disabled={busy} onClick={async () => { setBusy(true); try { await onRefresh(); } finally { setBusy(false); } }}>
-            {busy ? <Spinner /> : "Verificar ahora"}
-          </button>
-        )}
-      </div>
-      <div className="space-y-1">
-        {live.map((h) => {
-          const [label, tone] = HEALTH_CHIP[h.status] ?? [h.status, ""];
-          return (
-            <div key={h.provider} className="flex items-baseline gap-2" title={`${h.role}${h.status !== "ok" ? ` — ${h.message}` : ""}`}>
-              <span>{h.label}</span>
-              <span className={cx("chip", tone)}>{label}</span>
-              <span className="ml-auto truncate text-[11px] text-ink-400 tabular-nums">{h.balance ?? (h.latencyMs != null ? `${h.latencyMs} ms` : "")}</span>
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-1 text-[11px] text-ink-400">Verificado {fmtDate(live[0].checkedAt, "datetime")}</div>
-    </div>
-  );
-}
-
-function Spend() {
-  const { data, mutate } = useApi<any>("/api/usage", { refreshInterval: 30000 });
-  if (!data) return null;
-  return (
-    <div className="space-y-2.5 text-sm">
-      {data.providers.map((p: any) => {
-        const off = p.limitUsd === 0;
-        const pct = p.limitUsd > 0 ? (p.spentUsd / p.limitUsd) * 100 : 0;
-        const state = data.states.find((s: any) => s.provider === p.provider);
-        return (
-          <div key={p.provider} className={cx(off && "text-ink-400")}>
-            <div className="flex items-baseline gap-2">
-              <span>{PROV[p.provider] ?? p.provider}</span>
-              {state && <span className="chip !bg-amber-100 !text-amber-800">{state.status === "no_balance" ? "sin saldo" : "credenciales"}</span>}
-              <span className="ml-auto tabular-nums">
-                ${p.spentUsd.toFixed(p.spentUsd < 1 ? 3 : 2)}
-                {off ? <span className="ml-1 chip" title="Este proveedor tiene presupuesto $0: está apagado a propósito y no se usa. Se cambia en Ajustes.">Desactivado</span> : <span className="text-ink-400"> / {p.limitUsd < 0 ? "sin límite" : `$${p.limitUsd.toFixed(2)}`}</span>}
-              </span>
-            </div>
-            {!off && <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-ink-100 dark:bg-ink-800">
-              <div className={cx("h-full rounded-full", pct >= 100 ? "bg-rose-500" : pct >= 80 ? "bg-amber-400" : "bg-acc")} style={{ width: `${Math.min(100, pct)}%` }} />
-            </div>}
-            {!off && <div className="mt-0.5 text-[11px] text-ink-400">
-              {fmt(p.calls)} {p.calls === 1 ? "llamada" : "llamadas"}{p.provider === "llm" && p.inputTokens ? ` · ${fmt(p.inputTokens)} tokens de entrada / ${fmt(p.outputTokens)} de salida` : ""}
-            </div>}
-          </div>
-        );
-      })}
-      {data.health && <ApiHealth rows={data.health} canRefresh={data.scope === "instance"} onRefresh={async () => mutate(await api("/api/usage?fresh=1"), { revalidate: false })} />}
-    </div>
-  );
-}
 
 function Block({ w, onResize, children, title }: { w: W; onResize: () => void; children: ReactNode; title: string }) {
   const s = useSortable({ id: w.id });
@@ -141,7 +65,7 @@ function SetupBanner({ id }: { id: string }) {
       <Icon name="check" className="h-5 w-5 shrink-0 text-ink-500"/>
       <div className="min-w-0 flex-1">
         <div className="font-semibold">Termina de configurar tu proyecto</div>
-        <div className="text-sm text-ink-500">Llevas {done} de {total} pasos. Con todo listo, SEOCHECK prioriza con datos reales de Google.</div>
+        <div className="text-sm text-ink-500">Llevas {done} de {total} pasos. Con todo listo, FSV Search prioriza con datos reales de Google.</div>
         <div className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/70 dark:bg-ink-800"><div className="h-full rounded-full bg-acc" style={{ width: `${(done / total) * 100}%` }} /></div>
       </div>
       <span className="btn-p hov-nudge shrink-0">Continuar<Icon name="chevr" /></span>
@@ -152,11 +76,11 @@ function SetupBanner({ id }: { id: string }) {
 const ALERT_LABEL: Record<string, string> = { drop: "Caída", cannibal: "Canibalización", lowctr: "CTR bajo" };
 
 export default function Overview() {
-  const { id, refreshJobs } = useProject();
+  const { id, refreshJobs, project } = useProject();
   const { data } = useApi<any>(`/api/p/${id}/overview`);
   const [layout, setLayout] = useLocal<W[]>(`dash:${id}`, DEFAULT);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
-  const items = [...layout, ...DEFAULT.filter((d) => !layout.some((l) => l.id === d.id))];
+  const items = [...layout, ...DEFAULT.filter((d) => !layout.some((l) => l.id === d.id))].filter((w) => w.id !== "spend" || project?.admin);
 
   const onDragEnd = (e: DragEndEvent) => {
     if (!e.over || e.active.id === e.over.id) return;
@@ -303,6 +227,7 @@ export default function Overview() {
     <div className="space-y-4 p-4 md:p-6">
       <NextActions />
       <SetupBanner id={id} />
+      <GscConnect compact returnTo={`/p/${id}`} hideWhenConnected />
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
           <div className="stagger-fade grid grid-cols-1 gap-4 md:grid-cols-3">
