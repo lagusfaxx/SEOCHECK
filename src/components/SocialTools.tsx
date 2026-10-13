@@ -533,14 +533,17 @@ export default function SocialTools() {
   const { data: conn, isLoading: connLoading } = useApi<Connection>(`/api/p/${id}/social/connection?_k=${connKey}`);
   const { data: posts, isLoading: postsLoading, mutate: refreshPosts } = useApi<Post[]>(`/api/p/${id}/social/posts${tab !== "all" ? `?status=${tab}` : ""}`, { keepPreviousData: true });
 
-  // Leer errores de callback de OAuth desde la URL
+  // resultado de la vuelta desde Instagram: queda fijo en pantalla (un aviso flotante se perdía al cargar)
+  const [oauth, setOauth] = useState<{ ok: boolean; text: string } | null>(null);
   useEffect(() => {
-    if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const err = params.get("meta_error");
-    const ok = params.get("meta");
-    if (err) { toast(decodeURIComponent(err)); window.history.replaceState({}, "", window.location.pathname); }
-    if (ok === "ok") { toast("Instagram conectado", "ok"); setConnKey((k) => k + 1); window.history.replaceState({}, "", window.location.pathname); }
+    if (err) setOauth({ ok: false, text: err });
+    else if (params.get("meta") === "ok") {
+      setOauth({ ok: true, text: "Instagram conectado. Ya puedes crear y publicar posts." });
+      setConnKey((k) => k + 1);
+    }
+    if (err || params.get("meta")) window.history.replaceState({}, "", window.location.pathname);
   }, []);
 
   if (connLoading) return <div className="flex items-center gap-2 p-6 text-ink-500"><Spinner />Cargando...</div>;
@@ -551,6 +554,17 @@ export default function SocialTools() {
         <h2 className="text-lg font-semibold flex items-center gap-2"><Icon name="social" className="h-5 w-5" />Social</h2>
         <p className="text-sm text-ink-500 mt-1">Genera imágenes y textos con las keywords del proyecto y publica o programa posts en Instagram</p>
       </div>
+
+      {oauth && (
+        <div role={oauth.ok ? "status" : "alert"} className={cx("flex items-start gap-2 rounded-xl px-4 py-3 text-sm", oauth.ok ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300" : "bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300")}>
+          <Icon name={oauth.ok ? "check" : "alert"} className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="flex-1">
+            {!oauth.ok && <div className="font-medium">No se pudo conectar Instagram</div>}
+            <div className="break-words">{oauth.text}</div>
+          </div>
+          <button onClick={() => setOauth(null)} className="text-xs opacity-70 hover:opacity-100">Cerrar</button>
+        </div>
+      )}
 
       {conn && <ConnectionPanel conn={conn} onConnected={() => setConnKey((k) => k + 1)} />}
 

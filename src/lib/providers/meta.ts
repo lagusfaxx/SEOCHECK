@@ -79,12 +79,10 @@ export async function finish(stateRaw: string, code: string, userId: string, ori
   const shortToken: string | undefined = short.access_token ?? short.data?.[0]?.access_token;
   if (!shortToken) throw new Error("Instagram no devolvió un token");
 
-  const long = await readJson(
-    await fetchT(`https://graph.instagram.com/access_token?${new URLSearchParams({ grant_type: "ig_exchange_token", client_secret: env.metaAppSecret, access_token: shortToken })}`),
-    "No se pudo obtener el token de larga duración",
-  );
-  const token: string = long.access_token;
-  const expiresIn: number = long.expires_in ?? 60 * 86400;
+  const long = await tokenCall("access_token", { grant_type: "ig_exchange_token", client_secret: env.metaAppSecret, access_token: shortToken });
+  // sin canje igual queda conectada (sirve para probar); el aviso queda visible en el panel
+  const token: string = long.ok ? long.data.access_token : shortToken;
+  const expiresIn: number | null = long.ok ? (long.data.expires_in ?? 60 * 86400) : null;
 
   const me = await readJson(await fetchT(`${GRAPH}/me?${new URLSearchParams({ fields: "id,user_id,username", access_token: token })}`), "No se pudo leer la cuenta de Instagram");
   const igAccountId = String(me.user_id ?? me.id ?? "");
@@ -96,12 +94,35 @@ export async function finish(stateRaw: string, code: string, userId: string, ori
     igScopedId: me.id ? String(me.id) : null,
     igAccountName,
     accessTokenEnc: encrypt(token),
-    tokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
+    tokenExpiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000) : null,
     connectedBy: userId,
-    lastError: null,
+    lastError: long.ok ? null : `Conexión temporal: Instagram no entregó el acceso de 60 días (${long.error}). Si publicar falla, vuelve a conectar.`,
   };
   await db.metaConnection.upsert({ where: { projectId: st.projectId }, create: { projectId: st.projectId, ...data }, update: data });
   return st.projectId;
+}
+
+/**
+ * Canje/renovación de token en graph.instagram.com. Meta ha cambiado qué método acepta este endpoint
+ * ("Unsupported request - method type: get"): se prueba GET con versión, POST y GET sin versión.
+ */
+export async function tokenCall(path: "access_token" | "refresh_access_token", params: Record<string, string>): Promise<{ ok: true; data: any } | { ok: false; error: string }> {
+  const qs = new URLSearchParams(params);
+  const attempts: [string, RequestInit][] = [
+    [`${GRAPH}/${path}?${qs}`, {}],
+    [`https://graph.instagram.com/${path}`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: qs.toString() }],
+    [`https://graph.instagram.com/${path}?${qs}`, {}],
+  ];
+  const errors: string[] = [];
+  for (const [url, init] of attempts) {
+    const res = await fetchT(url, init).catch((e) => e as Error);
+    if (res instanceof Error) { errors.push(res.message); continue; }
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.access_token) return { ok: true, data };
+    errors.push(data.error?.message ?? data.error_message ?? `HTTP ${res.status}`);
+  }
+  console.error(`[meta] ${path}: ningún método funcionó`, errors);
+  return { ok: false, error: errors[0] ?? "sin respuesta" };
 }
 
 /** Token vigente; lo renueva solo cuando quedan menos de 15 días (Instagram exige que tenga al menos 24 h). */
@@ -113,7 +134,9 @@ async function getToken(projectId: string): Promise<{ token: string; igAccountId
   const renewDue = c.tokenExpiresAt && c.tokenExpiresAt < new Date(Date.now() + 15 * 864e5) && c.updatedAt < new Date(Date.now() - 864e5);
   if (renewDue) {
     try {
-      const r = await readJson(await fetchT(`https://graph.instagram.com/refresh_access_token?${new URLSearchParams({ grant_type: "ig_refresh_token", access_token: token })}`), "Renovación del token");
+      const rr = await tokenCall("refresh_access_token", { grant_type: "ig_refresh_token", access_token: token });
+      if (!rr.ok) throw new Error(`No se pudo renovar el acceso a Instagram: ${rr.error}`);
+      const r = rr.data;
       token = r.access_token;
       await db.metaConnection.update({
         where: { projectId },
