@@ -11,6 +11,7 @@ type Connection = {
   tokenExpiresAt: string | null;
   lastError: string | null;
   connectedAt: string | null;
+  profile: { username: string; name: string | null; picture: string | null; followers: number | null; posts: number | null } | null;
 };
 
 type Post = {
@@ -128,13 +129,25 @@ function ConnectionBar({ conn, onChange }: { conn: Connection; onChange: () => v
   return (
     <div className="card p-4">
       <div className="flex flex-wrap items-center gap-3">
-        <IgGlyph />
+        {conn.profile?.picture ? (
+          <span className="shrink-0 rounded-full bg-gradient-to-br from-[#f58529] via-[#dd2a7b] to-[#8134af] p-[2px]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={conn.profile.picture} alt="" className="h-11 w-11 rounded-full border-2 border-white object-cover dark:border-ink-900" />
+          </span>
+        ) : (
+          <IgGlyph />
+        )}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold">@{conn.igAccountName}</span>
+            {conn.profile?.name && <span className="text-sm text-ink-500">{conn.profile.name}</span>}
             <span className="chip !bg-emerald-100 !text-emerald-800">Conectado</span>
           </div>
-          {conn.connectedAt && <div className="text-xs text-ink-500">desde el {fmtDate(conn.connectedAt)}</div>}
+          <div className="text-xs text-ink-500">
+            {conn.profile?.followers != null && <>{fmt(conn.profile.followers)} seguidores · </>}
+            {conn.profile?.posts != null && <>{fmt(conn.profile.posts)} publicaciones · </>}
+            {conn.connectedAt && <>conectado desde el {fmtDate(conn.connectedAt)}</>}
+          </div>
         </div>
         <button onClick={() => disconnect()} disabled={disconnecting} className="btn-g text-rose-600 hover:!bg-rose-50 hover:!text-rose-700 dark:hover:!bg-rose-950/40">
           {disconnecting ? <Spinner /> : "Desconectar"}
