@@ -229,7 +229,14 @@ export const PRODUCT_GETS: Record<string, Handler> = {
       orderBy: { createdAt: "desc" },
       take: 50,
     });
-    return posts;
+    const ids = posts.map((p) => p.metaPostId).filter((x): x is string => Boolean(x));
+    const stats = ids.length ? await db.igMedia.findMany({ where: { projectId: id, mediaId: { in: ids } }, select: { mediaId: true, reach: true, likes: true, comments: true, saved: true, shares: true, permalink: true } }) : [];
+    const byId = new Map(stats.map((m) => [m.mediaId, m]));
+    return posts.map((p) => ({ ...p, stats: (p.metaPostId && byId.get(p.metaPostId)) || null }));
+  },
+  "social/stats": async ({ id }) => {
+    const { instagramStats } = await import("./social");
+    return instagramStats(id);
   },
 };
 export const PRODUCT_POSTS: Record<string, Handler> = {
@@ -472,6 +479,10 @@ export const PRODUCT_POSTS: Record<string, Handler> = {
     const r = await db.socialPost.updateMany({ where: { id: post.id, status: { in: ["draft", "failed"] } }, data: { status: "scheduled", scheduledAt: publishAt, errorMsg: null } });
     if (!r.count) throw new ProductError(409, "Solo se pueden programar borradores o posts con error");
     return { ok: true };
+  },
+  "social/sync-stats": async ({ id }) => {
+    const { syncInsights } = await import("./providers/meta");
+    return syncInsights(id);
   },
   "social/unschedule": async ({ id, body }) => {
     const r = await db.socialPost.updateMany({ where: { projectId: id, id: boundedText(body.postId), status: "scheduled" }, data: { status: "draft", scheduledAt: null } });

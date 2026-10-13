@@ -18,6 +18,7 @@ import { runFull } from "../lib/fullrun";
 import { refundBriefs } from "../lib/plans";
 import { beat, keepAlive, recoverInterrupted, sweepStale } from "../lib/jobs";
 import { publishDue } from "../lib/social";
+import { syncInsights } from "../lib/providers/meta";
 
 type Data = { projectId: string; jobRunId?: string; [k: string]: any };
 
@@ -102,6 +103,11 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
       return saveReport(d.projectId);
     case QUEUES.socialDue:
       return publishDue();
+    case QUEUES.socialInsights: {
+      const conns = await db.metaConnection.findMany({ select: { projectId: true } });
+      for (const c of conns) await syncInsights(c.projectId).catch((e) => console.error("[social] stats", c.projectId, e));
+      return { projects: conns.length };
+    }
     case QUEUES.content:
       // si falla (también por presupuesto) el análisis queda "falló" con el motivo, nunca colgado en "en cola";
       // se devuelve el cupo de brief y no se reintenta solo (el usuario lo relanza y ve el error)
@@ -166,6 +172,7 @@ async function main() {
   await boss.schedule(QUEUES.gscDaily, gscCron, {}, { tz: env.tz });
   await boss.schedule(QUEUES.reportsDue,"0 * * * *",{}, {tz:env.tz});
   await boss.schedule(QUEUES.socialDue, "* * * * *", {}, { tz: env.tz });
+  await boss.schedule(QUEUES.socialInsights, "40 7 * * *", {}, { tz: env.tz });
   console.log("worker listo");
 }
 

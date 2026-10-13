@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useProject } from "./Shell";
-import { api, cx, Empty, fmtDate, Icon, Spinner, Tabs, toast, useAction, useApi } from "./ui";
+import { api, cx, Empty, fmt, fmtDate, Icon, Spinner, Stat, Tabs, toast, useAction, useApi } from "./ui";
 
 type Connection = {
   configured: boolean;
@@ -24,6 +24,16 @@ type Post = {
   publishedAt: string | null;
   errorMsg: string | null;
   createdAt: string;
+  stats: { reach: number | null; likes: number | null; comments: number | null; saved: number | null; shares: number | null; permalink: string | null } | null;
+};
+
+type Stats = {
+  count: number;
+  syncedAt: string | null;
+  avgReach: number | null;
+  avgEngagement: number | null;
+  bestSlots: { label: string; avg: number; posts: number }[];
+  posts: { mediaId: string; caption: string | null; permalink: string | null; postedAt: string; reach: number | null; likes: number | null; comments: number | null; saved: number | null; shares: number | null; engagement: number }[];
 };
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
@@ -373,7 +383,15 @@ function PostsList({ posts, onRefresh }: { posts: Post[]; onRefresh: () => void 
                 </div>
               )}
               {post.status === "published" && post.publishedAt && (
-                <p className="text-xs text-emerald-600 flex items-center gap-1"><Icon name="check" className="h-3 w-3" />Publicado: {fmtDate(post.publishedAt, "datetime")}</p>
+                <p className="text-xs text-emerald-600 flex items-center gap-1 flex-wrap">
+                  <Icon name="check" className="h-3 w-3" />Publicado: {fmtDate(post.publishedAt, "datetime")}
+                  {post.stats && (
+                    <span className="text-ink-500">
+                      · {post.stats.reach != null && <>alcance {fmt(post.stats.reach)} · </>}{fmt(post.stats.likes)} likes · {fmt(post.stats.comments)} coment.
+                    </span>
+                  )}
+                  {post.stats?.permalink && <a href={post.stats.permalink} target="_blank" rel="noreferrer" className="underline text-ink-500">ver</a>}
+                </p>
               )}
 
               {/* Acciones para borradores y fallidos */}
@@ -425,6 +443,79 @@ function PostsList({ posts, onRefresh }: { posts: Post[]; onRefresh: () => void 
   );
 }
 
+// ---------- Rendimiento ----------
+
+function StatsPanel() {
+  const { id } = useProject();
+  const { data, mutate } = useApi<Stats>(`/api/p/${id}/social/stats`);
+  const [sync, syncing] = useAction(async () => {
+    const r = await api<{ media: number; insights: boolean }>(`/api/p/${id}/social/sync-stats`, "POST", {});
+    await mutate();
+    toast(r.media ? `${r.media} posts actualizados${r.insights ? "" : " (sin alcance: reconecta Instagram para ver estadísticas completas)"}` : "La cuenta aún no tiene posts", r.insights || !r.media ? "ok" : "error");
+  });
+  const top = data ? [...data.posts].sort((a, b) => b.engagement - a.engagement).slice(0, 5) : [];
+
+  return (
+    <div className="rounded-xl border border-ink-200 bg-surface p-5 space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h3 className="font-semibold flex items-center gap-2"><Icon name="chart" />Rendimiento en Instagram</h3>
+          <p className="text-xs text-ink-500 mt-0.5">
+            La IA usa tus posts con más interacciones como referencia al escribir captions.
+            {data?.syncedAt && <> Actualizado {fmtDate(data.syncedAt, "datetime")}.</>}
+          </p>
+        </div>
+        <button onClick={() => sync()} disabled={syncing} className="btn btn-sm border border-ink-300 flex items-center gap-1.5">
+          {syncing ? <Spinner /> : <Icon name="refresh" />}
+          Actualizar estadísticas
+        </button>
+      </div>
+      {!data ? (
+        <div className="flex items-center gap-2 text-sm text-ink-500"><Spinner />Cargando…</div>
+      ) : !data.count ? (
+        <p className="text-sm text-ink-500">Todavía no hay datos: pulsa “Actualizar estadísticas” para leer tus últimos posts.</p>
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Stat label="Posts analizados" value={fmt(data.count)} />
+            <Stat label="Alcance promedio" value={fmt(data.avgReach)} />
+            <Stat label="Interacciones promedio" value={fmt(data.avgEngagement)} />
+          </div>
+          {data.bestSlots.length > 0 && (
+            <div>
+              <p className="text-sm font-medium">Mejores horarios para publicar</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {data.bestSlots.map((s) => (
+                  <span key={s.label} className="rounded-full border border-ink-200 px-3 py-1 text-xs" title={`${s.posts} posts en esa franja`}>
+                    {s.label} · {fmt(s.avg)} interacciones prom.
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <p className="text-sm font-medium">Posts con más interacciones</p>
+            <div className="mt-2 divide-y divide-ink-100">
+              {top.map((m) => (
+                <div key={m.mediaId} className="flex items-center gap-3 py-2 text-sm">
+                  <p className="flex-1 min-w-0 truncate">{m.caption || <span className="text-ink-400">(sin texto)</span>}</p>
+                  <span className="shrink-0 text-xs text-ink-500 tabular-nums">
+                    {m.reach != null && <>alcance {fmt(m.reach)} · </>}{fmt(m.likes)} likes · {fmt(m.comments)} coment.{m.saved != null && <> · guardados {fmt(m.saved)}</>}
+                  </span>
+                  <span className="shrink-0 text-xs text-ink-400">{fmtDate(m.postedAt, "dm")}</span>
+                  {m.permalink && (
+                    <a href={m.permalink} target="_blank" rel="noreferrer" className="shrink-0 text-ink-400 hover:text-ink-700" title="Ver en Instagram"><Icon name="link2" className="h-3.5 w-3.5" /></a>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---------- Página principal ----------
 
 export default function SocialTools() {
@@ -457,7 +548,10 @@ export default function SocialTools() {
       {conn && <ConnectionPanel conn={conn} onConnected={() => setConnKey((k) => k + 1)} />}
 
       {conn?.connected && (
-        <PostComposer onCreated={() => refreshPosts()} />
+        <>
+          <PostComposer onCreated={() => refreshPosts()} />
+          <StatsPanel />
+        </>
       )}
 
       <div>

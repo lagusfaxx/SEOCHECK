@@ -36,7 +36,12 @@ El caption debe: tener entre 150 y 300 caracteres (sin contar hashtags), llamar 
 incluir un CTA sutil, y terminar con 5-8 hashtags relevantes separados del texto principal por una línea en blanco.
 Tono: ${toneDesc}. Responde SOLO con el caption, sin comillas ni explicaciones.`;
 
-  const userPrompt = `${context ? `Contexto del producto/servicio: ${context}\n\n` : ""}Palabras clave SEO a incluir naturalmente: ${kws.slice(0, 6).join(", ")}
+  const best = await topPosts(projectId, 3);
+  const examples = best.length
+    ? `Posts de esta misma cuenta que mejor funcionaron (imita el tono, el largo y los temas que funcionaron; no los copies):\n${best.map((p, i) => `${i + 1}. [${p.interactions ?? (p.likes ?? 0) + (p.comments ?? 0)} interacciones, alcance ${p.reach ?? "?"}] ${p.caption?.slice(0, 400)}`).join("\n")}\n\n`
+    : "";
+
+  const userPrompt = `${context ? `Contexto del producto/servicio: ${context}\n\n` : ""}${examples}Palabras clave SEO a incluir naturalmente: ${kws.slice(0, 6).join(", ")}
 
 Genera el caption de Instagram.`;
 
@@ -158,4 +163,47 @@ export async function publishDue() {
     }
   }
   return { due: due.length, published };
+}
+
+// ---------- Estadísticas ----------
+
+const engagement = (m: { interactions: number | null; likes: number | null; comments: number | null; saved: number | null; shares: number | null }) =>
+  m.interactions ?? (m.likes ?? 0) + (m.comments ?? 0) + (m.saved ?? 0) + (m.shares ?? 0);
+
+async function topPosts(projectId: string, n: number) {
+  const media = await db.igMedia.findMany({ where: { projectId, caption: { not: null } }, orderBy: { postedAt: "desc" }, take: 60 });
+  return media.sort((a, b) => engagement(b) - engagement(a)).slice(0, n);
+}
+
+const DAYS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+
+/** Resumen para el panel: totales, mejores posts y mejores horarios (promedio de interacciones por día y franja de 3 h). */
+export async function instagramStats(projectId: string) {
+  const media = await db.igMedia.findMany({ where: { projectId }, orderBy: { postedAt: "desc" }, take: 60 });
+  if (!media.length) return { count: 0, syncedAt: null, avgReach: null, avgEngagement: null, bestSlots: [], posts: [] };
+  const withReach = media.filter((m) => m.reach != null);
+  const slots = new Map<string, { day: number; hour: number; total: number; n: number }>();
+  for (const m of media) {
+    const local = new Date(m.postedAt.toLocaleString("en-US", { timeZone: env.tz }));
+    const day = local.getDay();
+    const hour = Math.floor(local.getHours() / 3) * 3;
+    const k = `${day}-${hour}`;
+    const s = slots.get(k) ?? { day, hour, total: 0, n: 0 };
+    s.total += engagement(m);
+    s.n++;
+    slots.set(k, s);
+  }
+  const bestSlots = [...slots.values()]
+    .filter((s) => s.n >= 2 || media.length < 10)
+    .map((s) => ({ label: `${DAYS[s.day]} ${String(s.hour).padStart(2, "0")}:00–${String(s.hour + 3).padStart(2, "0")}:00`, avg: Math.round(s.total / s.n), posts: s.n }))
+    .sort((a, b) => b.avg - a.avg)
+    .slice(0, 3);
+  return {
+    count: media.length,
+    syncedAt: media.reduce((d, m) => (m.syncedAt > d ? m.syncedAt : d), media[0].syncedAt),
+    avgReach: withReach.length ? Math.round(withReach.reduce((t, m) => t + (m.reach ?? 0), 0) / withReach.length) : null,
+    avgEngagement: Math.round(media.reduce((t, m) => t + engagement(m), 0) / media.length),
+    bestSlots,
+    posts: media.map((m) => ({ ...m, engagement: engagement(m) })),
+  };
 }

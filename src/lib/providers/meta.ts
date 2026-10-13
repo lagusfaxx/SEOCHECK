@@ -7,10 +7,11 @@ import { db } from "../db";
 import { env } from "../env";
 import { newToken, tokenHash } from "../auth";
 import { encrypt, decrypt } from "../gsc-oauth";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { fetchT } from "../util";
 
 const GRAPH = "https://graph.instagram.com/v21.0";
-const SCOPES = "instagram_business_basic,instagram_business_content_publish";
+const SCOPES = "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_insights";
 
 export const metaConfigured = () => Boolean(env.metaAppId && env.metaAppSecret && process.env.TOKEN_ENC_KEY);
 
@@ -85,13 +86,14 @@ export async function finish(stateRaw: string, code: string, userId: string, ori
   const token: string = long.access_token;
   const expiresIn: number = long.expires_in ?? 60 * 86400;
 
-  const me = await readJson(await fetchT(`${GRAPH}/me?${new URLSearchParams({ fields: "user_id,username", access_token: token })}`), "No se pudo leer la cuenta de Instagram");
+  const me = await readJson(await fetchT(`${GRAPH}/me?${new URLSearchParams({ fields: "id,user_id,username", access_token: token })}`), "No se pudo leer la cuenta de Instagram");
   const igAccountId = String(me.user_id ?? me.id ?? "");
   if (!igAccountId) throw new Error("Instagram no devolvió el ID de la cuenta");
   const igAccountName: string = me.username ?? igAccountId;
 
   const data = {
     igAccountId,
+    igScopedId: me.id ? String(me.id) : null,
     igAccountName,
     accessTokenEnc: encrypt(token),
     tokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
@@ -171,9 +173,76 @@ async function waitForContainer(containerId: string, token: string) {
 }
 
 export async function disconnect(projectId: string) {
-  await db.metaConnection.deleteMany({ where: { projectId } });
+  await db.$transaction([db.igMedia.deleteMany({ where: { projectId } }), db.metaConnection.deleteMany({ where: { projectId } })]);
 }
 
 export async function markConnectionError(projectId: string, msg: string | null) {
   await db.metaConnection.updateMany({ where: { projectId }, data: { lastError: msg } });
+}
+
+// ---------- Estadísticas ----------
+
+const INSIGHT_METRICS = "reach,likes,comments,saved,shares,total_interactions";
+
+/** Lee los últimos posts de la cuenta con sus estadísticas y los guarda en IgMedia. */
+export async function syncInsights(projectId: string): Promise<{ media: number; insights: boolean }> {
+  const { token, igAccountId } = await getToken(projectId);
+  const list = await readJson(
+    await fetchT(`${GRAPH}/${igAccountId}/media?${new URLSearchParams({ fields: "id,caption,media_type,permalink,timestamp,like_count,comments_count", limit: "30", access_token: token })}`),
+    "No se pudieron leer los posts de Instagram",
+  );
+  const items: Array<{ id: string; caption?: string; media_type?: string; permalink?: string; timestamp: string; like_count?: number; comments_count?: number }> = list.data ?? [];
+  let insightsOk = true;
+  for (const m of items) {
+    const stats: Record<string, number> = {};
+    if (insightsOk) {
+      const res = await fetchT(`${GRAPH}/${m.id}/insights?${new URLSearchParams({ metric: INSIGHT_METRICS, access_token: token })}`);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        for (const x of data.data ?? []) stats[x.name] = Number(x.total_value?.value ?? x.values?.[0]?.value ?? 0);
+      } else if (data.error?.code === 10 || /permission/i.test(data.error?.message ?? "")) {
+        insightsOk = false;
+        await markConnectionError(projectId, "Falta el permiso de estadísticas: desconecta y vuelve a conectar Instagram");
+      }
+      // otros errores (p. ej. posts anteriores a la cuenta profesional): quedan solo likes y comentarios
+    }
+    const row = {
+      caption: m.caption?.slice(0, 2200) ?? null,
+      mediaType: m.media_type ?? null,
+      permalink: m.permalink ?? null,
+      postedAt: new Date(m.timestamp),
+      reach: stats.reach ?? null,
+      likes: stats.likes ?? m.like_count ?? null,
+      comments: stats.comments ?? m.comments_count ?? null,
+      saved: stats.saved ?? null,
+      shares: stats.shares ?? null,
+      interactions: stats.total_interactions ?? null,
+    };
+    await db.igMedia.upsert({ where: { projectId_mediaId: { projectId, mediaId: m.id } }, create: { projectId, mediaId: m.id, ...row }, update: row });
+  }
+  if (insightsOk) await db.metaConnection.updateMany({ where: { projectId, lastError: { startsWith: "Falta el permiso" } }, data: { lastError: null } });
+  return { media: items.length, insights: insightsOk && items.length > 0 };
+}
+
+// ---------- Notificaciones de Meta (desautorización y eliminación de datos) ----------
+
+/** Valida el signed_request (HMAC-SHA256 con el app secret) y devuelve el user_id de Instagram. */
+export function parseSignedRequest(signed: string): string {
+  const [sig, payload] = signed.split(".");
+  if (!sig || !payload || !env.metaAppSecret) throw new Error("signed_request inválido");
+  const expected = createHmac("sha256", env.metaAppSecret).update(payload).digest();
+  const got = Buffer.from(sig, "base64url");
+  if (got.length !== expected.length || !timingSafeEqual(got, expected)) throw new Error("Firma inválida");
+  const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  if (!data.user_id) throw new Error("signed_request sin user_id");
+  return String(data.user_id);
+}
+
+/** Borra todo lo obtenido de Instagram para esa cuenta: conexión (token) y estadísticas. */
+export async function deleteInstagramUser(igUserId: string): Promise<number> {
+  const conns = await db.metaConnection.findMany({ where: { OR: [{ igAccountId: igUserId }, { igScopedId: igUserId }] }, select: { projectId: true } });
+  const projectIds = conns.map((c) => c.projectId);
+  if (!projectIds.length) return 0;
+  await db.$transaction([db.igMedia.deleteMany({ where: { projectId: { in: projectIds } } }), db.metaConnection.deleteMany({ where: { projectId: { in: projectIds } } })]);
+  return projectIds.length;
 }

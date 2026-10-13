@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 /** Sitio público de Fullstack Ventures (landing y páginas de producto). */
-const SITE = [/^\/$/, /^\/search$/, /^\/ventures$/, /^\/capacidades$/, /^\/work$/, /^\/empresa$/, /^\/robots\.txt$/, /^\/sitemap\.xml$/, /^\/brand\//, /^\/api\/ideas$/];
+const SITE = [/^\/$/, /^\/search$/, /^\/ventures$/, /^\/capacidades$/, /^\/work$/, /^\/empresa$/, /^\/privacidad(\/eliminacion)?$/, /^\/robots\.txt$/, /^\/sitemap\.xml$/, /^\/brand\//, /^\/api\/ideas$/];
 /** Rutas de la app que se pueden ver sin sesión. */
-const PUBLIC = [/^\/login$/, /^\/setup$/, /^\/forgot$/, /^\/reset$/, /^\/api\/auth\//, /^\/api\/health$/, /^\/api\/oauth\/google\/callback$/];
+const PUBLIC = [/^\/login$/, /^\/setup$/, /^\/forgot$/, /^\/reset$/, /^\/api\/auth\//, /^\/api\/health$/, /^\/api\/oauth\/google\/callback$/, /^\/api\/oauth\/meta\/callback$/];
 
 /**
  * Primera barrera (edge): sin cookie de sesión no se entra; la sesión y los permisos se validan de verdad en cada
@@ -18,6 +18,8 @@ export function middleware(req: NextRequest) {
   if (pathname === "/api/health") return NextResponse.next();
   // Instagram descarga las imágenes de los posts desde acá: sin BASIC_AUTH ni sesión
   if (req.method === "GET" && /^\/api\/social\/image\/[a-z0-9]+$/.test(pathname)) return NextResponse.next();
+  // Meta firma estas notificaciones con el app secret (signed_request); no traen cookie ni BASIC_AUTH
+  if (req.method === "POST" && /^\/api\/oauth\/meta\/(deauthorize|data-deletion)$/.test(pathname)) return NextResponse.next();
   // el sitio público (landing, productos y sus imágenes) nunca va detrás de BASIC_AUTH ni de la sesión
   if (SITE.some((r) => r.test(pathname))) return NextResponse.next();
   const cred = process.env.BASIC_AUTH;

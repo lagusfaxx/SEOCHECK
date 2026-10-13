@@ -5,6 +5,7 @@ ALTER TABLE "OAuthState" ADD COLUMN "provider" TEXT NOT NULL DEFAULT 'google';
 CREATE TABLE "MetaConnection" (
     "projectId" TEXT NOT NULL,
     "igAccountId" TEXT NOT NULL,
+    "igScopedId" TEXT,
     "igAccountName" TEXT NOT NULL,
     "accessTokenEnc" TEXT NOT NULL,
     "tokenExpiresAt" TIMESTAMP(3),
@@ -47,6 +48,26 @@ CREATE TABLE "SocialImage" (
     CONSTRAINT "SocialImage_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "IgMedia" (
+    "id" TEXT NOT NULL,
+    "projectId" TEXT NOT NULL,
+    "mediaId" TEXT NOT NULL,
+    "caption" TEXT,
+    "mediaType" TEXT,
+    "permalink" TEXT,
+    "postedAt" TIMESTAMP(3) NOT NULL,
+    "reach" INTEGER,
+    "likes" INTEGER,
+    "comments" INTEGER,
+    "saved" INTEGER,
+    "shares" INTEGER,
+    "interactions" INTEGER,
+    "syncedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "IgMedia_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE INDEX "SocialPost_projectId_status_idx" ON "SocialPost"("projectId", "status");
 
@@ -59,6 +80,12 @@ CREATE INDEX "SocialPost_status_scheduledAt_idx" ON "SocialPost"("status", "sche
 -- CreateIndex
 CREATE INDEX "SocialImage_projectId_idx" ON "SocialImage"("projectId");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "IgMedia_projectId_mediaId_key" ON "IgMedia"("projectId", "mediaId");
+
+-- CreateIndex
+CREATE INDEX "IgMedia_projectId_postedAt_idx" ON "IgMedia"("projectId", "postedAt");
+
 -- AddForeignKey
 ALTER TABLE "MetaConnection" ADD CONSTRAINT "MetaConnection_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -67,3 +94,6 @@ ALTER TABLE "SocialPost" ADD CONSTRAINT "SocialPost_projectId_fkey" FOREIGN KEY 
 
 -- AddForeignKey
 ALTER TABLE "SocialImage" ADD CONSTRAINT "SocialImage_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "IgMedia" ADD CONSTRAINT "IgMedia_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE CASCADE ON UPDATE CASCADE;

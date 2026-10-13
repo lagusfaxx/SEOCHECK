@@ -117,6 +117,7 @@ model Project {
   metaConnection MetaConnection?
   socialPosts    SocialPost[]
   socialImages   SocialImage[]
+  igMedia        IgMedia[]
   tasks ProjectTask[]
   explorations Exploration[]
   reports ReportSnapshot[]
@@ -675,6 +676,8 @@ model MetaConnection {
   project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   /// ID de la cuenta profesional de Instagram (campo user_id de /me)
   igAccountId    String
+  /// ID con alcance de app (campo id de /me): es el que llega en las notificaciones de eliminación de datos
+  igScopedId     String?
   igAccountName  String
   /// token de larga duración cifrado con AES-256-GCM (TOKEN_ENC_KEY); se renueva solo antes de vencer
   accessTokenEnc String
@@ -720,6 +723,28 @@ model SocialImage {
   createdAt DateTime @default(now())
 
   @@index([projectId])
+}
+
+/// Post de la cuenta de Instagram conectada con sus estadísticas (para el panel y para que la IA aprenda qué funciona).
+model IgMedia {
+  id           String   @id @default(cuid())
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  mediaId      String
+  caption      String?
+  mediaType    String?
+  permalink    String?
+  postedAt     DateTime
+  reach        Int?
+  likes        Int?
+  comments     Int?
+  saved        Int?
+  shares       Int?
+  interactions Int?
+  syncedAt     DateTime @updatedAt
+
+  @@unique([projectId, mediaId])
+  @@index([projectId, postedAt])
 }
 
 /// Ideas enviadas desde el formulario público de fsvc.cl/ventures.
