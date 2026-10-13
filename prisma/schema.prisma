@@ -116,6 +116,7 @@ model Project {
   gscConnection  GscConnection?
   metaConnection MetaConnection?
   socialPosts    SocialPost[]
+  socialImages   SocialImage[]
   tasks ProjectTask[]
   explorations Exploration[]
   reports ReportSnapshot[]
@@ -668,53 +669,57 @@ model QuotaUsage {
   @@index([workspaceId, resource, createdAt])
 }
 
-/// Conexión OAuth de Meta Business / Instagram del proyecto. Token cifrado.
+/// Conexión de Instagram (Instagram API con Instagram Login) del proyecto. Token cifrado.
 model MetaConnection {
-  projectId      String   @id
-  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  /// Instagram Business Account ID
+  projectId      String    @id
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// ID de la cuenta profesional de Instagram (campo user_id de /me)
   igAccountId    String
   igAccountName  String
-  /// Facebook Page ID asociada a la cuenta IG
-  pageId         String?
-  /// long-lived user access token cifrado con AES-256-GCM (TOKEN_ENC_KEY)
+  /// token de larga duración cifrado con AES-256-GCM (TOKEN_ENC_KEY); se renueva solo antes de vencer
   accessTokenEnc String
-  /// Unix timestamp de expiración del token (60 días desde emisión)
   tokenExpiresAt DateTime?
   connectedBy    String?
   lastError      String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }
 
 /// Post de Instagram generado o programado desde la app.
 model SocialPost {
-  id           String    @id @default(cuid())
-  projectId    String
-  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  /// instagram
-  platform     String    @default("instagram")
-  caption      String
-  /// URL pública de la imagen (DALL-E o URL externa)
-  imageUrl     String?
-  /// Prompt usado para generar la imagen con DALL-E
-  imagePrompt  String?
-  /// Keywords del proyecto incluidas en el caption
-  keywords     String[]
-  /// draft | scheduled | published | failed
-  status       String    @default("draft")
-  /// ID del media container de Meta (paso 1 de la publicación)
-  metaMediaId  String?
-  /// ID del post publicado en Instagram
-  metaPostId   String?
-  scheduledAt  DateTime?
-  publishedAt  DateTime?
-  errorMsg     String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id          String    @id @default(cuid())
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  platform    String    @default("instagram")
+  caption     String
+  /// /api/social/image/{id} (imagen guardada en SocialImage) o URL pública externa
+  imageUrl    String?
+  imagePrompt String?
+  keywords    String[]
+  /// draft | scheduled | publishing | published | failed
+  status      String    @default("draft")
+  metaPostId  String?
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  errorMsg    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([projectId, status])
   @@index([projectId, createdAt])
+  @@index([status, scheduledAt])
+}
+
+/// Imagen (JPEG) generada o subida para un post. Se sirve pública en /api/social/image/{id} para que Instagram la descargue.
+model SocialImage {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  mime      String
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  @@index([projectId])
 }
 
 /// Ideas enviadas desde el formulario público de fsvc.cl/ventures.

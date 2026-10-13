@@ -16,6 +16,8 @@ export function middleware(req: NextRequest) {
   // healthcheck de Docker/Coolify: siempre abierto. Si responde 401, el contenedor queda "unhealthy"
   // y el proxy (Traefik) deja de enrutar el sitio: se ve "404 page not found".
   if (pathname === "/api/health") return NextResponse.next();
+  // Instagram descarga las imágenes de los posts desde acá: sin BASIC_AUTH ni sesión
+  if (req.method === "GET" && /^\/api\/social\/image\/[a-z0-9]+$/.test(pathname)) return NextResponse.next();
   // el sitio público (landing, productos y sus imágenes) nunca va detrás de BASIC_AUTH ni de la sesión
   if (SITE.some((r) => r.test(pathname))) return NextResponse.next();
   const cred = process.env.BASIC_AUTH;

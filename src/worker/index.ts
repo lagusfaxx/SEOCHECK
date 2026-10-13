@@ -17,6 +17,7 @@ import { backfillVolumes, writeCache } from "../lib/volume/broker";
 import { runFull } from "../lib/fullrun";
 import { refundBriefs } from "../lib/plans";
 import { beat, keepAlive, recoverInterrupted, sweepStale } from "../lib/jobs";
+import { publishDue } from "../lib/social";
 
 type Data = { projectId: string; jobRunId?: string; [k: string]: any };
 
@@ -99,6 +100,8 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
     }
     case QUEUES.reportSnapshot:
       return saveReport(d.projectId);
+    case QUEUES.socialDue:
+      return publishDue();
     case QUEUES.content:
       // si falla (también por presupuesto) el análisis queda "falló" con el motivo, nunca colgado en "en cola";
       // se devuelve el cupo de brief y no se reintenta solo (el usuario lo relanza y ve el error)
@@ -162,6 +165,7 @@ async function main() {
   await boss.schedule(QUEUES.rankDaily, rankCron, {}, { tz: env.tz });
   await boss.schedule(QUEUES.gscDaily, gscCron, {}, { tz: env.tz });
   await boss.schedule(QUEUES.reportsDue,"0 * * * *",{}, {tz:env.tz});
+  await boss.schedule(QUEUES.socialDue, "* * * * *", {}, { tz: env.tz });
   console.log("worker listo");
 }
 

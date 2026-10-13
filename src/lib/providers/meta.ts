@@ -1,7 +1,7 @@
 /**
- * Meta Business / Instagram Graph API.
- * Flujo OAuth: el usuario autoriza con Facebook → SEOCHECK guarda el long-lived access token cifrado.
- * Con ese token se puede publicar y programar fotos en el Instagram Business Account vinculado.
+ * Instagram API con Instagram Login (caso de uso "Instagram API" en Meta for Developers).
+ * El usuario autoriza su cuenta profesional de Instagram (no requiere Página de Facebook) y SEOCHECK guarda el
+ * token de larga duración cifrado. La API no programa publicaciones: eso lo hace el worker (cola social.due).
  */
 import { db } from "../db";
 import { env } from "../env";
@@ -9,23 +9,33 @@ import { newToken, tokenHash } from "../auth";
 import { encrypt, decrypt } from "../gsc-oauth";
 import { fetchT } from "../util";
 
-const GRAPH = "https://graph.facebook.com/v21.0";
+const GRAPH = "https://graph.instagram.com/v21.0";
+const SCOPES = "instagram_business_basic,instagram_business_content_publish";
 
 export const metaConfigured = () => Boolean(env.metaAppId && env.metaAppSecret && process.env.TOKEN_ENC_KEY);
 
-export const metaRedirectUri = (origin: string) =>
-  `${(process.env.APP_URL ?? origin).replace(/\/$/, "")}/api/oauth/meta/callback`;
+const appUrl = (origin?: string) => (process.env.APP_URL || origin || "").replace(/\/$/, "");
+
+export const metaRedirectUri = (origin: string) => `${appUrl(origin)}/api/oauth/meta/callback`;
 
 export class MetaNotConnected extends Error {
-  constructor(msg = "Meta no está conectado: conéctalo en Social del proyecto") {
+  constructor(msg = "Instagram no está conectado: conéctalo en Social del proyecto") {
     super(msg);
     this.name = "MetaNotConnected";
   }
 }
 
+async function readJson(res: Response, what: string) {
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) {
+    const msg = data.error?.message ?? data.error_message ?? `HTTP ${res.status}`;
+    throw new Error(`${what}: ${msg}`);
+  }
+  return data;
+}
+
 // ---------- OAuth ----------
 
-/** URL del diálogo de Facebook Login para conectar el proyecto. */
 export async function startUrl(projectId: string, userId: string, origin: string): Promise<string> {
   if (!metaConfigured()) throw new Error("Falta configurar META_APP_ID, META_APP_SECRET y TOKEN_ENC_KEY");
   const state = newToken();
@@ -36,184 +46,134 @@ export async function startUrl(projectId: string, userId: string, origin: string
   const params = new URLSearchParams({
     client_id: env.metaAppId,
     redirect_uri: metaRedirectUri(origin),
-    scope: "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement",
-    state,
     response_type: "code",
+    scope: SCOPES,
+    state,
   });
-  return `https://www.facebook.com/v21.0/dialog/oauth?${params}`;
+  return `https://www.instagram.com/oauth/authorize?${params}`;
 }
 
-/** Callback: valida el state, canjea el code por token, obtiene la cuenta IG y guarda la conexión. */
 export async function finish(stateRaw: string, code: string, userId: string, origin: string): Promise<string> {
   const st = await db.oAuthState.findUnique({ where: { id: tokenHash(stateRaw) } });
   if (st) await db.oAuthState.delete({ where: { id: st.id } }).catch(() => {});
   if (!st || st.expiresAt < new Date() || st.provider !== "meta") throw new Error("La autorización venció o no es válida");
   if (st.userId !== userId) throw new Error("La autorización la empezó otro usuario");
 
-  // 1. Canjear code por short-lived user token
-  const tokenRes = await fetchT(`${GRAPH}/oauth/access_token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ client_id: env.metaAppId, client_secret: env.metaAppSecret, redirect_uri: metaRedirectUri(origin), code }).toString(),
-  });
-  const tokenData = await tokenRes.json();
-  if (!tokenRes.ok || !tokenData.access_token) throw new Error(`Meta token error: ${tokenData.error?.message ?? tokenRes.status}`);
-  const shortToken: string = tokenData.access_token;
-
-  // 2. Canjear por long-lived token (válido 60 días)
-  const llRes = await fetchT(
-    `${GRAPH}/oauth/access_token?grant_type=fb_exchange_token&client_id=${env.metaAppId}&client_secret=${env.metaAppSecret}&fb_exchange_token=${shortToken}`,
+  // Instagram a veces agrega "#_" al final del code
+  const cleanCode = code.replace(/#_$/, "");
+  const short = await readJson(
+    await fetchT("https://api.instagram.com/oauth/access_token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: env.metaAppId,
+        client_secret: env.metaAppSecret,
+        grant_type: "authorization_code",
+        redirect_uri: metaRedirectUri(origin),
+        code: cleanCode,
+      }).toString(),
+    }),
+    "Instagram rechazó el código",
   );
-  const llData = await llRes.json();
-  if (!llRes.ok || !llData.access_token) throw new Error(`Meta long-lived token error: ${llData.error?.message ?? llRes.status}`);
-  const longToken: string = llData.access_token;
-  const expiresIn: number = llData.expires_in ?? 5184000; // 60 días en segundos
+  const shortToken: string | undefined = short.access_token ?? short.data?.[0]?.access_token;
+  if (!shortToken) throw new Error("Instagram no devolvió un token");
 
-  // 3. Obtener páginas del usuario
-  const pagesRes = await fetchT(`${GRAPH}/me/accounts?fields=id,name,access_token&access_token=${longToken}`);
-  const pagesData = await pagesRes.json();
-  if (!pagesRes.ok) throw new Error(`Error obteniendo páginas de Facebook: ${pagesData.error?.message ?? pagesRes.status}`);
-  const pages: Array<{ id: string; name: string; access_token: string }> = pagesData.data ?? [];
-  if (!pages.length) throw new Error("No se encontraron Páginas de Facebook en esta cuenta. Necesitas una Página con una cuenta de Instagram Business vinculada.");
+  const long = await readJson(
+    await fetchT(`https://graph.instagram.com/access_token?${new URLSearchParams({ grant_type: "ig_exchange_token", client_secret: env.metaAppSecret, access_token: shortToken })}`),
+    "No se pudo obtener el token de larga duración",
+  );
+  const token: string = long.access_token;
+  const expiresIn: number = long.expires_in ?? 60 * 86400;
 
-  // 4. Buscar la cuenta Instagram Business vinculada a la primera página que la tenga
-  let igAccountId: string | null = null;
-  let igAccountName = "";
-  let pageId: string | null = null;
+  const me = await readJson(await fetchT(`${GRAPH}/me?${new URLSearchParams({ fields: "user_id,username", access_token: token })}`), "No se pudo leer la cuenta de Instagram");
+  const igAccountId = String(me.user_id ?? me.id ?? "");
+  if (!igAccountId) throw new Error("Instagram no devolvió el ID de la cuenta");
+  const igAccountName: string = me.username ?? igAccountId;
 
-  for (const page of pages) {
-    const igRes = await fetchT(`${GRAPH}/${page.id}?fields=instagram_business_account&access_token=${page.access_token}`);
-    const igData = await igRes.json();
-    if (igData.instagram_business_account?.id) {
-      igAccountId = igData.instagram_business_account.id;
-      pageId = page.id;
-      // Obtener nombre de la cuenta IG
-      const nameRes = await fetchT(`${GRAPH}/${igAccountId}?fields=name,username&access_token=${longToken}`);
-      const nameData = await nameRes.json();
-      igAccountName = nameData.name ?? nameData.username ?? igAccountId;
-      break;
+  const data = {
+    igAccountId,
+    igAccountName,
+    accessTokenEnc: encrypt(token),
+    tokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
+    connectedBy: userId,
+    lastError: null,
+  };
+  await db.metaConnection.upsert({ where: { projectId: st.projectId }, create: { projectId: st.projectId, ...data }, update: data });
+  return st.projectId;
+}
+
+/** Token vigente; lo renueva solo cuando quedan menos de 15 días (Instagram exige que tenga al menos 24 h). */
+async function getToken(projectId: string): Promise<{ token: string; igAccountId: string }> {
+  const c = await db.metaConnection.findUnique({ where: { projectId } });
+  if (!c) throw new MetaNotConnected();
+  let token = decrypt(c.accessTokenEnc);
+  if (c.tokenExpiresAt && c.tokenExpiresAt < new Date()) throw new MetaNotConnected("El acceso a Instagram venció: vuelve a conectar la cuenta");
+  const renewDue = c.tokenExpiresAt && c.tokenExpiresAt < new Date(Date.now() + 15 * 864e5) && c.updatedAt < new Date(Date.now() - 864e5);
+  if (renewDue) {
+    try {
+      const r = await readJson(await fetchT(`https://graph.instagram.com/refresh_access_token?${new URLSearchParams({ grant_type: "ig_refresh_token", access_token: token })}`), "Renovación del token");
+      token = r.access_token;
+      await db.metaConnection.update({
+        where: { projectId },
+        data: { accessTokenEnc: encrypt(token), tokenExpiresAt: new Date(Date.now() + (r.expires_in ?? 60 * 86400) * 1000), lastError: null },
+      });
+    } catch (e) {
+      await markConnectionError(projectId, e instanceof Error ? e.message : String(e));
     }
   }
-
-  if (!igAccountId) throw new Error("Ninguna Página de Facebook tiene una cuenta de Instagram Business vinculada. Conéctala en la configuración de Facebook.");
-
-  await db.metaConnection.upsert({
-    where: { projectId: st.projectId },
-    create: {
-      projectId: st.projectId,
-      igAccountId,
-      igAccountName,
-      pageId,
-      accessTokenEnc: encrypt(longToken),
-      tokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
-      connectedBy: userId,
-    },
-    update: {
-      igAccountId,
-      igAccountName,
-      pageId,
-      accessTokenEnc: encrypt(longToken),
-      tokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
-      connectedBy: userId,
-      lastError: null,
-    },
-  });
-
-  return st.projectId;
+  return { token, igAccountId: c.igAccountId };
 }
 
 // ---------- Publicación ----------
 
-async function getToken(projectId: string): Promise<{ token: string; igAccountId: string }> {
-  const c = await db.metaConnection.findUnique({ where: { projectId } });
-  if (!c) throw new MetaNotConnected();
-  // Aviso si el token expira pronto (< 7 días) pero no bloquear
-  if (c.tokenExpiresAt && c.tokenExpiresAt < new Date(Date.now() + 7 * 864e5)) {
-    await db.metaConnection.update({ where: { projectId }, data: { lastError: "El token de Meta expira pronto: vuelve a conectar la cuenta." } });
-  }
-  return { token: decrypt(c.accessTokenEnc), igAccountId: c.igAccountId };
+/** Instagram descarga la imagen desde una URL pública: las imágenes propias necesitan APP_URL. */
+export function publicImageUrl(imageUrl: string): string {
+  if (!imageUrl.startsWith("/")) return imageUrl;
+  const base = appUrl();
+  if (!base) throw new Error("Falta APP_URL: Instagram necesita una URL pública para descargar la imagen");
+  return `${base}${imageUrl}`;
 }
 
-/** Publica una foto inmediatamente en Instagram. Devuelve el ID del post. */
 export async function publishNow(projectId: string, imageUrl: string, caption: string): Promise<{ postId: string }> {
   const { token, igAccountId } = await getToken(projectId);
 
-  // Paso 1: crear container
-  const containerRes = await fetchT(`${GRAPH}/${igAccountId}/media`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ image_url: imageUrl, caption, access_token: token }).toString(),
-  });
-  const containerData = await containerRes.json();
-  if (!containerRes.ok || !containerData.id) {
-    const msg = containerData.error?.message ?? `Error Meta ${containerRes.status}`;
-    throw new Error(`Error creando media container: ${msg}`);
-  }
-  const containerId: string = containerData.id;
+  const container = await readJson(
+    await fetchT(`${GRAPH}/${igAccountId}/media`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ image_url: publicImageUrl(imageUrl), caption, access_token: token }).toString(),
+      timeoutMs: 60_000,
+    }),
+    "Instagram no aceptó la imagen",
+  );
+  await waitForContainer(container.id, token);
 
-  // Esperar a que el container esté listo
-  await waitForContainer(igAccountId, containerId, token);
-
-  // Paso 2: publicar
-  const publishRes = await fetchT(`${GRAPH}/${igAccountId}/media_publish`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ creation_id: containerId, access_token: token }).toString(),
-  });
-  const publishData = await publishRes.json();
-  if (!publishRes.ok || !publishData.id) {
-    const msg = publishData.error?.message ?? `Error Meta ${publishRes.status}`;
-    throw new Error(`Error publicando post: ${msg}`);
-  }
-
-  return { postId: publishData.id as string };
+  const published = await readJson(
+    await fetchT(`${GRAPH}/${igAccountId}/media_publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ creation_id: container.id, access_token: token }).toString(),
+      timeoutMs: 60_000,
+    }),
+    "Instagram no publicó el post",
+  );
+  return { postId: String(published.id) };
 }
 
-/** Programa una foto para publicar en Instagram en una fecha futura. */
-export async function schedulePost(projectId: string, imageUrl: string, caption: string, publishAt: Date): Promise<{ containerId: string }> {
-  const { token, igAccountId } = await getToken(projectId);
-  const minTime = new Date(Date.now() + 10 * 60_000); // mínimo 10 minutos en el futuro
-  const maxTime = new Date(Date.now() + 75 * 24 * 3600_000); // máximo 75 días
-  if (publishAt < minTime) throw new Error("La fecha programada debe ser al menos 10 minutos en el futuro");
-  if (publishAt > maxTime) throw new Error("La fecha programada no puede ser más de 75 días en el futuro");
-
-  const containerRes = await fetchT(`${GRAPH}/${igAccountId}/media`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      image_url: imageUrl,
-      caption,
-      scheduled_publish_time: String(Math.floor(publishAt.getTime() / 1000)),
-      published: "false",
-      access_token: token,
-    }).toString(),
-  });
-  const data = await containerRes.json();
-  if (!containerRes.ok || !data.id) {
-    const msg = data.error?.message ?? `Error Meta ${containerRes.status}`;
-    throw new Error(`Error programando post: ${msg}`);
-  }
-
-  return { containerId: data.id as string };
-}
-
-/** Espera a que un media container esté listo (hasta 30 seg). */
-async function waitForContainer(igAccountId: string, containerId: string, token: string, maxTries = 6) {
-  for (let i = 0; i < maxTries; i++) {
-    await new Promise((r) => setTimeout(r, 5000));
-    const res = await fetchT(`${GRAPH}/${containerId}?fields=status_code&access_token=${token}`);
-    const data = await res.json();
+async function waitForContainer(containerId: string, token: string) {
+  for (let i = 0; i < 12; i++) {
+    const data = await readJson(await fetchT(`${GRAPH}/${containerId}?${new URLSearchParams({ fields: "status_code,status", access_token: token })}`), "Estado del contenedor");
     if (data.status_code === "FINISHED") return;
-    if (data.status_code === "ERROR") throw new Error(`Meta rechazó la imagen: ${data.status_code}`);
+    if (data.status_code === "ERROR" || data.status_code === "EXPIRED") throw new Error(`Instagram rechazó la imagen: ${data.status ?? data.status_code}`);
+    await new Promise((r) => setTimeout(r, 5000));
   }
+  throw new Error("Instagram tardó demasiado en procesar la imagen: intenta de nuevo");
 }
 
-/** Desconectar Meta: borra la conexión (no revoca en Meta, el usuario puede hacerlo desde su cuenta). */
 export async function disconnect(projectId: string) {
   await db.metaConnection.deleteMany({ where: { projectId } });
 }
 
-/** Marca un error en la conexión para mostrarlo en la UI. */
 export async function markConnectionError(projectId: string, msg: string | null) {
   await db.metaConnection.updateMany({ where: { projectId }, data: { lastError: msg } });
 }

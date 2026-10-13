@@ -36,7 +36,7 @@ export const env = {
   metaAppId: process.env.META_APP_ID ?? "",
   metaAppSecret: process.env.META_APP_SECRET ?? "",
   /** Modelo de DALL-E para generar imágenes: dall-e-3 (default) */
-  imageModel: process.env.IMAGE_MODEL ?? "dall-e-3",
+  imageModel: process.env.IMAGE_MODEL || "gpt-image-1",
 };
 
 export function has(...keys: (keyof typeof env)[]) {

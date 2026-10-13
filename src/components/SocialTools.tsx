@@ -29,6 +29,7 @@ type Post = {
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   draft: { label: "Borrador", color: "text-ink-400" },
   scheduled: { label: "Programado", color: "text-amber-600" },
+  publishing: { label: "Publicando…", color: "text-sky-600" },
   published: { label: "Publicado", color: "text-emerald-600" },
   failed: { label: "Error", color: "text-rose-600" },
 };
@@ -41,7 +42,7 @@ function ConnectionPanel({ conn, onConnected }: { conn: Connection; onConnected:
   const [disconnect, disconnecting] = useAction(async () => {
     await api(`/api/p/${id}/social/connection`, "DELETE", {});
     onConnected();
-    toast("Cuenta de Meta desconectada", "ok");
+    toast("Instagram desconectado", "ok");
   });
 
   const handleConnect = async () => {
@@ -61,7 +62,7 @@ function ConnectionPanel({ conn, onConnected }: { conn: Connection; onConnected:
         <div className="flex items-start gap-3">
           <Icon name="alert" className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
           <div>
-            <p className="font-medium">Meta no está configurado</p>
+            <p className="font-medium">Instagram no está configurado</p>
             <p className="mt-1 text-sm text-ink-500">Agrega las variables <code className="text-xs font-mono bg-ink-100 px-1 rounded">META_APP_ID</code> y <code className="text-xs font-mono bg-ink-100 px-1 rounded">META_APP_SECRET</code> en el servidor para habilitar la publicación en Instagram.</p>
           </div>
         </div>
@@ -75,11 +76,11 @@ function ConnectionPanel({ conn, onConnected }: { conn: Connection; onConnected:
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="font-medium">Conecta tu cuenta de Instagram</p>
-            <p className="mt-1 text-sm text-ink-500">Requiere una cuenta de Instagram Business vinculada a una Página de Facebook.</p>
+            <p className="mt-1 text-sm text-ink-500">Requiere una cuenta profesional de Instagram (Empresa o Creador).</p>
           </div>
           <button onClick={handleConnect} disabled={connecting} className="btn btn-acc shrink-0 flex items-center gap-2">
             {connecting ? <Spinner /> : <Icon name="social" />}
-            Conectar Meta
+            Conectar Instagram
           </button>
         </div>
       </div>
@@ -111,27 +112,73 @@ function ConnectionPanel({ conn, onConnected }: { conn: Connection; onConnected:
 
 // ---------- Compositor de posts ----------
 
+/** Convierte cualquier foto a JPEG (único formato que acepta Instagram), máx. 1440 px y recortada al rango 4:5–1.91:1. */
+async function toJpeg(file: File, max = 1440): Promise<string> {
+  if (file.size > 25 * 1024 * 1024) throw new Error("La foto supera 25 MB");
+  const bmp = await createImageBitmap(file);
+  let sw = bmp.width, sh = bmp.height;
+  if (sw / sh < 0.8) sh = Math.round(sw / 0.8);
+  else if (sw / sh > 1.91) sw = Math.round(sh * 1.91);
+  const scale = Math.min(1, max / Math.max(sw, sh));
+  const c = document.createElement("canvas");
+  c.width = Math.round(sw * scale);
+  c.height = Math.round(sh * scale);
+  const ctx = c.getContext("2d")!;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(bmp, (bmp.width - sw) / 2, (bmp.height - sh) / 2, sw, sh, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.9);
+}
+
+function PhotoPicker({ label, value, onChange }: { label: string; value: string; onChange: (dataUrl: string) => void }) {
+  return (
+    <div className="flex items-center gap-3">
+      <label className="btn btn-sm border border-ink-300 flex items-center gap-1.5 cursor-pointer">
+        <Icon name="photo" />
+        {value ? "Cambiar foto" : label}
+        <input
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={async (e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (!f) return;
+            try { onChange(await toJpeg(f)); } catch (err) { toast(err instanceof Error ? err.message : "No se pudo leer la foto"); }
+          }}
+        />
+      </label>
+      {value && (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={value} alt="" className="h-12 w-12 rounded object-cover border border-ink-200" />
+          <button onClick={() => onChange("")} className="text-xs text-ink-400 hover:text-rose-500">Quitar</button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function PostComposer({ onCreated }: { onCreated: () => void }) {
   const { id } = useProject();
-  const [imageTab, setImageTab] = useState<"dalle" | "url">("dalle");
+  const [imageTab, setImageTab] = useState<"ia" | "upload">("ia");
   const [imagePrompt, setImagePrompt] = useState("");
+  const [reference, setReference] = useState("");
   const [imageUrl, setImageUrl] = useState("");
-  const [generatedImageUrl, setGeneratedImageUrl] = useState("");
-  const [revisedPrompt, setRevisedPrompt] = useState("");
   const [caption, setCaption] = useState("");
   const [captionContext, setCaptionContext] = useState("");
   const [tone, setTone] = useState<"cercano" | "profesional" | "inspirador">("cercano");
-  const [scheduledAt, setScheduledAt] = useState("");
-  const [showSchedule, setShowSchedule] = useState(false);
-
-  const activeImageUrl = imageTab === "dalle" ? generatedImageUrl : imageUrl;
 
   const [generateImg, generatingImg] = useAction(async () => {
     if (!imagePrompt.trim()) { toast("Escribe un prompt para la imagen"); return; }
-    const result = await api<{ url: string; revisedPrompt: string }>(`/api/p/${id}/social/generate-image`, "POST", { prompt: imagePrompt });
-    setGeneratedImageUrl(result.url);
-    setRevisedPrompt(result.revisedPrompt);
-    toast("Imagen generada — válida ~1 hora", "ok");
+    const r = await api<{ url: string }>(`/api/p/${id}/social/generate-image`, "POST", { prompt: imagePrompt, reference: reference || undefined });
+    setImageUrl(r.url);
+  });
+
+  const [uploadImg, uploadingImg] = useAction(async (dataUrl: string) => {
+    if (!dataUrl) { setImageUrl(""); return; }
+    const r = await api<{ url: string }>(`/api/p/${id}/social/upload-image`, "POST", { image: dataUrl });
+    setImageUrl(r.url);
   });
 
   const [generateCaption, generatingCaption] = useAction(async () => {
@@ -141,13 +188,13 @@ function PostComposer({ onCreated }: { onCreated: () => void }) {
 
   const [saveDraft, savingDraft] = useAction(async () => {
     if (!caption.trim()) { toast("Escribe o genera un caption"); return; }
-    await api(`/api/p/${id}/social/posts`, "POST", { caption, imageUrl: activeImageUrl || null, imagePrompt: imageTab === "dalle" ? imagePrompt : null });
+    await api(`/api/p/${id}/social/posts`, "POST", { caption, imageUrl: imageUrl || null, imagePrompt: imageTab === "ia" ? imagePrompt : null });
     toast("Borrador guardado", "ok");
     onCreated();
     setCaption("");
-    setGeneratedImageUrl("");
-    setImagePrompt("");
     setImageUrl("");
+    setImagePrompt("");
+    setReference("");
   });
 
   const charCount = caption.length;
@@ -158,52 +205,34 @@ function PostComposer({ onCreated }: { onCreated: () => void }) {
       <h3 className="font-semibold flex items-center gap-2"><Icon name="photo" />Nuevo post</h3>
 
       {/* Imagen */}
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <Tabs value={imageTab} onChange={setImageTab} items={[{ id: "dalle", label: "Generar con IA", icon: "sparkle" }, { id: "url", label: "URL de imagen", icon: "link2" }]} />
-        </div>
-        {imageTab === "dalle" ? (
+      <div className="space-y-3">
+        <Tabs value={imageTab} onChange={setImageTab} items={[{ id: "ia", label: "Generar con IA", icon: "sparkle" }, { id: "upload", label: "Subir foto", icon: "photo" }]} />
+        {imageTab === "ia" ? (
           <div className="space-y-2">
             <textarea
               className="input w-full text-sm resize-none"
               rows={2}
-              placeholder="Describe la imagen (ej: producto de belleza natural sobre fondo blanco minimalista, luz suave, fotografía profesional)"
+              placeholder="Describe la imagen (ej: el producto sobre una mesa de madera, luz natural de mañana, estilo fotografía profesional)"
               value={imagePrompt}
               onChange={(e) => setImagePrompt(e.target.value)}
-              maxLength={1000}
+              maxLength={2000}
             />
+            <PhotoPicker label="Foto de referencia del producto (opcional)" value={reference} onChange={setReference} />
             <button onClick={() => generateImg()} disabled={generatingImg || !imagePrompt.trim()} className="btn btn-sm btn-acc flex items-center gap-1.5">
               {generatingImg ? <Spinner /> : <Icon name="sparkle" />}
-              Generar imagen
+              {generatingImg ? "Generando (puede tardar 1 min)…" : imageUrl ? "Generar otra" : "Generar imagen"}
             </button>
-            {generatedImageUrl && (
-              <div className="mt-2 space-y-1">
-                <div className="relative w-full max-w-xs overflow-hidden rounded-lg border border-ink-200">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={generatedImageUrl} alt="Imagen generada" className="w-full object-cover aspect-square" />
-                </div>
-                {revisedPrompt && revisedPrompt !== imagePrompt && (
-                  <p className="text-xs text-ink-400 max-w-xs">Prompt revisado: <span className="italic">{revisedPrompt}</span></p>
-                )}
-                <p className="text-xs text-amber-600 flex items-center gap-1"><Icon name="clock" className="h-3 w-3" />Esta URL expira en ~1 hora. Publica pronto o guarda la imagen.</p>
-              </div>
-            )}
           </div>
         ) : (
-          <div className="space-y-2">
-            <input
-              className="input w-full text-sm"
-              type="url"
-              placeholder="https://tusitio.com/imagen-producto.jpg (debe ser pública)"
-              value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value)}
-            />
-            {imageUrl && (
-              <div className="relative w-full max-w-xs overflow-hidden rounded-lg border border-ink-200">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={imageUrl} alt="Vista previa" className="w-full object-cover aspect-square" onError={(e) => (e.currentTarget.style.display = "none")} />
-              </div>
-            )}
+          <div className="flex items-center gap-2">
+            <PhotoPicker label="Elegir foto" value="" onChange={(d) => uploadImg(d)} />
+            {uploadingImg && <Spinner />}
+          </div>
+        )}
+        {imageUrl && (
+          <div className="w-full max-w-xs overflow-hidden rounded-lg border border-ink-200">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={imageUrl} alt="Imagen del post" className="w-full object-cover" />
           </div>
         )}
       </div>
@@ -280,7 +309,7 @@ function PostsList({ posts, onRefresh }: { posts: Post[]; onRefresh: () => void 
     setScheduling(postId);
     try {
       await api(`/api/p/${id}/social/schedule`, "POST", { postId, scheduledAt: new Date(dateStr).toISOString() });
-      toast("Post programado en Instagram", "ok");
+      toast("Programado: se publicará solo a esa hora", "ok");
       onRefresh();
     } catch (e) {
       toast(e instanceof Error ? e.message : "Error al programar");
@@ -293,6 +322,17 @@ function PostsList({ posts, onRefresh }: { posts: Post[]; onRefresh: () => void 
     await api(`/api/p/${id}/social/posts`, "DELETE", { postId });
     onRefresh();
   });
+
+  const [unschedule] = useAction(async (postId: string) => {
+    await api(`/api/p/${id}/social/unschedule`, "POST", { postId });
+    toast("Programación cancelada: quedó como borrador", "ok");
+    onRefresh();
+  });
+
+  const localMin = (() => {
+    const d = new Date(Date.now() + 5 * 60_000);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  })();
 
   if (!posts.length) return <Empty icon="social" title="Aún no hay posts">Crea tu primer post con el compositor de arriba.</Empty>;
 
@@ -327,7 +367,10 @@ function PostsList({ posts, onRefresh }: { posts: Post[]; onRefresh: () => void 
 
               {post.errorMsg && <p className="text-xs text-rose-600">{post.errorMsg}</p>}
               {post.status === "scheduled" && post.scheduledAt && (
-                <p className="text-xs text-amber-600 flex items-center gap-1"><Icon name="clock" className="h-3 w-3" />Programado: {fmtDate(post.scheduledAt, "datetime")}</p>
+                <div className="flex items-center gap-3">
+                  <p className="text-xs text-amber-600 flex items-center gap-1"><Icon name="clock" className="h-3 w-3" />Se publica: {fmtDate(post.scheduledAt, "datetime")}</p>
+                  <button onClick={() => unschedule(post.id)} className="text-xs text-ink-500 underline hover:text-ink-700">Cancelar programación</button>
+                </div>
               )}
               {post.status === "published" && post.publishedAt && (
                 <p className="text-xs text-emerald-600 flex items-center gap-1"><Icon name="check" className="h-3 w-3" />Publicado: {fmtDate(post.publishedAt, "datetime")}</p>
@@ -350,7 +393,7 @@ function PostsList({ posts, onRefresh }: { posts: Post[]; onRefresh: () => void 
                       className="input text-xs py-1 px-2"
                       value={scheduleDate[post.id] ?? ""}
                       onChange={(e) => setScheduleDate((d) => ({ ...d, [post.id]: e.target.value }))}
-                      min={new Date(Date.now() + 11 * 60_000).toISOString().slice(0, 16)}
+                      min={localMin}
                     />
                     <button
                       onClick={() => schedule(post.id)}
@@ -365,12 +408,12 @@ function PostsList({ posts, onRefresh }: { posts: Post[]; onRefresh: () => void 
               )}
 
               {!post.imageUrl && isReady && (
-                <p className="text-xs text-amber-600">Sin imagen — edita el borrador para agregar una URL de imagen</p>
+                <p className="text-xs text-amber-600">Sin imagen: Instagram exige una. Crea el post de nuevo con imagen.</p>
               )}
             </div>
 
             {/* Eliminar */}
-            {isReady && (
+            {(isReady || post.status === "scheduled") && (
               <button onClick={() => deletePost(post.id)} className="text-ink-400 hover:text-rose-500 shrink-0" title="Eliminar">
                 <Icon name="trash" className="h-4 w-4" />
               </button>
@@ -387,11 +430,10 @@ function PostsList({ posts, onRefresh }: { posts: Post[]; onRefresh: () => void 
 export default function SocialTools() {
   const { id } = useProject();
   const [connKey, setConnKey] = useState(0);
-  const [postsKey, setPostsKey] = useState(0);
   const [tab, setTab] = useState<"all" | "draft" | "scheduled" | "published">("all");
 
   const { data: conn, isLoading: connLoading } = useApi<Connection>(`/api/p/${id}/social/connection?_k=${connKey}`);
-  const { data: posts, isLoading: postsLoading } = useApi<Post[]>(`/api/p/${id}/social/posts${tab !== "all" ? `?status=${tab}` : ""}`, { keepPreviousData: true });
+  const { data: posts, isLoading: postsLoading, mutate: refreshPosts } = useApi<Post[]>(`/api/p/${id}/social/posts${tab !== "all" ? `?status=${tab}` : ""}`, { keepPreviousData: true });
 
   // Leer errores de callback de OAuth desde la URL
   useEffect(() => {
@@ -400,7 +442,7 @@ export default function SocialTools() {
     const err = params.get("meta_error");
     const ok = params.get("meta");
     if (err) { toast(decodeURIComponent(err)); window.history.replaceState({}, "", window.location.pathname); }
-    if (ok === "ok") { toast("Cuenta de Meta conectada correctamente", "ok"); setConnKey((k) => k + 1); window.history.replaceState({}, "", window.location.pathname); }
+    if (ok === "ok") { toast("Instagram conectado", "ok"); setConnKey((k) => k + 1); window.history.replaceState({}, "", window.location.pathname); }
   }, []);
 
   if (connLoading) return <div className="flex items-center gap-2 p-6 text-ink-500"><Spinner />Cargando...</div>;
@@ -409,13 +451,13 @@ export default function SocialTools() {
     <div className="max-w-3xl space-y-6 p-4 md:p-6">
       <div>
         <h2 className="text-lg font-semibold flex items-center gap-2"><Icon name="social" className="h-5 w-5" />Social</h2>
-        <p className="text-sm text-ink-500 mt-1">Genera contenido con IA y publica o programa posts en Instagram</p>
+        <p className="text-sm text-ink-500 mt-1">Genera imágenes y textos con las keywords del proyecto y publica o programa posts en Instagram</p>
       </div>
 
       {conn && <ConnectionPanel conn={conn} onConnected={() => setConnKey((k) => k + 1)} />}
 
       {conn?.connected && (
-        <PostComposer onCreated={() => setPostsKey((k) => k + 1)} />
+        <PostComposer onCreated={() => refreshPosts()} />
       )}
 
       <div>
@@ -431,7 +473,7 @@ export default function SocialTools() {
         {postsLoading ? (
           <div className="flex items-center gap-2 p-4 text-ink-500"><Spinner />Cargando posts...</div>
         ) : (
-          <PostsList posts={posts ?? []} onRefresh={() => setPostsKey((k) => k + 1)} key={postsKey} />
+          <PostsList posts={posts ?? []} onRefresh={() => refreshPosts()} />
         )}
       </div>
     </div>

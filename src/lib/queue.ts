@@ -17,6 +17,7 @@ export const QUEUES = {
   full: "report.full",
   reportsDue: "report.due",
   reportSnapshot: "report.snapshot",
+  socialDue: "social.due",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 
