@@ -48,7 +48,7 @@ export const PROOF: { name: string; fact: string; href: string; logo: string | n
 /** Capacidades como hechos, cada una con proyectos reales que la prueban. */
 export const CAPABILITIES = [
   { id: "software", n: "01", area: "Software", fact: "Desarrollo de plataformas y SaaS.", detail: "Aplicaciones web, sistemas internos, APIs e integraciones.", proof: ["Barzuo", "Uzeed"] },
-  { id: "security", n: "02", area: "Security", fact: "Pentesting y seguridad de aplicaciones.", detail: "Aplicaciones web, APIs y evaluación técnica con autorización firmada.", proof: ["Centinela", "Rent A Hacker"] },
+  { id: "security", n: "02", area: "Security", fact: "Pentesting y seguridad de aplicaciones.", detail: "Aplicaciones web, APIs y evaluación técnica con autorización firmada.", proof: ["SistemaW", "Centinela", "Rent A Hacker"] },
   { id: "growth", n: "03", area: "Growth", fact: "SEO técnico y search intelligence.", detail: "Auditoría, datos de Search Console, keywords, rankings y contenido.", proof: ["FSV Search"] },
 ];
 

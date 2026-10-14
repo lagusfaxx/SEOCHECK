@@ -4,7 +4,8 @@ import { Header } from "@/components/site/Header";
 import { CtaAndFooter } from "@/components/site/Footer";
 import { PLANS, planPriceClp, TRIAL_DAYS } from "@/lib/plans";
 import { FEATURE_PAGES } from "@/lib/search-marketing";
-import { GuideLinks } from "@/components/site/SearchKit";
+import { GuideLinks } from "@/components/site/Marketing";
+import { searchProduct } from "@/lib/products";
 
 export const revalidate = 3600;
 
@@ -209,7 +210,7 @@ export default function SearchPage() {
               <Link href="/search/guias" className="shrink-0 text-sm font-medium transition hover:text-fsv-violet">Ver todas <span aria-hidden>→</span></Link>
             </div>
             <div className="mt-6">
-              <GuideLinks />
+              <GuideLinks product={searchProduct()} />
             </div>
           </div>
         </section>

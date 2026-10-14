@@ -48,7 +48,8 @@ export default function CapacidadesPage() {
               n="02 / Security"
               title={cap("security").fact}
               text="Pentesting de aplicaciones web y APIs, revisión de seguridad y evaluación técnica, siempre con autorización firmada."
-              cta="Pedir una evaluación"
+              cta="Conocer SistemaW"
+              href="/pentest"
               visual={<SecurityVisual />}
               proof={cap("security").proof}
             />

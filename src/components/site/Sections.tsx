@@ -34,7 +34,7 @@ export function Capability({ id, n, title, text, cta, href = CONTACT_HREF, visua
         <Kicker>{n}</Kicker>
         <h2 className="mt-5 font-display text-3xl font-semibold leading-tight tracking-[-0.025em] md:text-4xl">{title}</h2>
         <p className="mt-4 max-w-md leading-relaxed text-fsv-muted">{text}</p>
-        {(projects.length > 0 || proof.includes("FSV Search")) && (
+        {(projects.length > 0 || proof.includes("FSV Search") || proof.includes("SistemaW")) && (
           <div className="mt-8">
             <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-fsv-muted">Proyectos reales</div>
             <ul className="mt-3 divide-y divide-fsv-line border-y border-fsv-line">
@@ -43,6 +43,15 @@ export function Capability({ id, n, title, text, cta, href = CONTACT_HREF, visua
                   <a href="/search" className="flex items-center gap-3 py-3 transition hover:text-fsv-violet">
                     <img src="/brand/fsv-search.png" alt="" className="h-4 w-auto" />
                     <span className="ml-auto text-sm text-fsv-muted">Ver producto →</span>
+                  </a>
+                </li>
+              )}
+              {proof.includes("SistemaW") && (
+                <li>
+                  <a href="/pentest" className="flex items-center gap-3 py-3 transition hover:text-fsv-violet">
+                    <span className="font-display font-semibold tracking-tight">SistemaW</span>
+                    <span className="truncate text-sm text-fsv-muted">Evaluaciones de seguridad</span>
+                    <span className="ml-auto shrink-0 text-sm text-fsv-muted">Ver producto →</span>
                   </a>
                 </li>
               )}
