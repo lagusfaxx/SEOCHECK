@@ -19,13 +19,13 @@ const STEPS: [string, string][] = [
 const PARTNER: string[] = [
   "Firmamos un acuerdo con nuestro porcentaje, los hitos y qué pasa en cada escenario. Tú sigues siendo el fundador y el socio mayoritario.",
   "Antes de programar, salimos a validar con clientes reales.",
-  "Si hay interés, construimos todo lo que falta: el producto (o lo fabricamos o importamos), la SpA, los contratos, la contabilidad, la seguridad y los canales de venta.",
+  "Si hay interés, construimos todo lo que falta: el producto (lo desarrollamos o lo fabricamos), la SpA, los contratos, la contabilidad, la seguridad y los canales de venta.",
   "Tú lideras el negocio y le dedicas el tiempo. Nos juntamos una vez al mes a revisar números.",
 ];
 
 const GIVES: [string[], string[]] = [
   ["La idea y el conocimiento del problema", "Tu tiempo y tu compromiso", "El liderazgo del negocio"],
-  ["Desarrollo, diseño, fabricación e importación", "Abogados y contadores", "Infraestructura y ciberseguridad", "Experiencia vendiendo y red de contactos"],
+  ["Desarrollo, diseño y fabricación", "Abogados y contadores", "Infraestructura y ciberseguridad", "Experiencia vendiendo y red de contactos"],
 ];
 
 const FAQ: [string, string][] = [

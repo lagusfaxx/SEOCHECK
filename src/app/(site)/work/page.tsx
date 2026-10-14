@@ -5,7 +5,7 @@ import { BusinessCard, Kicker } from "@/components/site/Sections";
 import { CLIENT_WORK, OWN_BUSINESSES, STATS } from "@/lib/site-content";
 
 export const metadata: Metadata = {
-  title: "Proyectos — Negocios que construimos y operamos",
+  title: "Proyectos — Lo que construimos",
   description: "Nomadbrew, Starseeker, TAUPOC, Uzeed, La Frida, ANDES Technologies, Centinela, Rent A Hacker y Barzuo.",
 };
 
@@ -17,7 +17,7 @@ export default function WorkPage() {
         <section className="border-b border-fsv-line bg-fsv-bg">
           <div className="mx-auto max-w-6xl px-4 pb-14 pt-14 md:px-6 md:pb-20 md:pt-20">
             <Kicker>Selected work</Kicker>
-            <h1 className="mt-6 max-w-4xl font-display text-[2.4rem] font-semibold leading-[1.04] tracking-[-0.035em] md:text-6xl">Negocios que construimos y operamos.</h1>
+            <h1 className="mt-6 max-w-4xl font-display text-[2.4rem] font-semibold leading-[1.04] tracking-[-0.035em] md:text-6xl">Lo que construimos.</h1>
             <dl className="mt-10 grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-fsv-line bg-fsv-line md:mt-12 lg:grid-cols-4">
               {STATS.map((st) => (
                 <div key={st.short} className="bg-white p-5 md:p-6">
@@ -34,7 +34,7 @@ export default function WorkPage() {
         </section>
         <section className="bg-white">
           <div className="mx-auto max-w-6xl px-4 py-16 md:px-6 md:py-24">
-            <h2 className="font-display text-2xl font-semibold tracking-tight md:text-3xl">Construidos y operados por nuestro equipo</h2>
+            <h2 className="font-display text-2xl font-semibold tracking-tight md:text-3xl">Productos que construimos</h2>
             <ul className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {OWN_BUSINESSES.map((b) => (
                 <li key={b.name}>

@@ -2,7 +2,7 @@ import Link from "next/link";
 
 /** Correo de contacto del sitio. Confirmar que la casilla existe antes de publicar. */
 export const CONTACT_EMAIL = "contacto@fsvc.cl";
-export const CONTACT_HREF = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Hablemos — Fullstack Ventures")}`;
+export const CONTACT_HREF = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Hablemos — FSV")}`;
 
 
 /** CTA final sobre grafito + footer. Se usa en la home y en las páginas de producto. */
@@ -26,15 +26,15 @@ export function CtaAndFooter({ title = "¿Tienes algo que construir, proteger o 
       <footer className="border-t border-fsv-line bg-white">
         <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 md:grid-cols-[1.4fr_repeat(3,1fr)] md:px-6">
           <div>
-            <img src="/brand/fsv-mark.png" alt="Fullstack Ventures" className="h-7 w-auto" />
+            <img src="/brand/fsv-mark.png" alt="FSV" className="h-7 w-auto" />
             <p className="mt-6 text-sm text-fsv-muted">
-              © {new Date().getFullYear()} Full Stack Ventures SpA
+              © {new Date().getFullYear()} FSV
               <br />
               Santiago, Chile
             </p>
           </div>
           <FooterCol title="Capacidades" links={[["Software", "/capacidades#software"], ["Security", "/capacidades#security"], ["Growth", "/capacidades#growth"]]} />
-          <FooterCol title="Productos" links={[["FSV Search", "/search"], ["Precios", "/search#precios"], ["Probar gratis", "/signup"], ["Entrar", "/login"]]} />
+          <FooterCol title="FSV Search" links={[["Herramienta SEO", "/search"], ["Auditoría SEO gratis", "/search/auditoria-gratis"], ["Auditoría técnica", "/search/auditoria-seo"], ["Investigación de keywords", "/search/investigacion-de-keywords"], ["Seguimiento de rankings", "/search/seguimiento-de-rankings"], ["Guías de SEO", "/search/guias"], ["Precios", "/search#precios"], ["Probar gratis", "/signup"], ["Entrar", "/login"]]} />
           <FooterCol title="Empresa" links={[["Nosotros", "/empresa"], ["Proyectos", "/work"], ["Ventures", "/ventures"], ["Cuéntanos tu idea", "/ventures#postular"], ["Contacto", "/#contacto"], ["Privacidad", "/privacidad"], ["Términos", "/terminos"]]} />
         </div>
       </footer>

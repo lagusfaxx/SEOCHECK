@@ -29,11 +29,11 @@ function Hero() {
         <h1 className="max-w-5xl font-display text-[2.7rem] font-semibold leading-[0.98] tracking-[-0.04em] md:text-[5.6rem]">
           Construimos tecnología.
           <br />
-          <span className="text-fsv-muted">La operamos. Y la hacemos crecer.</span>
+          <span className="text-fsv-muted">La protegemos. Y la hacemos crecer.</span>
         </h1>
         <div className="mt-10 grid gap-10 md:mt-14 md:grid-cols-12">
           <div className="md:col-span-6">
-            <p className="text-lg leading-relaxed text-fsv-ink/80 md:text-xl">Desarrollamos software, auditamos sistemas y construimos productos digitales propios desde Chile.</p>
+            <p className="text-lg leading-relaxed text-fsv-ink/80 md:text-xl">Desarrollamos software, auditamos sistemas y construimos productos digitales desde Chile.</p>
             <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
               <Link href="/work" className="inline-flex items-center gap-2 rounded-sm bg-fsv-ink px-5 py-3 font-medium text-white transition hover:bg-black">
                 Ver nuestro trabajo <span aria-hidden>→</span>
@@ -111,7 +111,7 @@ function Capabilities() {
             <Link href="/ventures" className="group grid gap-3 py-7 md:grid-cols-12 md:items-baseline md:gap-6 md:py-9">
               <div className="font-mono text-xs uppercase tracking-[0.2em] text-fsv-muted md:col-span-2">04 / Ventures</div>
               <div className="md:col-span-6">
-                <div className="font-display text-2xl font-semibold leading-tight tracking-[-0.02em] transition group-hover:text-fsv-violet md:text-3xl">Productos y negocios propios.</div>
+                <div className="font-display text-2xl font-semibold leading-tight tracking-[-0.02em] transition group-hover:text-fsv-violet md:text-3xl">Productos que construimos.</div>
               </div>
               <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-fsv-muted transition group-hover:text-fsv-violet md:col-span-4 md:text-right">
                 Nomadbrew · Starseeker · TAUPOC <span aria-hidden>→</span>
@@ -129,7 +129,7 @@ function Search() {
     <section id="productos" className="scroll-mt-16 border-t border-fsv-line bg-fsv-bg">
       <div className="mx-auto grid max-w-6xl gap-10 px-4 py-16 md:px-6 md:py-24 lg:grid-cols-12 lg:items-center">
         <div className="lg:col-span-5">
-          <Kicker>Producto propio</Kicker>
+          <Kicker>Producto FSV</Kicker>
           <img src="/brand/fsv-search.png" alt="FSV Search" className="mt-6 h-8 w-auto md:h-10" />
           <h2 className="mt-6 font-display text-[1.9rem] font-semibold leading-tight tracking-[-0.03em] md:text-[2.6rem]">Search intelligence para convertir datos SEO en decisiones.</h2>
           <p className="mt-4 text-fsv-muted">Auditoría técnica, Search Console, keywords, rankings, contenido e Instagram en una sola plataforma. Desde $9.990 al mes, con 7 días gratis.</p>
@@ -139,6 +139,9 @@ function Search() {
             </Link>
             <Link href="/search" className="font-medium underline decoration-fsv-violet decoration-2 underline-offset-[6px] transition hover:text-fsv-violet">
               Conocer FSV Search
+            </Link>
+            <Link href="/search/auditoria-gratis" className="text-sm text-fsv-muted transition hover:text-fsv-ink">
+              Auditoría SEO gratis →
             </Link>
           </div>
         </div>

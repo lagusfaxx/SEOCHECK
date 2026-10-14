@@ -244,3 +244,10 @@ test("meta robots nofollow se detecta", () => {
   assert.equal(r.nofollow, true);
   assert.equal(parseHtml("<html><head><meta name='robots' content='noindex, follow'></head><body></body></html>", "https://x.cl/").nofollow, false);
 });
+
+test("auditoría gratis: normaliza la dirección y rechaza lo que no es un sitio", async () => {
+  const { normalizeAuditUrl, FreeAuditError } = await import("./free-audit");
+  assert.equal(normalizeAuditUrl("tusitio.cl"), "https://tusitio.cl/");
+  assert.equal(normalizeAuditUrl(" http://tusitio.cl/a#x "), "http://tusitio.cl/a");
+  for (const bad of ["", "localhost", "ftp://x.cl", "https://user:pw@x.cl", 42]) assert.throws(() => normalizeAuditUrl(bad), FreeAuditError, String(bad));
+});

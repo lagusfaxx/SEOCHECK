@@ -5,7 +5,7 @@ import { Kicker, SecurityBlock } from "@/components/site/Sections";
 
 export const metadata: Metadata = {
   title: "Empresa — Cómo trabajamos",
-  description: "Full Stack Ventures SpA, Santiago de Chile. Desarrollamos software, auditamos sistemas y construimos productos digitales propios.",
+  description: "FSV, Santiago de Chile. Desarrollamos software, auditamos sistemas y construimos productos digitales.",
 };
 
 const STEPS: [string, string][] = [
@@ -23,8 +23,8 @@ export default function EmpresaPage() {
         <section className="bg-white">
           <div className="mx-auto max-w-6xl px-4 pb-14 pt-14 md:px-6 md:pb-20 md:pt-24">
             <Kicker>Empresa</Kicker>
-            <h1 className="mt-6 max-w-4xl font-display text-[2.4rem] font-semibold leading-[1.02] tracking-[-0.04em] md:text-[4.2rem]">Full Stack Ventures SpA.</h1>
-            <p className="mt-6 max-w-xl text-lg leading-relaxed text-fsv-ink/80">Desarrollamos software, auditamos sistemas y construimos productos digitales propios desde Santiago de Chile.</p>
+            <h1 className="mt-6 max-w-4xl font-display text-[2.4rem] font-semibold leading-[1.02] tracking-[-0.04em] md:text-[4.2rem]">FSV.</h1>
+            <p className="mt-6 max-w-xl text-lg leading-relaxed text-fsv-ink/80">Desarrollamos software, auditamos sistemas y construimos productos digitales desde Santiago de Chile.</p>
           </div>
         </section>
         <section id="como-trabajamos" className="scroll-mt-16 border-t border-fsv-line bg-white">

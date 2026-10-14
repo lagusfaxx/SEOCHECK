@@ -24,7 +24,7 @@ const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 
 /** Correo simple con la marca: un título, párrafos y un botón. Devuelve texto y HTML. */
 export function mailTemplate(title: string, paragraphs: string[], cta?: { label: string; url: string }, footer = "Si no fuiste tú, puedes ignorar este correo.") {
-  const text = [title, "", ...paragraphs, ...(cta ? ["", `${cta.label}: ${cta.url}`] : []), "", footer, "", "FSV Search · Full Stack Ventures SpA"].join("\n");
+  const text = [title, "", ...paragraphs, ...(cta ? ["", `${cta.label}: ${cta.url}`] : []), "", footer, "", "FSV Search · FSV"].join("\n");
   const html = `<!doctype html><html><body style="margin:0;background:#f4f4f7;font-family:Inter,Arial,sans-serif;color:#14141f">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 12px"><tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:12px;padding:32px">
@@ -35,7 +35,7 @@ ${cta ? `<tr><td style="padding-top:24px"><a href="${esc(cta.url)}" style="displ
 <tr><td style="padding-top:16px;font-size:12px;color:#8a8a99;word-break:break-all">Si el botón no funciona, copia este link: ${esc(cta.url)}</td></tr>` : ""}
 <tr><td style="padding-top:24px;font-size:12px;color:#8a8a99">${esc(footer)}</td></tr>
 </table>
-<p style="font-size:12px;color:#8a8a99">FSV Search · Full Stack Ventures SpA · Santiago, Chile</p>
+<p style="font-size:12px;color:#8a8a99">FSV Search · FSV · Santiago, Chile</p>
 </td></tr></table></body></html>`;
   return { text, html };
 }
