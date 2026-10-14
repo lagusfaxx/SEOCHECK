@@ -1,14 +1,16 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSWRConfig } from "swr";
 import { api, cx, Empty, fmt, fmtDate, Icon, Spinner, Stat, Tabs, Toaster, toast, useApi } from "../ui";
 import { Spend } from "./Spend";
 
-type Tab = "overview" | "users" | "workspaces" | "spend" | "config";
+type Tab = "overview" | "users" | "workspaces" | "instagram" | "spend" | "config";
+const TABS: Tab[] = ["overview", "users", "workspaces", "instagram", "spend", "config"];
 
 type Overview = {
   users: number; verified: number; new7: number; new30: number; active7: number; disabled: number; workspaces: number; projects: number;
-  jobs24: number; jobsErr24: number; spendMonth: number; postsPublished: number; workerAlive: boolean; signups: { d: string; n: number }[];
+  jobs24: number; jobsErr24: number; spendMonth: number; postsPublished: number; pendingIg: number; workerAlive: boolean; signups: { d: string; n: number }[];
 };
 type UserRow = {
   id: string; email: string; name: string | null; createdAt: string; lastLoginAt: string | null; verified: boolean; google: boolean; disabledAt: string | null;
@@ -44,6 +46,7 @@ function OverviewTab() {
         <Stat label="Trabajos 24 h" value={fmt(data.jobs24)} sub={`${fmt(data.jobsErr24)} con error`} tone={data.jobsErr24 > data.jobs24 / 4 && data.jobs24 > 3 ? "bad" : undefined} />
         <Stat label="Gasto en APIs (mes)" value={`$${data.spendMonth.toFixed(2)}`} sub="USD, todos los proveedores" />
         <Stat label="Posts en Instagram" value={fmt(data.postsPublished)} sub="publicados desde la app" />
+        <Stat label="Solicitudes de Instagram" value={fmt(data.pendingIg)} sub="cuentas esperando habilitación" tone={data.pendingIg ? "bad" : undefined} />
       </div>
       <div className="card p-4">
         <div className="lbl mb-3">Registros por día (30 días)</div>
@@ -176,6 +179,82 @@ function WorkspacesTab() {
   );
 }
 
+type IgReq = { id: string; username: string; status: "pending" | "invited" | "connected" | "rejected"; createdAt: string; updatedAt: string; email: string | null; project: { id: string; domain: string } };
+const IG_STATUS: Record<IgReq["status"], [string, string]> = {
+  pending: ["Pendiente", "!bg-amber-100 !text-amber-800"],
+  invited: ["Invitado", "!bg-sky-100 !text-sky-800"],
+  connected: ["Conectado", "!bg-emerald-100 !text-emerald-800"],
+  rejected: ["Rechazado", "!bg-rose-100 !text-rose-800"],
+};
+
+function InstagramTab() {
+  const { data, mutate } = useApi<IgReq[]>("/api/admin/ig-requests");
+  const { mutate: refreshAll } = useSWRConfig();
+  const set = async (r: IgReq, status: IgReq["status"], ok: string) => {
+    try {
+      await api("/api/admin/ig-requests/status", "POST", { id: r.id, status });
+      toast(ok, "ok");
+      mutate();
+      refreshAll("/api/admin/overview");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e));
+    }
+  };
+  return (
+    <div className="space-y-4">
+      <div className="card p-4 text-sm text-ink-600 dark:text-ink-300">
+        <div className="font-semibold text-ink-900 dark:text-ink-100">Cómo habilitar una cuenta</div>
+        <ol className="mt-2 list-decimal space-y-1 pl-5">
+          <li>Copia el usuario y agrégalo en Meta for Developers → tu app → <b>App roles → Roles → Add People → Instagram Tester</b>.</li>
+          <li>Pulsa <b>Marcar invitado</b>: al cliente le llega un correo con los pasos para aceptar la invitación en Instagram.</li>
+          <li>Cuando el cliente conecta la cuenta, la solicitud pasa sola a <b>Conectado</b>.</li>
+        </ol>
+      </div>
+      {!data ? (
+        <div className="flex items-center gap-2 text-ink-500"><Spinner />Cargando…</div>
+      ) : !data.length ? (
+        <Empty icon="social" title="Sin solicitudes">Cuando un cliente deje su @ en Social aparecerá aquí y te llegará un correo.</Empty>
+      ) : (
+        <div className="card overflow-x-auto">
+          <table className="tbl min-w-[720px]">
+            <thead>
+              <tr><th>Instagram</th><th>Cliente</th><th>Proyecto</th><th>Fecha</th><th>Estado</th><th /></tr>
+            </thead>
+            <tbody>
+              {data.map((r) => (
+                <tr key={r.id}>
+                  <td>
+                    <div className="flex items-center gap-1.5">
+                      <a href={`https://www.instagram.com/${r.username}/`} target="_blank" rel="noreferrer" className="font-medium text-acc hover:underline">@{r.username}</a>
+                      <button className="btn-g px-1 py-0 text-xs" title="Copiar usuario" onClick={() => { navigator.clipboard?.writeText(r.username); toast("Usuario copiado", "ok"); }}>
+                        <Icon name="copy" className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                  <td className="text-xs">{r.email ?? "—"}</td>
+                  <td className="text-xs">{r.project.domain}</td>
+                  <td className="text-xs">{fmtDate(r.createdAt, "datetime")}</td>
+                  <td><span className={cx("chip", IG_STATUS[r.status][1])}>{IG_STATUS[r.status][0]}</span></td>
+                  <td className="whitespace-nowrap text-right">
+                    {r.status === "pending" && (
+                      <>
+                        <button className="btn-p px-2 py-1 text-xs" onClick={() => set(r, "invited", "Marcado como invitado: se envió el correo al cliente")}>Marcar invitado</button>
+                        <button className="btn-g ml-1 px-2 py-1 text-xs text-rose-600" onClick={() => confirm(`¿Rechazar @${r.username}? Se le avisará por correo.`) && set(r, "rejected", "Solicitud rechazada")}>Rechazar</button>
+                      </>
+                    )}
+                    {r.status === "invited" && <button className="btn-g px-2 py-1 text-xs" onClick={() => set(r, "invited", "Correo reenviado")}>Reenviar correo</button>}
+                    {r.status === "rejected" && <button className="btn-g px-2 py-1 text-xs" onClick={() => set(r, "pending", "Solicitud reabierta")}>Reabrir</button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ConfigTab() {
   const { data } = useApi<CheckRow[]>("/api/admin/checks");
   if (!data) return <div className="flex items-center gap-2 text-ink-500"><Spinner />Cargando…</div>;
@@ -196,7 +275,16 @@ function ConfigTab() {
 }
 
 export function AdminPanel({ me }: { me: string }) {
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTabState] = useState<Tab>("overview");
+  const { data: ov } = useApi<Overview>("/api/admin/overview", { refreshInterval: 60000 });
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab") as Tab | null;
+    if (t && TABS.includes(t)) setTabState(t);
+  }, []);
+  const setTab = (t: Tab) => {
+    setTabState(t);
+    window.history.replaceState(null, "", t === "overview" ? "/admin" : `/admin?tab=${t}`);
+  };
   return (
     <div className="min-h-screen bg-ink-50 dark:bg-ink-950">
       <header className="border-b border-ink-200 bg-white px-4 py-3 dark:border-ink-800 dark:bg-ink-900 md:px-6">
@@ -212,6 +300,7 @@ export function AdminPanel({ me }: { me: string }) {
             { id: "overview", label: "Resumen", icon: "chart" },
             { id: "users", label: "Usuarios", icon: "users" },
             { id: "workspaces", label: "Workspaces", icon: "layers" },
+            { id: "instagram", label: ov?.pendingIg ? `Instagram (${ov.pendingIg})` : "Instagram", icon: "social" },
             { id: "spend", label: "Gasto y APIs", icon: "coin" },
             { id: "config", label: "Configuración", icon: "gear" },
           ]} />
@@ -219,6 +308,7 @@ export function AdminPanel({ me }: { me: string }) {
         {tab === "overview" && <OverviewTab />}
         {tab === "users" && <UsersTab me={me} />}
         {tab === "workspaces" && <WorkspacesTab />}
+        {tab === "instagram" && <InstagramTab />}
         {tab === "spend" && <div className="card max-w-xl p-4"><Spend /></div>}
         {tab === "config" && <ConfigTab />}
       </main>

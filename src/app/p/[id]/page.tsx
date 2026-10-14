@@ -11,7 +11,6 @@ import { api, contentScoreLabel, cx, Delta, Empty, fmt, Icon, IconBadge, Score, 
 import { HEALTH_HELP, healthLabel } from "@/lib/presentation";
 import { Coverage } from "@/components/Coverage";
 import { GscConnect } from "@/components/GscConnect";
-import { Spend } from "@/components/admin/Spend";
 
 type W = { id: string; w: 1 | 2 | 3 };
 const DEFAULT: W[] = [
@@ -22,7 +21,6 @@ const DEFAULT: W[] = [
   { id: "alerts", w: 1 },
   { id: "actions", w: 1 },
   { id: "content", w: 1 },
-  { id: "spend", w: 1 },
 ];
 
 function Block({ w, onResize, children, title }: { w: W; onResize: () => void; children: ReactNode; title: string }) {
@@ -47,11 +45,11 @@ function Block({ w, onResize, children, title }: { w: W; onResize: () => void; c
 }
 
 /** Bloques que se ajustan a su contenido en vez de estirarse al alto de la fila. */
-const COMPACT = new Set(["alerts", "actions", "content", "movers", "spend"]);
+const COMPACT = new Set(["alerts", "actions", "content", "movers"]);
 
 const WIDGET_ICON: Record<string, { icon: string; tone: "acc" | "good" | "bad" | "warn" | "info" | "mute" }> = {
   kpis: { icon: "chart", tone: "acc" }, gsc: { icon: "gsc", tone: "info" }, health: { icon: "audit", tone: "good" }, movers: { icon: "trend", tone: "acc" },
-  alerts: { icon: "bell", tone: "warn" }, actions: { icon: "bolt", tone: "acc" }, spend: { icon: "coin", tone: "mute" }, content: { icon: "content", tone: "info" },
+  alerts: { icon: "bell", tone: "warn" }, actions: { icon: "bolt", tone: "acc" }, content: { icon: "content", tone: "info" },
 };
 
 /** Mientras falten pasos del wizard: recordatorio con el avance. */
@@ -76,11 +74,11 @@ function SetupBanner({ id }: { id: string }) {
 const ALERT_LABEL: Record<string, string> = { drop: "Caída", cannibal: "Canibalización", lowctr: "CTR bajo" };
 
 export default function Overview() {
-  const { id, refreshJobs, project } = useProject();
+  const { id, refreshJobs } = useProject();
   const { data } = useApi<any>(`/api/p/${id}/overview`);
   const [layout, setLayout] = useLocal<W[]>(`dash:${id}`, DEFAULT);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
-  const items = [...layout, ...DEFAULT.filter((d) => !layout.some((l) => l.id === d.id))].filter((w) => w.id !== "spend" || project?.admin);
+  const items = [...layout, ...DEFAULT.filter((d) => !layout.some((l) => l.id === d.id))].filter((w) => w.id !== "spend");
 
   const onDragEnd = (e: DragEndEvent) => {
     if (!e.over || e.active.id === e.over.id) return;
@@ -197,8 +195,6 @@ export default function Overview() {
             <button className="btn text-xs" title="Recalcula caídas, canibalización y CTR bajo" onClick={() => run("alerts")}><Icon name="bell" />Recalcular alertas</button>
           </div>,
         ];
-      case "spend":
-        return ["Gasto del mes", <Spend key="sp" />];
       case "content":
         return [
           "Contenido",

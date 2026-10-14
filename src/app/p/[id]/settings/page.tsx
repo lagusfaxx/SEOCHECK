@@ -4,14 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSWRConfig } from "swr";
 import { useProject } from "@/components/Shell";
-import { api, cx, Icon } from "@/components/ui";
+import { api, Icon } from "@/components/ui";
 import { AccountCard, TeamCard } from "@/components/Account";
 import { GscConnect } from "@/components/GscConnect";
-
-const PROVIDERS: [string, string][] = [
-  ["serp", "Serpent"], ["volume", "Volumen"], ["embeddings", "Embeddings"], ["llm", "LLM"],
-  ["gsc", "Search Console"], ["psi", "PageSpeed"], ["render", "Render JS"], ["indexnow", "IndexNow"],
-];
 
 export default function Settings() {
   const { id, project } = useProject();
@@ -116,19 +111,6 @@ export default function Settings() {
           <Icon name="trash" />Eliminar proyecto
         </button>
       </div>
-      {project.admin && <div id="providers" className="card grid grid-cols-2 gap-2 p-4 md:grid-cols-4">
-        {PROVIDERS.map(([k, label]) => {
-          const v = project.providers?.[k];
-          const on = Boolean(v) && v !== "hash";
-          return (
-            <div key={k} className="flex items-center gap-2 text-sm">
-              <span className={cx("h-2 w-2 rounded-full", on ? "bg-emerald-500" : v === "hash" ? "bg-amber-400" : "bg-ink-300")} />
-              {label} <span className="text-xs text-ink-500">{on ? "Activo" : "Sin configurar"}</span>
-              {typeof v === "string" && <span className="text-xs text-ink-400">{v}</span>}
-            </div>
-          );
-        })}
-      </div>}
       <GscConnect />
       <TeamCard />
       <AccountCard />

@@ -69,10 +69,15 @@ export function GscConnect({ compact, returnTo, hideWhenConnected }: { compact?:
             </p>
           )}
           {c.mode === "oauth" && <p className="mt-0.5 text-sm text-ink-500">Con la cuenta de Google <b>{c.email ?? "—"}</b>{c.property && <> · propiedad <b>{c.property}</b></>}</p>}
-          {c.mode === "sa" && <p className="mt-0.5 text-sm text-ink-500">Con la cuenta de servicio de la instalación{c.property && <> · propiedad <b>{c.property}</b></>}. Puedes conectar la cuenta de Google del cliente para no depender de ella.</p>}
+          {c.mode === "sa" && <p className="mt-0.5 text-sm text-ink-500">Con la cuenta de servicio de la instalación{c.property && <> · propiedad <b>{c.property}</b></>}.</p>}
         </div>
         {c.mode === "oauth" ? (
-          <button className="btn shrink-0" onClick={async () => { if (!confirm("¿Desconectar Search Console? Los datos ya sincronizados se mantienen.")) return; await api(`/api/p/${id}/gsc/connect`, "DELETE"); mutate(); }}>Desconectar</button>
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            <button className="btn" disabled={busy || !c.oauthConfigured} onClick={connect} title="Conectar otra cuenta de Google">{busy ? <Spinner className="h-4 w-4" /> : <Icon name="refresh" />}Cambiar cuenta</button>
+            <button className="btn-g text-rose-600" onClick={async () => { if (!confirm("¿Desconectar Search Console? Los datos ya sincronizados se mantienen.")) return; await api(`/api/p/${id}/gsc/connect`, "DELETE"); mutate(); }}>Desconectar</button>
+          </div>
+        ) : c.mode === "sa" ? (
+          <button className="btn shrink-0" disabled={busy || !c.oauthConfigured} onClick={connect} title="Usar una cuenta de Google en vez de la cuenta de servicio">{busy ? <Spinner className="h-4 w-4" /> : <Icon name="globe" />}Usar otra cuenta de Google</button>
         ) : (
           <button className="btn-p shrink-0" disabled={busy || !c.oauthConfigured} onClick={connect}>{busy ? <><Spinner className="h-4 w-4" />Conectando…</> : <><Icon name="globe" />Conectar con Google</>}</button>
         )}

@@ -4,6 +4,8 @@ import { workerAlive } from "@/lib/jobs";
 import { monthStart } from "@/lib/budget";
 import { isPlan, resolvePlan } from "@/lib/plans";
 import { productionChecks } from "@/lib/prodcheck";
+import { IG_REQUEST_STATUS, setIgRequestStatus, type IgRequestStatus } from "@/lib/ig-access";
+import { appBaseUrl } from "@/lib/util";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +31,10 @@ const GETS: Record<string, (c: Ctx) => Promise<unknown>> = {
       db.providerUsage.aggregate({ where: { createdAt: { gte: since } }, _sum: { costUsd: true } }),
       db.socialPost.count({ where: { status: "published" } }),
     ]);
+    const pendingIg = await db.igAccessRequest.count({ where: { status: "pending" } });
     const signups = await db.$queryRaw<{ d: Date; n: number }[]>`
       SELECT date_trunc('day', "createdAt") AS d, COUNT(*)::int AS n FROM "User" WHERE "createdAt" >= ${days(30)} GROUP BY 1 ORDER BY 1`;
-    return { users, verified, new7, new30, active7, disabled, workspaces, projects, jobs24, jobsErr24, spendMonth: spend._sum.costUsd ?? 0, postsPublished: posts, signups, workerAlive: await workerAlive() };
+    return { users, verified, new7, new30, active7, disabled, workspaces, projects, jobs24, jobsErr24, spendMonth: spend._sum.costUsd ?? 0, postsPublished: posts, pendingIg, signups, workerAlive: await workerAlive() };
   },
 
   async users({ url }) {
@@ -68,6 +71,16 @@ const GETS: Record<string, (c: Ctx) => Promise<unknown>> = {
     });
   },
 
+  async "ig-requests"() {
+    const rows = await db.igAccessRequest.findMany({ orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 300, include: { project: { select: { id: true, domain: true } } } });
+    const users = await db.user.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.userId))] } }, select: { id: true, email: true } });
+    const email = new Map(users.map((u) => [u.id, u.email]));
+    const order = { pending: 0, invited: 1, connected: 2, rejected: 3 } as Record<string, number>;
+    return rows
+      .map((r) => ({ id: r.id, username: r.username, status: r.status, createdAt: r.createdAt, updatedAt: r.updatedAt, project: r.project, email: email.get(r.userId) ?? null }))
+      .sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
+  },
+
   async checks() {
     const alive = await workerAlive();
     return [...productionChecks(), { key: "worker", label: "Worker (trabajos en segundo plano)", level: alive ? "ok" : "error", detail: alive ? "Activo" : "No responde: revisa el servicio worker" }];
@@ -83,6 +96,13 @@ const POSTS: Record<string, (c: Ctx) => Promise<unknown>> = {
     await db.user.update({ where: { id: userId }, data: { disabledAt: body.disabled ? new Date() : null } });
     if (body.disabled) await db.session.deleteMany({ where: { userId } });
     return { ok: true };
+  },
+  /** {id, status}: invitado (le llega un correo con los pasos), rechazado, etc. */
+  async "ig-requests/status"({ body, url }) {
+    const status = String(body.status ?? "") as IgRequestStatus;
+    if (!IG_REQUEST_STATUS.includes(status)) throw new AuthError(400, "Estado inválido");
+    const r = await setIgRequestStatus(String(body.id ?? ""), status, appBaseUrl(url.origin));
+    return { ok: true, status: r.status };
   },
   /** {userId}: marcar el correo como verificado a mano */
   async "users/verify"({ body }) {
