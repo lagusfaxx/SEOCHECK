@@ -19,12 +19,20 @@ const SECTIONS: { title: string; body: React.ReactNode }[] = [
     ),
   },
   {
-    title: "Beta gratuita",
+    title: "Planes, prueba y pagos",
     body: (
-      <p>
-        Durante la beta el servicio es gratuito y tiene límites de uso por cuenta (proyectos, páginas analizadas, keywords y otros). Podemos ajustar esos límites, agregar planes pagados o cambiar
-        funciones; si lo hacemos te avisaremos con anticipación y nunca te cobraremos sin que contrates un plan de forma expresa.
-      </p>
+      <>
+        <p>
+          Al crear tu cuenta tienes una prueba gratuita de 7 días, sin tarjeta, con límites de uso reducidos. Después, el plan FSV Search se contrata por perfil (un sitio o marca) con un precio
+          mensual publicado en fsvc.cl/search. Cada plan tiene límites de uso mensuales (por ejemplo investigaciones de keywords, briefs, informes, imágenes y textos con IA) que se renuevan cada mes
+          calendario y no son acumulables.
+        </p>
+        <p className="mt-3">
+          El pago se hace con Mercado Pago mediante una suscripción que cobra automáticamente cada mes el medio de pago que autorices. Puedes cancelarla en cualquier momento desde Ajustes → Plan: no
+          se te volverá a cobrar y el plan sigue vigente hasta el fin del periodo pagado. Los periodos ya pagados no se reembolsan, salvo cuando la ley lo exija. Nunca te cobraremos sin que
+          contrates un plan de forma expresa, y te avisaremos con anticipación de cualquier cambio de precio.
+        </p>
+      </>
     ),
   },
   {
@@ -69,7 +77,7 @@ const SECTIONS: { title: string; body: React.ReactNode }[] = [
     title: "Disponibilidad y responsabilidad",
     body: (
       <p>
-        Hacemos nuestro mejor esfuerzo para que el servicio funcione de forma continua y segura, pero durante la beta se entrega &quot;tal cual&quot;, sin garantías de disponibilidad ni de resultados
+        Hacemos nuestro mejor esfuerzo para que el servicio funcione de forma continua y segura, pero se entrega &quot;tal cual&quot;, sin garantías de disponibilidad ni de resultados
         en buscadores. En la medida que la ley lo permita, no respondemos por pérdidas indirectas, de ingresos o de posicionamiento derivadas del uso del servicio.
       </p>
     ),

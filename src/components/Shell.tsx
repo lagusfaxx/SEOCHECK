@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { AccountNotice } from "./auth/AccountNotice";
+import { PlanNotice } from "./PlanNotice";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSWRConfig } from "swr";
@@ -406,6 +407,7 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
           </header>
           <main className="flex min-h-0 flex-1 flex-col overflow-auto">
             <AccountNotice className="mx-4 mt-3 md:mx-6" />
+            <PlanNotice id={id} className="mx-4 mt-3 md:mx-6" />
             {current && showIntro && <Intro key={current.href} item={current} onClose={closeIntro} />}
             <div key={path} className="anim-in flex flex-1 flex-col">{children}</div>
           </main>

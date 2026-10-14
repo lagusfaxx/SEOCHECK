@@ -26,6 +26,7 @@ import {
   PlanLimitError,
   refundBriefs,
   assertResource,
+  PLANS,
 } from "./plans";
 import { storeBrief, regenerateSection } from "./content/brief-tools";
 import { validateBusinessClaims, validateBrief } from "./content/claims";
@@ -304,9 +305,11 @@ test(
   async () => {
     await db.workspace.update({ where: { id: wid }, data: { plan: "trial" } });
     await db.quotaUsage.deleteMany({ where: { workspaceId: wid } });
-    await db.quotaUsage.create({
-      data: { workspaceId: wid, resource: "reports", amount: 1 },
-    });
+    // deja exactamente un cupo libre
+    if (PLANS.trial.reports > 1)
+      await db.quotaUsage.create({
+        data: { workspaceId: wid, resource: "reports", amount: PLANS.trial.reports - 1 },
+      });
     const results = await Promise.allSettled([
       saveReport(pid),
       saveReport(pid),
@@ -324,7 +327,7 @@ test(
   async () => {
     await db.workspace.update({ where: { id: wid }, data: { plan: "trial" } });
     await db.quotaUsage.deleteMany({ where: { workspaceId: wid } });
-    await db.quotaUsage.create({ data: { workspaceId: wid, resource: "briefs", amount: 2 } });
+    await db.quotaUsage.create({ data: { workspaceId: wid, resource: "briefs", amount: PLANS.trial.briefs - 1 } });
     const a = await withProjectQuota(pid, "briefs", 1, (tx) =>
       tx.contentAnalysis.create({ data: { projectId: pid, url: "https://x.cl/a", keyword: "falla" } }),
     );
@@ -333,7 +336,7 @@ test(
     await refundBriefs([a.id]); // idempotente: un reintento no devuelve dos veces
     await assertResource(pid, "briefs", 1);
     const used = await db.quotaUsage.aggregate({ where: { workspaceId: wid, resource: "briefs" }, _sum: { amount: true } });
-    assert.equal(used._sum.amount, 2);
+    assert.equal(used._sum.amount, PLANS.trial.briefs - 1);
     await db.contentAnalysis.delete({ where: { id: a.id } });
     await db.workspace.update({ where: { id: wid }, data: { plan: "agency" } });
   },

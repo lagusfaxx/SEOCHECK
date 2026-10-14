@@ -22,8 +22,14 @@ model Workspace {
   stripeCustomerId String? @unique
   stripeSubscriptionId String? @unique
   planValidUntil DateTime?
-  trialEndsAt DateTime @default(dbgenerated("(now() + '14 days'::interval)"))
+  trialEndsAt DateTime @default(dbgenerated("(now() + '7 days'::interval)"))
   reportCredits Int @default(0)
+  /// perfiles (proyectos) contratados en el plan pagado
+  seats Int @default(1)
+  /// suscripción de Mercado Pago vigente (preapproval)
+  mpPreapprovalId String? @unique
+  /// estado de esa suscripción en Mercado Pago: pending | authorized | paused | cancelled
+  mpStatus String?
   quotaUsage QuotaUsage[]
 }
 
@@ -666,6 +672,8 @@ model BillingOrder {
   providerId  String?   @unique
   amount      Int
   currency    String    @default("CLP")
+  /// perfiles que cubre el pedido (plan pagado)
+  seats       Int       @default(1)
   status      String    @default("pending")
   createdAt   DateTime  @default(now())
   paidAt      DateTime?

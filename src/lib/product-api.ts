@@ -1,11 +1,12 @@
 import { runInlineJob } from "./inline-job";
 import { buildReport } from "./report";
-import { billingConfig, createCheckout, billingPortal } from "./billing";
+import { billingConfig } from "./billing";
+import { cancelSubscription, changeSeats, createSubscription, syncWorkspace } from "./mercadopago";
 import { fetchPage } from "./audit/crawler";
 import { contentText } from "./content/clean";
 import { hostOf, normUrl, normTerm } from "./util";
 import { enqueue, QUEUES } from "./queue";
-import { withProjectQuota, assertResource } from "./plans";
+import { withProjectQuota, assertResource, withQuota } from "./plans";
 import { assertProviderUp } from "./providers/health";
 import { gscAvailable } from "./providers/google";
 import { TYPE_LABEL } from "./graph-types";
@@ -21,7 +22,7 @@ import {
   nextReportAt,
   saveReport,
 } from "./reporting";
-import { PLANS, projectPlan, PlanLimitError } from "./plans";
+import { PLANS, projectPlan, PlanLimitError, planPriceClp, workspaceUsage } from "./plans";
 import { clusterInsights, rankOpportunities } from "./keyword-insights";
 import {
   BRIEF_SECTIONS,
@@ -182,9 +183,14 @@ export const PRODUCT_GETS: Record<string, Handler> = {
       plan: p.key,
       limits: p.limits,
       expired: p.expired,
+      usage: await workspaceUsage(p.workspace.id, p.key),
+      seats: p.workspace.seats,
+      subscription: p.workspace.mpPreapprovalId ? { status: p.workspace.mpStatus } : null,
+      planValidUntil: p.workspace.planValidUntil,
+      priceClp: planPriceClp(),
       reportCredits: p.workspace.reportCredits,
       trialEndsAt: p.workspace.trialEndsAt,
-      plans: PLANS,
+      plans: { trial: PLANS.trial, pro: PLANS.pro },
       branding: p.limits.whiteLabel ? p.workspace.branding : {},
     };
   },
@@ -246,9 +252,10 @@ export const PRODUCT_GETS: Record<string, Handler> = {
   },
 };
 export const PRODUCT_POSTS: Record<string, Handler> = {
-  "billing/checkout": async ({ id, user, body }) =>
-    createCheckout(id, user, body.product),
-  "billing/portal": async ({ id, user }) => billingPortal(id, user.id),
+  "billing/checkout": async ({ id, user, body }) => createSubscription(id, user, body.seats, body.payerEmail),
+  "billing/sync": async ({ id, user, body }) => syncWorkspace(id, user.id, body.preapprovalId),
+  "billing/seats": async ({ id, user, body }) => changeSeats(id, user.id, body.seats),
+  "billing/cancel": async ({ id, user }) => cancelSubscription(id, user.id),
   "content/cluster": async ({ id, body }) => {
     const c = await db.cluster.findFirstOrThrow({
       where: { id: body.clusterId, projectId: id },
@@ -387,7 +394,7 @@ export const PRODUCT_POSTS: Record<string, Handler> = {
     if(a.status!=="done")throw new ProductError(409,"Espera a que termine el análisis");
     if (!BRIEF_SECTIONS.includes(body.section))
       throw invalid("Sección inválida");
-    const brief = await runInlineJob(id, "content.section", async () => {
+    const brief = await withQuota(id, "ai", () => runInlineJob(id, "content.section", async () => {
       await assertBudget({ llm: est.llmBrief() }, "Regenerar sección");
       return regenerateSection(
         a.result as unknown as ContentResult,
@@ -396,7 +403,7 @@ export const PRODUCT_POSTS: Record<string, Handler> = {
         a.project.language,
         a.project.country,
       );
-    });
+    }));
     return storeBrief(a.id, brief, `section:${body.section}`, user.id);
   },
   "content/restore": async ({ id, body, user }) => {
@@ -425,11 +432,11 @@ export const PRODUCT_POSTS: Record<string, Handler> = {
   },
   "social/generate-caption": async ({ id, body }) => {
     const { generateCaption } = await import("./social");
-    const caption = await generateCaption(id, {
+    const caption = await withQuota(id, "ai", () => generateCaption(id, {
       context: typeof body.context === "string" ? body.context.slice(0, 500) : "",
       keywords: Array.isArray(body.keywords) ? (body.keywords as string[]).slice(0, 10) : [],
       tone: ["profesional", "cercano", "inspirador"].includes(body.tone) ? body.tone : "cercano",
-    });
+    }));
     return { caption };
   },
   "social/generate-image": async ({ id, body }) => {
@@ -437,7 +444,7 @@ export const PRODUCT_POSTS: Record<string, Handler> = {
     const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 2000) : "";
     if (!prompt) throw invalid("Escribe un prompt para la imagen");
     const reference = body.reference ? decodeDataUrl(body.reference) : undefined;
-    return generateImage(id, prompt, reference);
+    return withQuota(id, "images", () => generateImage(id, prompt, reference));
   },
   "social/upload-image": async ({ id, body }) => {
     const { saveImage, decodeDataUrl } = await import("./social");

@@ -109,6 +109,10 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
       for (const c of conns) await syncInsights(c.projectId).catch((e) => console.error("[social] stats", c.projectId, e));
       return { projects: conns.length };
     }
+    case QUEUES.billingSync: {
+      const { syncAllSubscriptions } = await import("../lib/mercadopago");
+      return syncAllSubscriptions();
+    }
     case QUEUES.content:
       // si falla (también por presupuesto) el análisis queda "falló" con el motivo, nunca colgado en "en cola";
       // se devuelve el cupo de brief y no se reintenta solo (el usuario lo relanza y ve el error)
@@ -175,6 +179,7 @@ async function main() {
   await boss.schedule(QUEUES.reportsDue,"0 * * * *",{}, {tz:env.tz});
   await boss.schedule(QUEUES.socialDue, "* * * * *", {}, { tz: env.tz });
   await boss.schedule(QUEUES.socialInsights, "40 7 * * *", {}, { tz: env.tz });
+  await boss.schedule(QUEUES.billingSync, "20 6 * * *", {}, { tz: env.tz });
   console.log("worker listo");
 }
 

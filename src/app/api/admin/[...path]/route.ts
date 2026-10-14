@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { AuthError, isInstanceAdmin, requireUser } from "@/lib/auth";
 import { workerAlive } from "@/lib/jobs";
 import { monthStart } from "@/lib/budget";
-import { isPlan, resolvePlan } from "@/lib/plans";
+import { isPlan, resolvePlan, TRIAL_DAYS } from "@/lib/plans";
 import { productionChecks } from "@/lib/prodcheck";
 import { IG_REQUEST_STATUS, setIgRequestStatus, type IgRequestStatus } from "@/lib/ig-access";
 import { appBaseUrl } from "@/lib/util";
@@ -61,7 +61,7 @@ const GETS: Record<string, (c: Ctx) => Promise<unknown>> = {
     const ws = await db.workspace.findMany({
       orderBy: { createdAt: "desc" },
       take: 300,
-      select: { id: true, name: true, plan: true, trusted: true, trialEndsAt: true, planValidUntil: true, createdAt: true, _count: { select: { projects: true, members: true } }, projects: { select: { id: true } } },
+      select: { id: true, name: true, plan: true, trusted: true, trialEndsAt: true, planValidUntil: true, seats: true, mpStatus: true, createdAt: true, _count: { select: { projects: true, members: true } }, projects: { select: { id: true } } },
     });
     const spend = await db.providerUsage.groupBy({ by: ["projectId"], where: { createdAt: { gte: since }, projectId: { not: null } }, _sum: { costUsd: true } });
     const byProject = new Map(spend.map((s) => [s.projectId, s._sum.costUsd ?? 0]));
@@ -115,7 +115,8 @@ const POSTS: Record<string, (c: Ctx) => Promise<unknown>> = {
     if (!isPlan(plan)) throw new AuthError(400, "Plan inválido");
     const w = await db.workspace.findUniqueOrThrow({ where: { id: String(body.workspaceId ?? "") }, select: { trusted: true } });
     if (w.trusted) throw new AuthError(400, "El workspace de la instancia no tiene plan");
-    await db.workspace.update({ where: { id: String(body.workspaceId) }, data: { plan, planValidUntil: null } });
+    // a mano: sin vencimiento; "trial" da 7 días nuevos desde hoy
+    await db.workspace.update({ where: { id: String(body.workspaceId) }, data: { plan, planValidUntil: null, ...(plan === "trial" ? { trialEndsAt: new Date(Date.now() + TRIAL_DAYS * 864e5) } : {}) } });
     return { ok: true };
   },
 };

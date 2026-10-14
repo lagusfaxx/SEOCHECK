@@ -352,11 +352,12 @@ const POSTS: Record<string, H> = {
     if (!seeds.length) throw new HttpError(400, "Escribe al menos una semilla");
     await assertIdle(id, QUEUES.keywords, "una investigación de keywords");
     await assertResource(id, "keywords", 0);
+    await assertResource(id, "research", 1);
     await assertProviderUp("serpent");
     const kwOpts = { serpTop: 150, serpExpansion: 20, maxKeywords: 400, ...((((await db.project.findUniqueOrThrow({ where: { id } })).settings ?? {}) as any).keywords ?? {}) };
     await assertBudget({ serpent: est.serpCalls(seeds.length + kwOpts.serpExpansion + kwOpts.serpTop), llm: est.llmIntent(kwOpts.maxKeywords) }, "Investigación de keywords");
     // volumeLive: DataForSEO endpoint Live (solo si se pide explícitamente); por defecto standard queue
-    const run = await db.keywordRun.create({ data: { projectId: id, seeds, threshold: Number(body.threshold ?? 0.45), options: { volumeLive: body.volumeLive === true } } });
+    const run = await withProjectQuota(id, "research", 1, (tx) => tx.keywordRun.create({ data: { projectId: id, seeds, threshold: Number(body.threshold ?? 0.45), options: { volumeLive: body.volumeLive === true } } }));
     await enqueue(id, QUEUES.keywords, { runId: run.id }, run.id);
     return run;
   },
@@ -364,7 +365,7 @@ const POSTS: Record<string, H> = {
   "keywords/rerun": async ({ id, body }) => {
     await assertResource(id, "keywords", 0);
     const run = await db.keywordRun.findFirstOrThrow({ where: { projectId: id, id: body.runId } });
-    await db.keywordRun.update({ where: { id: run.id }, data: { status: "queued" } });
+    await withProjectQuota(id, "research", 1, (tx) => tx.keywordRun.update({ where: { id: run.id }, data: { status: "queued" } }));
     return enqueue(id, QUEUES.keywords, { runId: run.id }, run.id);
   },
 

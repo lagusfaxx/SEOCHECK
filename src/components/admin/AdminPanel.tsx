@@ -16,7 +16,7 @@ type UserRow = {
   id: string; email: string; name: string | null; createdAt: string; lastLoginAt: string | null; verified: boolean; google: boolean; disabledAt: string | null;
   memberships: { role: string; workspace: { id: string; name: string; trusted: boolean; projects: number; planLabel: string } }[];
 };
-type WsRow = { id: string; name: string; plan: string; effectivePlan: string; planLabel: string; trusted: boolean; expired: boolean; createdAt: string; spendMonth: number; _count: { projects: number; members: number } };
+type WsRow = { id: string; name: string; plan: string; effectivePlan: string; planLabel: string; trusted: boolean; expired: boolean; seats: number; mpStatus: string | null; planValidUntil: string | null; trialEndsAt: string; createdAt: string; spendMonth: number; _count: { projects: number; members: number } };
 type CheckRow = { key: string; label: string; level: "ok" | "warn" | "error" | "info"; detail: string };
 
 const LEVEL: Record<CheckRow["level"], [string, string]> = {
@@ -130,7 +130,8 @@ function UsersTab({ me }: { me: string }) {
   );
 }
 
-const PLAN_OPTIONS = [["beta", "Beta gratuita"], ["trial", "Prueba 14 días"], ["seo", "SEO"], ["agency", "Agencia"]] as const;
+const MP_STATUS: Record<string, string> = { authorized: "activa", pending: "pendiente", paused: "pausada", cancelled: "cancelada" };
+const PLAN_OPTIONS = [["beta", "Beta gratuita"], ["trial", "Prueba 7 días"], ["pro", "FSV Search (pagado)"], ["seo", "SEO (antiguo)"], ["agency", "Agencia (antiguo)"]] as const;
 
 function WorkspacesTab() {
   const { data, mutate } = useApi<WsRow[]>("/api/admin/workspaces");
@@ -162,10 +163,16 @@ function WorkspacesTab() {
                       }
                     }}
                   >
-                    {PLAN_OPTIONS.filter(([k]) => k !== "trial" || w.effectivePlan === "trial").map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    {PLAN_OPTIONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                   </select>
                 )}
-                {!w.trusted && w.expired && <div className="mt-0.5 text-[11px] text-rose-600">vencido</div>}
+                {!w.trusted && (
+                  <div className="mt-0.5 text-[11px] text-ink-500">
+                    {w.expired && <span className="text-rose-600">vencido · </span>}
+                    {w.effectivePlan === "trial" && `prueba hasta ${fmtDate(w.trialEndsAt)}`}
+                    {w.effectivePlan === "pro" && `${w.seats} ${w.seats === 1 ? "perfil" : "perfiles"}${w.mpStatus ? ` · Mercado Pago: ${MP_STATUS[w.mpStatus] ?? w.mpStatus}` : " · asignado a mano"}${w.planValidUntil ? ` · hasta ${fmtDate(w.planValidUntil)}` : ""}`}
+                  </div>
+                )}
               </td>
               <td className="tabular-nums">{w._count.projects}</td>
               <td className="tabular-nums">{w._count.members}</td>

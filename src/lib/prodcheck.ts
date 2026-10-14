@@ -3,7 +3,7 @@
  * Solo dice si cada cosa está o no; nunca devuelve valores de claves.
  */
 import { budgetLimits } from "./budget";
-import { billingEnabled } from "./plans";
+import { billingEnabled, planPriceClp, TRIAL_DAYS } from "./plans";
 
 export type Check = { key: string; label: string; level: "ok" | "warn" | "error" | "info"; detail: string };
 
@@ -32,8 +32,11 @@ export function productionChecks(): Check[] {
   add("meta", "Instagram (META_APP_ID/SECRET)", has("META_APP_ID") && has("META_APP_SECRET"), "info", "Configurado", "Publicación en Instagram desactivada");
   add("basic_auth", "BASIC_AUTH", !has("BASIC_AUTH"), "warn", "Desactivado", "Activo: pide usuario y clave del navegador antes del login; bloquea el registro público");
   out.push({ key: "signup", label: "Registro abierto (SIGNUP_ENABLED)", level: "info", detail: signup ? "Abierto: cualquiera puede crear una cuenta (con correo verificado)" : "Cerrado: solo por invitación" });
-  out.push({ key: "billing", label: "Cobro (BILLING_ENABLED)", level: "info", detail: billingEnabled() ? "Activo con Stripe" : "Apagado: todas las cuentas en Beta gratuita" });
-  if (billingEnabled()) add("stripe", "Stripe", has("STRIPE_SECRET_KEY") && has("STRIPE_WEBHOOK_SECRET"), "error", "Configurado", "BILLING_ENABLED=true pero faltan STRIPE_SECRET_KEY o STRIPE_WEBHOOK_SECRET");
+  out.push({ key: "billing", label: "Cobro (BILLING_ENABLED)", level: "info", detail: billingEnabled() ? `Activo con Mercado Pago: $${planPriceClp().toLocaleString("es-CL")} por perfil al mes, prueba de ${TRIAL_DAYS} días` : "Apagado: todas las cuentas en Beta gratuita" });
+  if (billingEnabled()) {
+    add("mp", "Mercado Pago (MP_ACCESS_TOKEN)", has("MP_ACCESS_TOKEN"), "error", "Configurado", "BILLING_ENABLED=true pero falta MP_ACCESS_TOKEN: nadie puede pagar");
+    add("mp_webhook", "Firma del webhook de Mercado Pago (MP_WEBHOOK_SECRET)", has("MP_WEBHOOK_SECRET"), "warn", "Configurada", "Sin la clave secreta los avisos se aceptan sin firma (igual se verifican en la API de Mercado Pago)");
+  }
   const b = budgetLimits();
   out.push({ key: "budgets", label: "Presupuestos mensuales (USD)", level: "info", detail: Object.entries(b).map(([k, v]) => `${k}: ${v < 0 ? "sin límite" : v}`).join(" · ") });
   return out;

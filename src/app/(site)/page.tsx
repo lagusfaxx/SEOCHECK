@@ -132,10 +132,15 @@ function Search() {
           <Kicker>Producto propio</Kicker>
           <img src="/brand/fsv-search.png" alt="FSV Search" className="mt-6 h-8 w-auto md:h-10" />
           <h2 className="mt-6 font-display text-[1.9rem] font-semibold leading-tight tracking-[-0.03em] md:text-[2.6rem]">Search intelligence para convertir datos SEO en decisiones.</h2>
-          <p className="mt-4 text-fsv-muted">Auditoría técnica, Search Console, keywords, rankings y contenido en una sola plataforma.</p>
-          <Link href="/search" className="mt-8 inline-flex items-center gap-2 rounded-sm bg-fsv-violet px-5 py-3 font-medium text-white transition hover:brightness-110">
-            Conocer FSV Search <span aria-hidden>→</span>
-          </Link>
+          <p className="mt-4 text-fsv-muted">Auditoría técnica, Search Console, keywords, rankings, contenido e Instagram en una sola plataforma. Desde $9.990 al mes, con 7 días gratis.</p>
+          <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
+            <Link href="/signup" className="inline-flex items-center gap-2 rounded-sm bg-fsv-violet px-5 py-3 font-medium text-white transition hover:brightness-110">
+              Probar 7 días gratis <span aria-hidden>→</span>
+            </Link>
+            <Link href="/search" className="font-medium underline decoration-fsv-violet decoration-2 underline-offset-[6px] transition hover:text-fsv-violet">
+              Conocer FSV Search
+            </Link>
+          </div>
         </div>
         <Link href="/search" className="block overflow-hidden rounded-sm border border-fsv-line bg-white lg:col-span-7">
           <img src="/brand/fsv-search-dashboard.png" alt="Dashboard de FSV Search: tareas priorizadas, salud técnica y datos de Search Console" className="w-full" loading="lazy" />
