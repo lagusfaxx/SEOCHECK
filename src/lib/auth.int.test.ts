@@ -41,7 +41,7 @@ after(async () => {
 
 test("primer usuario (dueño), login, rate limit y sesión", { skip: !hasDb }, async () => {
   // sin usuarios: /me pide setup
-  assert.deepEqual(await (await authCall("me")).json(), { user: null, setup: true, signup: false, google: false });
+  assert.deepEqual(await (await authCall("me")).json(), { user: null, setup: true, signup: false, google: false, trialDays: null });
   assert.equal((await authCall("setup", { email: "dueno@agencia.cl", password: "corta" })).status, 400);
   const s = await authCall("setup", { email: "Dueno@Agencia.cl", password: "una-clave-larga-1" });
   assert.equal(s.status, 200);

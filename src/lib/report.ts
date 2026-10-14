@@ -6,7 +6,7 @@ import { hostOf, urlKey } from "./util";
 import { coverage, emptyText, STATE_LABEL } from "./coverage";
 import { buildFindings, KIND_LABEL, urlSection, type Pattern } from "./audit/insights";
 import type { Cms } from "./audit/cms";
-import { brandFromDomain, DISCREPANCY_HINT, EASE, EASE_LABEL, expectedCtrAt, isBrandQuery, isParamCanonical, makeTask, PRIVATE_PATH, psiVerdict, SEV_WEIGHT, byPriority, MINOR_ONPAGE, spellingVariants, type PsiField, type Task } from "./report-rules";
+import { brandFromDomain, DISCREPANCY_HINT, EASE, EASE_LABEL, expectedCtrAt, isBrandQuery, isParamCanonical, makeTask, PRIVATE_PATH, psiVerdict, SEV_WEIGHT, byPriority, MINOR_ONPAGE, LOW_GSC_IMPRESSIONS, MIN_TREND_BASE, spellingVariants, type PsiField, type Task } from "./report-rules";
 
 const SEV_ORDER = ["critical", "warning", "info"] as const;
 const SEV_LABEL: Record<string, string> = { critical: "Error", warning: "Advertencia", info: "Observación" };
@@ -28,7 +28,8 @@ const cell = (s: unknown) => String(s ?? "–").replace(/\|/g, "\\|").replace(/\
 const table = (head: string[], rows: unknown[][]) =>
   rows.length ? [`| ${head.join(" | ")} |`, `|${head.map(() => "---").join("|")}|`, ...rows.map((r) => `| ${r.map(cell).join(" | ")} |`)].join("\n") : "_sin datos_";
 
-const pctChange = (now: number, before: number) => (before ? `${now >= before ? "+" : ""}${(((now - before) / before) * 100).toFixed(1).replace(".", ",")} %` : "sin período anterior");
+const pctChange = (now: number, before: number) =>
+  !before ? "sin período anterior" : before < MIN_TREND_BASE ? `antes ${before}` : `${now >= before ? "+" : ""}${(((now - before) / before) * 100).toFixed(1).replace(".", ",")} %`;
 const MAX_TASKS = 30;
 const pl = (n: number, one: string, many = `${one}s`) => `${f0(n)} ${n === 1 ? one : many}`;
 
@@ -84,6 +85,7 @@ export async function buildReport(projectId: string): Promise<string> {
   const siteTraffic = () => (hasGsc ? { traffic: siteImpr, label: `${f0(siteImpr)} impr (todo el sitio)` } : trafficOf(pages.map((x) => x.url)));
 
   // ---------- Tendencias ----------
+  let gscImpr28: number | null = null;
   if (gscEnd && d28) {
     const d56 = new Date(gscEnd.getTime() - 55 * 864e5);
     const hasDays = Boolean(await db.gscDay.findFirst({ where: { projectId } }));
@@ -98,14 +100,17 @@ export async function buildReport(projectId: string): Promise<string> {
     };
     const end1 = new Date(gscEnd.getTime() + 864e5);
     const [cur, prev] = await Promise.all([agg(d28, end1), agg(d56, d28)]);
+    gscImpr28 = cur.i;
     trends.push(
       `- **Clics:** ${f0(cur.c)} (${pctChange(cur.c, prev.c)})`,
       `- **Impresiones:** ${f0(cur.i)} (${pctChange(cur.i, prev.i)})`,
       `- **CTR:** ${pctS(cur.i ? cur.c / cur.i : null)} (antes ${pctS(prev.i ? prev.c / prev.i : null)})`,
       ...(cur.pos != null && prev.pos != null ? [`- **Posición media:** ${f1(cur.pos)} (antes ${f1(prev.pos)})`] : []),
       "",
-      `_Últimos 28 días hasta ${gscEnd.toISOString().slice(0, 10)} contra los 28 anteriores._`
+      `_Últimos 28 días hasta ${gscEnd.toISOString().slice(0, 10)} contra los 28 anteriores.${prev.c < MIN_TREND_BASE || prev.i < MIN_TREND_BASE ? ` Con menos de ${MIN_TREND_BASE} en el período anterior se muestra el valor absoluto: un porcentaje sobre una base tan chica exagera el cambio.` : ""}_`
     );
+    if (cur.i < LOW_GSC_IMPRESSIONS)
+      notes.push(`Pocos datos de Search Console: ${f0(cur.i)} impresiones en 28 días. Las tendencias y el impacto calculado con tráfico son orientativos; con este volumen pesa más la severidad del problema que las impresiones.`);
   }
 
   // ---------- Auditoría ----------
@@ -538,10 +543,10 @@ export async function buildReport(projectId: string): Promise<string> {
   out.push(
     "## Tareas por impacto",
     "",
-    `${hasGsc ? "_Tráfico = impresiones de Search Console (28 días) de las URLs afectadas." : "_Sin Search Console: el tráfico se estima con el peso de cada URL en el sitio (links entrantes, home)."} Los issues on-page menores (largo de title/meta, alt, H1 múltiple…) van al final aunque su impacto sea alto._`,
+    `${hasGsc ? "_Tráfico = impresiones de Search Console (28 días) de las URLs afectadas." : "_Sin Search Console: el tráfico se estima con el peso de cada URL en el sitio (links entrantes, home)."} Los issues on-page menores (largo de title/meta, alt, H1 múltiple…) pesan la mitad.${gscImpr28 != null && gscImpr28 < LOW_GSC_IMPRESSIONS ? " Con tan pocas impresiones, el orden es orientativo._" : "_"}`,
     "",
     top.length
-      ? top.map((t, i) => `${i + 1}. **${t.title}** — ${t.fix}\n   _Impacto ${f0(t.score)} = ${t.trafficLabel} × ${t.sevLabel} × ${EASE_LABEL(t.ease)}${t.minor ? " · on-page menor" : ""}_`).join("\n")
+      ? top.map((t, i) => `${i + 1}. **${t.title}** — ${t.fix}\n   _Impacto ${f0(t.score)} = ${t.trafficLabel} × ${t.sevLabel} × ${EASE_LABEL(t.ease)}${t.minor ? " × ½ (on-page menor)" : ""}_`).join("\n")
       : "_Nada pendiente con los datos actuales._",
     ""
   );

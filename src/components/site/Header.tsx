@@ -97,7 +97,10 @@ export function Header() {
               {l.label}
             </Link>
           ))}
-          <Link href="/#contacto" className="ml-auto rounded-sm bg-fsv-ink px-4 py-2 text-sm font-medium text-white transition hover:bg-black">
+          <Link href="/login" className="ml-auto py-2 text-sm text-fsv-muted transition hover:text-fsv-ink">
+            Entrar a FSV Search
+          </Link>
+          <Link href="/#contacto" className="rounded-sm bg-fsv-ink px-4 py-2 text-sm font-medium text-white transition hover:bg-black">
             Contacto
           </Link>
         </nav>
@@ -124,6 +127,9 @@ export function Header() {
               {l.label}
             </Link>
           ))}
+          <Link href="/login" onClick={() => setMobile(false)} className="block border-b border-fsv-line py-3 font-display font-semibold">
+            Entrar a FSV Search
+          </Link>
           <Link href="/#contacto" onClick={() => setMobile(false)} className="mt-4 block rounded-sm bg-fsv-ink px-4 py-3 text-center font-medium text-white">
             Contacto
           </Link>

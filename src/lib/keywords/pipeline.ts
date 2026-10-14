@@ -29,11 +29,18 @@ type Opts = {
   serpExpansion?: number;
 };
 
+/** Topes de servidor: los ajustes del proyecto los edita el cliente, y cada SERP extra se paga. */
+export const KW_MAX = { maxKeywords: 400, serpTop: 150, serpExpansion: 20 } as const;
+export function clampKeywordOpts<T extends Opts>(o: T): T {
+  const c = (v: unknown, max: number, d: number) => Math.min(max, Math.max(0, Math.floor(Number(v ?? d)) || 0));
+  return { ...o, maxKeywords: c(o.maxKeywords, KW_MAX.maxKeywords, 400), serpTop: c(o.serpTop, KW_MAX.serpTop, 150), serpExpansion: c(o.serpExpansion, KW_MAX.serpExpansion, 20) };
+}
+
 export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   const run = await db.keywordRun.findUniqueOrThrow({ where: { id: runId }, include: { project: true } });
   const p = run.project;
   const settings = (p.settings ?? {}) as Record<string, any>;
-  const opts: Opts = { maxKeywords: 400, serpTop: 150, useGsc: true, minShared: 3, serpExpansion: 20, ...(settings.keywords ?? {}) };
+  const opts: Opts = clampKeywordOpts({ maxKeywords: 400, serpTop: 150, useGsc: true, minShared: 3, serpExpansion: 20, ...(settings.keywords ?? {}) });
   const plan = await projectPlan(p.id);
   const existingTerms = new Set((await db.keyword.findMany({where:{projectId:p.id},select:{term:true}})).map(k=>k.term));
   const used = await db.keyword.count({where:{project:{workspaceId:plan.workspace.id}}});

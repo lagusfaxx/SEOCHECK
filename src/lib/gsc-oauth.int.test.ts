@@ -43,6 +43,27 @@ test("el refresh token se guarda cifrado (AES-256-GCM) y no se puede alterar", a
   process.env.TOKEN_ENC_KEY = prev;
 });
 
+test("rotación de clave: con TOKEN_ENC_KEY_PREV se leen los tokens viejos; sin ella, error de reconexión", async () => {
+  const { encrypt, decryptToken, TokenDecryptError } = await import("./gsc-oauth");
+  const original = process.env.TOKEN_ENC_KEY, prevEnv = process.env.TOKEN_ENC_KEY_PREV;
+  const blob = encrypt("token-viejo");
+  process.env.TOKEN_ENC_KEY = Buffer.alloc(32, 7).toString("base64");
+  try {
+    delete process.env.TOKEN_ENC_KEY_PREV;
+    assert.throws(() => decryptToken(blob), TokenDecryptError);
+    process.env.TOKEN_ENC_KEY_PREV = original;
+    assert.deepEqual(decryptToken(blob), { plain: "token-viejo", rotated: true });
+    assert.deepEqual(decryptToken(encrypt("nuevo")), { plain: "nuevo", rotated: false });
+    // tag truncado: se rechaza
+    const [v, iv, tag, data] = encrypt("x").split(".");
+    assert.throws(() => decryptToken([v, iv, Buffer.from(tag, "base64").subarray(0, 8).toString("base64"), data].join(".")), TokenDecryptError);
+  } finally {
+    process.env.TOKEN_ENC_KEY = original;
+    if (prevEnv === undefined) delete process.env.TOKEN_ENC_KEY_PREV;
+    else process.env.TOKEN_ENC_KEY_PREV = prevEnv;
+  }
+});
+
 test("la cuenta de servicio compartida solo sirve al workspace del dueño; un cliente necesita su OAuth", { skip: !hasDb }, async () => {
   process.env.GSC_SERVICE_ACCOUNT_JSON = JSON.stringify({ client_email: "sa@x.iam.gserviceaccount.com", private_key: "-----BEGIN PRIVATE KEY-----\nAAA\n-----END PRIVATE KEY-----\n" });
   const { env } = await import("./env");

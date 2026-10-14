@@ -12,7 +12,11 @@ export class BillingError extends Error {
 }
 export const BILLING_PRODUCTS = ["seo", "agency", "report"] as const;
 export type BillingProduct = (typeof BILLING_PRODUCTS)[number];
+/** Lo que ve el cliente en Ajustes → Plan: el cobro es con Mercado Pago (Stripe queda para cuentas antiguas). */
 export function billingConfig() {
+  return { enabled: billingEnabled(), provider: "mercadopago" as const, configured: !!process.env.MP_ACCESS_TOKEN?.trim() && /^https:\/\//.test(process.env.APP_URL ?? "") };
+}
+function stripeConfig() {
   return {
     enabled: billingEnabled(),
     configured:
@@ -46,7 +50,7 @@ export async function createCheckout(
   if (!billingEnabled()) throw new BillingError(404, "Los pagos no están habilitados durante la beta");
   if (!BILLING_PRODUCTS.includes(product))
     throw new BillingError(400, "Producto inválido");
-  if (!billingConfig().configured)
+  if (!stripeConfig().configured)
     throw new BillingError(
       503,
       "Configura precios, claves y webhook de Stripe antes de cobrar",

@@ -1,7 +1,163 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useProject } from "./Shell";
-import { api, useApi } from "./ui";
+import { api, fmtDate, Spinner, useApi } from "./ui";
+
+const clp = (n: number) => `$${n.toLocaleString("es-CL")}`;
+const METERS = [
+  ["projects", "Perfiles", false],
+  ["research", "Investigaciones de keywords", true],
+  ["keywords", "Keywords guardadas", false],
+  ["rankings", "Keywords en seguimiento", false],
+  ["briefs", "Briefs de contenido", true],
+  ["reports", "Informes", true],
+  ["images", "Imágenes con IA", true],
+  ["ai", "Textos con IA", true],
+] as const;
+
+/** Uso del plan: lo que se cuenta por mes (o por toda la prueba) y lo que se cuenta por lo guardado. */
+function Meters({ plan }: { plan: any }) {
+  const period = plan.plan === "trial" ? "en la prueba" : "este mes";
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      {METERS.map(([k, label, monthly]) => {
+        const used = plan.usage?.[k] ?? 0, max = plan.limits[k];
+        const unlimited = max >= 1_000_000, ratio = unlimited ? 0 : Math.min(1, used / Math.max(1, max));
+        return (
+          <div key={k} className="rounded-lg border border-ink-100 px-3 py-2 dark:border-ink-800">
+            <div className="text-xs text-ink-500">{label}{monthly && <span className="text-ink-400"> · {period}</span>}</div>
+            <div className="mt-0.5 text-sm font-semibold tabular-nums">{used.toLocaleString("es-CL")} <span className="font-normal text-ink-400">/ {unlimited ? "sin límite" : max.toLocaleString("es-CL")}</span></div>
+            {!unlimited && <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-ink-100 dark:bg-ink-800"><div className={`h-full rounded-full ${k === "projects" ? "bg-acc" : ratio >= 1 ? "bg-rose-500" : ratio >= 0.8 ? "bg-amber-400" : "bg-acc"}`} style={{ width: `${ratio * 100}%` }} /></div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SeatPicker({ value, onChange, min }: { value: number; onChange: (n: number) => void; min: number }) {
+  return (
+    <div className="inline-flex items-center rounded-lg border border-ink-200 dark:border-ink-700">
+      <button type="button" className="px-3 py-1.5 text-lg leading-none disabled:opacity-40" disabled={value <= Math.max(1, min)} onClick={() => onChange(value - 1)} aria-label="Menos perfiles">−</button>
+      <span className="w-10 text-center font-semibold tabular-nums">{value}</span>
+      <button type="button" className="px-3 py-1.5 text-lg leading-none disabled:opacity-40" disabled={value >= 20} onClick={() => onChange(value + 1)} aria-label="Más perfiles">+</button>
+    </div>
+  );
+}
+
+/** Ajustes → Plan: estado, uso y suscripción con Mercado Pago. */
+function PlanSection({ id, plan, billing, refresh }: { id: string; plan: any; billing: any; refresh: () => Promise<unknown> }) {
+  const [seats, setSeats] = useState(1);
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  const [note, setNote] = useState("");
+  const sub = plan.subscription?.status as string | undefined;
+  const active = plan.plan === "pro" && sub === "authorized";
+  const minSeats = plan.usage?.projects ?? 1;
+  useEffect(() => {
+    setSeats(Math.max(plan.seats ?? 1, minSeats, 1));
+  }, [plan.seats, minSeats]);
+
+  // vuelta desde Mercado Pago: confirmar sin esperar el webhook
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("checkout") !== "mp") return;
+    const preapprovalId = q.get("preapproval_id") ?? undefined;
+    window.history.replaceState(null, "", window.location.pathname);
+    setNote("Confirmando tu suscripción con Mercado Pago…");
+    let tries = 0;
+    const tick = async () => {
+      const r = await api(`/api/p/${id}/billing/sync`, "POST", { preapprovalId }).catch(() => null);
+      const p: any = await refresh();
+      if (p?.subscription?.status === "authorized") return setNote("¡Listo! Tu suscripción está activa.");
+      if (++tries < 6 && r) setTimeout(tick, 4000);
+      else setNote("Mercado Pago todavía no confirma el pago. Si lo completaste, se activará en unos minutos.");
+    };
+    tick();
+  }, [id, refresh]);
+
+  const run = async (key: string, fn: () => Promise<void>) => {
+    setBusy(key);
+    setErr("");
+    try {
+      await fn();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const status = plan.expired
+    ? ["Vencido", "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"]
+    : plan.plan === "trial"
+      ? [`Prueba hasta el ${fmtDate(plan.trialEndsAt)}`, "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"]
+      : sub === "cancelled" || sub === "paused"
+        ? [`${sub === "paused" ? "Pausada" : "Cancelada"} · vigente hasta el ${fmtDate(plan.planValidUntil)}`, "bg-ink-100 text-ink-700 dark:bg-ink-800 dark:text-ink-200"]
+        : ["Activo", "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-lg font-semibold">{plan.limits.label}</span>
+        {billing?.enabled && plan.plan !== "internal" && <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${status[1]}`}>{status[0]}</span>}
+      </div>
+      {!billing?.enabled && (
+        <p className="text-sm text-ink-600 dark:text-ink-300">
+          FSV Search es gratis mientras dure la beta. Si necesitas más capacidad, escríbenos a <a className="text-acc underline" href="mailto:contacto@fsvc.cl">contacto@fsvc.cl</a>.
+        </p>
+      )}
+      {plan.expired && plan.plan === "trial" && <p role="alert" className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">Terminaron tus 7 días gratis. Activa FSV Search para seguir creando auditorías, briefs, imágenes y publicaciones; tus datos siguen guardados.</p>}
+      <Meters plan={plan} />
+      {note && <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">{note}</p>}
+
+      {billing?.enabled && plan.plan !== "internal" && (active ? (
+        <div className="rounded-xl border border-ink-100 p-4 dark:border-ink-800">
+          <div className="text-sm">Suscripción mensual con Mercado Pago · <b>{plan.seats} {plan.seats === 1 ? "perfil" : "perfiles"}</b> · <b>{clp(plan.priceClp * plan.seats)}</b> al mes</div>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <SeatPicker value={seats} onChange={setSeats} min={minSeats} />
+            <button className="btn" disabled={!!busy || seats === plan.seats} onClick={() => run("seats", async () => { await api(`/api/p/${id}/billing/seats`, "POST", { seats }); await refresh(); setNote(`Desde el próximo cobro pagarás ${clp(plan.priceClp * seats)} al mes.`); })}>
+              {busy === "seats" ? <Spinner /> : `Cambiar a ${seats} ${seats === 1 ? "perfil" : "perfiles"} (${clp(plan.priceClp * seats)}/mes)`}
+            </button>
+            <button className="btn-g text-rose-600" disabled={!!busy} onClick={() => confirm("¿Cancelar la suscripción? No se te volverá a cobrar y el plan sigue hasta el fin del periodo pagado.") && run("cancel", async () => { await api(`/api/p/${id}/billing/cancel`, "POST", {}); await refresh(); })}>
+              {busy === "cancel" ? <Spinner /> : "Cancelar suscripción"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-acc/30 bg-acc/5 p-4">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <span className="font-semibold">FSV Search</span>
+            <span className="text-2xl font-semibold tabular-nums">{clp(plan.priceClp)}</span>
+            <span className="text-sm text-ink-500">al mes por perfil</span>
+          </div>
+          <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">
+            Cada perfil (un sitio o marca) incluye al mes: {plan.plans.pro.research} investigaciones de keywords, {plan.plans.pro.briefs} briefs, {plan.plans.pro.reports} informes, {plan.plans.pro.images} imágenes y {plan.plans.pro.ai} textos con IA, {plan.plans.pro.rankings} keywords en seguimiento y auditorías de hasta {plan.plans.pro.urls.toLocaleString("es-CL")} páginas.
+          </p>
+          <div className="mt-4 flex flex-wrap items-end gap-3">
+            <label className="text-sm">
+              <span className="mb-1 block text-xs text-ink-500">Perfiles</span>
+              <SeatPicker value={seats} onChange={setSeats} min={minSeats} />
+            </label>
+            <label className="min-w-[14rem] flex-1 text-sm">
+              <span className="mb-1 block text-xs text-ink-500">Correo de tu cuenta de Mercado Pago (si es distinto)</span>
+              <input className="input" type="email" placeholder="el mismo de FSV Search" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </label>
+            <button className="btn-p" disabled={!!busy || !billing.configured} onClick={() => run("checkout", async () => { const s = await api(`/api/p/${id}/billing/checkout`, "POST", { seats, payerEmail: email }); window.location.assign(s.url); })}>
+              {busy === "checkout" ? <Spinner /> : `Pagar ${clp(plan.priceClp * seats)}/mes con Mercado Pago`}
+            </button>
+          </div>
+          <p className="mt-3 text-xs text-ink-500">
+            El cobro es automático cada mes con tu tarjeta de crédito o débito en Mercado Pago. Puedes cancelar cuando quieras desde aquí y el plan sigue hasta el fin del periodo pagado.
+            {!billing.configured && " Los pagos se están configurando: vuelve a intentarlo en unas horas."}
+          </p>
+        </div>
+      ))}
+      {err && <p role="alert" className="text-sm text-rose-700">{err}</p>}
+    </div>
+  );
+}
 export function CommercialSettings() {
   const { id, project } = useProject();
   const { data: plan, mutate } = useApi<any>(`/api/p/${id}/plan`);
@@ -36,116 +192,9 @@ export function CommercialSettings() {
     }
   };
   return (
-    <section className="card space-y-4 p-4">
+    <section id="plan" className="card scroll-mt-4 space-y-4 p-4">
       <h2 className="font-semibold">Plan</h2>
-      {billing && !billing.enabled ? (
-        plan && (
-          <div className="space-y-2">
-            <p className="text-sm">
-              Estás en <b>{plan.limits.label}</b>: FSV Search es gratis mientras dure la beta. Si necesitas más capacidad, escríbenos a{" "}
-              <a className="text-acc underline" href="mailto:contacto@fsvc.cl">contacto@fsvc.cl</a>.
-            </p>
-            <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
-              {([["projects", "Proyectos"], ["urls", "Páginas por auditoría"], ["keywords", "Keywords"], ["rankings", "Keywords en rankings"], ["briefs", "Briefs al mes"], ["reports", "Informes al mes"]] as const).map(([k, label]) => (
-                <div key={k} className="rounded-lg border border-ink-100 px-3 py-2 dark:border-ink-800">
-                  <div className="text-xs text-ink-500">{label}</div>
-                  <div className="font-semibold tabular-nums">{plan.limits[k] >= 1_000_000 ? "Sin límite" : plan.limits[k].toLocaleString("es-CL")}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )
-      ) : (
-        <>
-      {plan && (
-        <>
-          <p className="text-sm">
-            Plan actual: <b>{plan.limits.label}</b> · {plan.reportCredits ?? 0}{" "}
-            informes sueltos disponibles{plan.expired && " · Expirado"}
-            {plan.plan === "trial" &&
-              ` · termina ${new Date(plan.trialEndsAt).toLocaleDateString("es-CL")}`}
-          </p>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Plan</th>
-                <th>Proyectos</th>
-                <th>URLs/crawl</th>
-                <th>Keywords</th>
-                <th>Rankings</th>
-                <th>Briefs</th>
-                <th>Informes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(plan.plans).map(([k, p]: [string, any]) => (
-                <tr key={k}>
-                  <td>{p.label}</td>
-                  <td>{p.projects}</td>
-                  <td>{p.urls}</td>
-                  <td>{p.keywords}</td>
-                  <td>{p.rankings}</td>
-                  <td>{p.briefs}</td>
-                  <td>{p.reports}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="text-xs text-ink-500">
-            Los límites de proyectos, keywords y rankings se comparten en el
-            workspace. Briefs e informes se cuentan por mes UTC en planes pagos
-            y por toda la prueba gratuita. No hay planes ilimitados.
-          </p>
-        </>
-      )}
-      <div className="flex flex-wrap gap-2">
-        {["seo", "agency", "report"].map((product) => (
-          <button
-            className="btn"
-            key={product}
-            disabled={
-              busy ||
-              !billing?.configured ||
-              !billing?.products.find((p: any) => p.product === product)
-                ?.available
-            }
-            onClick={() =>
-              run(async () => {
-                const s = await api(`/api/p/${id}/billing/checkout`, "POST", {
-                  product,
-                });
-                window.location.assign(s.url);
-              })
-            }
-          >
-            {product === "report"
-              ? "Comprar informe suelto"
-              : product === "agency"
-                ? "Suscripción Agencia"
-                : "Suscripción SEO"}
-          </button>
-        ))}
-        <button
-          className="btn"
-          disabled={busy || !billing?.configured}
-          onClick={() =>
-            run(async () => {
-              const s = await api(`/api/p/${id}/billing/portal`, "POST", {});
-              window.location.assign(s.url);
-            })
-          }
-        >
-          Administrar suscripción
-        </button>
-      </div>
-      {!billing?.configured && (
-        <p className="text-sm text-ink-500">
-          Los cobros están pendientes de activación. Los importes se definirán
-          en Stripe antes de habilitar la compra.
-        </p>
-      )}
-        </>
-      )}
+      {plan && <PlanSection id={id} plan={plan} billing={billing} refresh={mutate} />}
       {plan?.limits.whiteLabel ? (
         <form
           className="space-y-2"
@@ -216,12 +265,7 @@ export function CommercialSettings() {
             Guardar marca
           </button>
         </form>
-      ) : (
-        <p className="text-sm text-ink-500">
-          Logo, colores y datos de la agencia en informes: exclusivos del plan
-          Agencia.
-        </p>
-      )}
+      ) : null}
       {project?.admin && <details>
         <summary className="cursor-pointer text-sm">
           Costo real por trabajo (solo administradores)

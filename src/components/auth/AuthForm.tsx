@@ -206,13 +206,13 @@ export const backTo = () => {
 
 /** Config pública de acceso: registro abierto y login con Google. */
 export function useAuthConfig() {
-  const [c, setC] = useState<{ signup: boolean; google: boolean } | null>(null);
+  const [c, setC] = useState<{ signup: boolean; google: boolean; trialDays: number | null } | null>(null);
   useEffect(() => {
     fetch("/api/auth/me").then((r) => r.json()).then((j) => {
       if (j.user) window.location.href = backTo();
       else if (j.setup) window.location.href = "/setup";
-      else setC({ signup: Boolean(j.signup), google: Boolean(j.google) });
-    }).catch(() => setC({ signup: false, google: false }));
+      else setC({ signup: Boolean(j.signup), google: Boolean(j.google), trialDays: j.trialDays ?? null });
+    }).catch(() => setC({ signup: false, google: false, trialDays: null }));
   }, []);
   return c;
 }

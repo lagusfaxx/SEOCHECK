@@ -44,6 +44,12 @@ export async function POST(req: Request) {
     if (!validEmail(email)) return fail("Email inválido");
     if (role === "owner" && myRole !== "owner") return fail("Solo un dueño puede agregar otro dueño", 403);
     let user = await db.user.findUnique({ where: { email } });
+    // re-invitar a alguien que ya está cambia su rol: un admin no puede tocar a un dueño ni dejar el equipo sin dueño
+    const current = user ? await db.membership.findUnique({ where: { userId_workspaceId: { userId: user.id, workspaceId: ws } } }) : null;
+    if (current?.role === "owner" && role !== "owner") {
+      if (myRole !== "owner") return fail("Solo un dueño puede cambiar el rol de otro dueño", 403);
+      if ((await db.membership.count({ where: { workspaceId: ws, role: "owner" } })) <= 1) return fail("No puedes dejar el equipo sin dueño", 400);
+    }
     let link: string | null = null;
     if (!user) {
       user = await db.user.create({ data: { email, passwordHash: await hashPassword(newToken()) } });
@@ -67,10 +73,11 @@ export async function DELETE(req: Request) {
   try {
     const u = await requireUser(req);
     const ws = await wsOf(req, u.id);
-    await requireWorkspace(u.id, ws, "admin");
+    const myRole = await requireWorkspace(u.id, ws, "admin");
     const b = await req.json().catch(() => ({}));
     const target = await db.membership.findUnique({ where: { userId_workspaceId: { userId: String(b.userId), workspaceId: ws } } });
     if (!target) return fail("no existe", 404);
+    if (target.role === "owner" && myRole !== "owner") return fail("Solo un dueño puede quitar a otro dueño", 403);
     if (target.role === "owner" && (await db.membership.count({ where: { workspaceId: ws, role: "owner" } })) <= 1) return fail("No puedes quitar al único dueño", 400);
     await db.membership.delete({ where: { userId_workspaceId: { userId: target.userId, workspaceId: ws } } });
     // sus sesiones siguen sirviendo para otros workspaces; aquí ya no tiene acceso

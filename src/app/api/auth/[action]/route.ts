@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth";
 import { mailTemplate, sendMail } from "@/lib/mail";
 import { googleLoginEnabled } from "@/lib/google-login";
+import { billingEnabled, TRIAL_DAYS } from "@/lib/plans";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +58,7 @@ const handlers: Record<string, (req: Request) => Promise<Response>> = {
   /** GET: usuario y workspaces (con rol) */
   async me(req) {
     const u = await userFromRequest(req);
-    if (!u) return json({ user: null, setup: (await db.user.count()) === 0, signup: signupEnabled(), google: googleLoginEnabled() }, 200);
+    if (!u) return json({ user: null, setup: (await db.user.count()) === 0, signup: signupEnabled(), google: googleLoginEnabled(), trialDays: billingEnabled() ? TRIAL_DAYS : null }, 200);
     const ms = await db.membership.findMany({ where: { userId: u.id }, include: { workspace: { select: { id: true, name: true, trusted: true } } } });
     return json({ user: u, admin: await isInstanceAdmin(u.id), workspaces: ms.map((m) => ({ ...m.workspace, role: m.role })) });
   },

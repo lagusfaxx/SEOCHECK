@@ -2,7 +2,7 @@ import { BriefValidationError } from "@/lib/content/claims";
 import { runInlineJob } from "@/lib/inline-job";
 import { BillingError } from "@/lib/billing";
 import { PRODUCT_GETS, PRODUCT_POSTS, PRODUCT_PATCHS, PRODUCT_DELETES, ProductError } from "@/lib/product-api";
-import { withProjectQuota, assertResource, crawlLimit, PlanLimitError, projectPlan } from "@/lib/plans";
+import { withProjectQuota, withQuota, assertResource, assertPlanActive, crawlLimit, PlanLimitError, projectPlan } from "@/lib/plans";
 import { assertProviderUp } from "@/lib/providers/health";
 import { ProviderError } from "@/lib/providers/errors";
 import { storeBrief, validateBrief } from "@/lib/content/brief-tools";
@@ -10,7 +10,7 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { cancelJob, enqueue, QUEUES } from "@/lib/queue";
 import { autoSyncGsc } from "@/lib/gsc-autosync";
-import { AuthError, isInstanceAdmin, memLimit, requireProject, requireUser } from "@/lib/auth";
+import { AuthError, isInstanceAdmin, memLimit, rateLimit, requireProject, requireUser } from "@/lib/auth";
 import { clientMessage, GENERIC_ERROR } from "@/lib/redact";
 import { sweepStale, workerAlive } from "@/lib/jobs";
 import { refreshCluster } from "@/lib/keywords/pipeline";
@@ -23,7 +23,8 @@ import { disconnect, GscNotConnected, oauthConfigured, startUrl } from "@/lib/gs
 import { gscTargetFor, makeBrief, type ContentResult } from "@/lib/content/analyze";
 import { pageSuggestions, pageTypeFit } from "@/lib/content/suggest";
 import { parseKeywordPlannerCsv } from "@/lib/volume/csv";
-import { backfillVolumes, volumeChainStatus, writeCache } from "@/lib/volume/broker";
+import { clampKeywordOpts } from "@/lib/keywords/pipeline";
+import { importProjectVolumes, volumeChainStatus } from "@/lib/volume/broker";
 import { env } from "@/lib/env";
 import { llmStatus } from "@/lib/providers/llm";
 import { assertBudget, BudgetError, budgetLimits, est, monthStart, releaseBudget, spentThisMonth } from "@/lib/budget";
@@ -286,7 +287,9 @@ const GETS: Record<string, H> = {
     return rows.map((r: any) => ({ key: r[other], clicks: r._sum.clicks, impressions: r._sum.impressions, position: r._avg.position }));
   },
 
-  costs: async ({ id, url }) => {
+  costs: async ({ id, url, admin }) => {
+    // proveedor, endpoint y costo: solo administradores de la instancia (igual que costs/jobs)
+    if (!admin) throw new HttpError(404, "no existe");
     const days = Number(url.searchParams.get("days") ?? 30);
     const since = new Date(Date.now() - days * 864e5);
     const [byEndpoint, recent] = await Promise.all([
@@ -348,15 +351,16 @@ const GETS: Record<string, H> = {
 const POSTS: Record<string, H> = {
   ...PRODUCT_POSTS,
   "keywords/run": async ({ id, body }) => {
-    const seeds: string[] = (body.seeds ?? []).map((s: string) => normTerm(s)).filter(Boolean);
+    const seeds: string[] = (Array.isArray(body.seeds) ? body.seeds : []).map((s: string) => normTerm(String(s))).filter(Boolean).slice(0, 20);
     if (!seeds.length) throw new HttpError(400, "Escribe al menos una semilla");
     await assertIdle(id, QUEUES.keywords, "una investigación de keywords");
     await assertResource(id, "keywords", 0);
+    await assertResource(id, "research", 1);
     await assertProviderUp("serpent");
-    const kwOpts = { serpTop: 150, serpExpansion: 20, maxKeywords: 400, ...((((await db.project.findUniqueOrThrow({ where: { id } })).settings ?? {}) as any).keywords ?? {}) };
+    const kwOpts = clampKeywordOpts({ serpTop: 150, serpExpansion: 20, maxKeywords: 400, ...((((await db.project.findUniqueOrThrow({ where: { id } })).settings ?? {}) as any).keywords ?? {}) });
     await assertBudget({ serpent: est.serpCalls(seeds.length + kwOpts.serpExpansion + kwOpts.serpTop), llm: est.llmIntent(kwOpts.maxKeywords) }, "Investigación de keywords");
     // volumeLive: DataForSEO endpoint Live (solo si se pide explícitamente); por defecto standard queue
-    const run = await db.keywordRun.create({ data: { projectId: id, seeds, threshold: Number(body.threshold ?? 0.45), options: { volumeLive: body.volumeLive === true } } });
+    const run = await withProjectQuota(id, "research", 1, (tx) => tx.keywordRun.create({ data: { projectId: id, seeds, threshold: Number(body.threshold ?? 0.45), options: { volumeLive: body.volumeLive === true } } }));
     await enqueue(id, QUEUES.keywords, { runId: run.id }, run.id);
     return run;
   },
@@ -364,7 +368,7 @@ const POSTS: Record<string, H> = {
   "keywords/rerun": async ({ id, body }) => {
     await assertResource(id, "keywords", 0);
     const run = await db.keywordRun.findFirstOrThrow({ where: { projectId: id, id: body.runId } });
-    await db.keywordRun.update({ where: { id: run.id }, data: { status: "queued" } });
+    await withProjectQuota(id, "research", 1, (tx) => tx.keywordRun.update({ where: { id: run.id }, data: { status: "queued" } }));
     return enqueue(id, QUEUES.keywords, { runId: run.id }, run.id);
   },
 
@@ -400,10 +404,10 @@ const POSTS: Record<string, H> = {
   /** Importa un CSV de Keyword Planner (body crudo, UTF-16/tab) como fuente de volumen `csv`. */
   "volumes/csv": async ({ id, body }) => {
     if (!Buffer.isBuffer(body) || !body.length) throw new Error("envía el archivo CSV como body (Content-Type: text/csv u octet-stream)");
-    const p = await db.project.findUniqueOrThrow({ where: { id } });
-    const { rows, skipped } = parseKeywordPlannerCsv(body);
-    await writeCache(rows, p.country, p.language, "csv");
-    const updated = await backfillVolumes(p.country, p.language, rows.map((r) => r.keyword));
+    if (body.length > 5_000_000) throw new HttpError(413, "El CSV supera 5 MB");
+    const { rows: all, skipped } = parseKeywordPlannerCsv(body);
+    const rows = all.slice(0, 20_000);
+    const updated = await importProjectVolumes(id, rows);
     return { imported: rows.length, skipped, updated, withRange: rows.filter((r) => r.volumeMin !== r.volumeMax).length };
   },
 
@@ -422,6 +426,8 @@ const POSTS: Record<string, H> = {
       psi: body.psi !== false,
       rank: body.rank !== false,
     };
+    // con semillas el informe corre una investigación de keywords: cuenta como tal (se descuenta al encolar)
+    if (opts.seeds.length) return withProjectQuota(id, "research", 1, async () => null).then(() => enqueue(id, QUEUES.full, { opts }));
     return enqueue(id, QUEUES.full, { opts });
   },
 
@@ -466,7 +472,10 @@ const POSTS: Record<string, H> = {
     const ids: string[] = (await db.trackedKeyword.findMany({ where: { projectId: id, active: true, ...(body.ids?.length ? { id: { in: body.ids } } : {}) }, select: { id: true } })).map((t) => t.id);
     if (!ids.length) throw new HttpError(400, "No hay keywords trackeadas para revisar");
     await assertIdle(id, QUEUES.rankOne, "una revisión de rankings");
-    await assertBudget({ serpent: est.serpCalls(ids.length) }, `Rank tracking (${ids.length} keywords)`);
+    await assertPlanActive(id);
+    // el seguimiento automático ya corre solo: a mano, hasta 3 revisiones al día por proyecto
+    if (!(await rateLimit(`rankcheck:${id}`, 3, 24 * 3600_000)).ok) throw new HttpError(429, "Ya revisaste los rankings 3 veces hoy. El seguimiento automático sigue corriendo.");
+    await assertBudget({ serpent: est.serpCalls(ids.length) }, `Rank tracking (${ids.length} keywords)`, undefined, id);
     return enqueue(id, QUEUES.rankOne, { trackedIds: ids });
   },
 
@@ -505,7 +514,7 @@ const POSTS: Record<string, H> = {
     const a = await ownContent(id, body.cid);
     if(a.status!=="done")throw new HttpError(409,"Espera a que termine el análisis");
     // se corre en la request: reserva propia para que dos "regenerar" seguidos no se pasen del límite
-    const brief = await runInlineJob(
+    const brief = await withQuota(id, "ai", () => runInlineJob(
       id, "content.rebrief",
       async () => {
         await assertBudget({ llm: est.llmBrief() }, "Regenerar brief");
@@ -514,7 +523,7 @@ const POSTS: Record<string, H> = {
         const kind = ["article", "listing", "landing", "product"].includes(body.kind) ? (body.kind as ContentResult["requestedKind"]) : undefined;
         return makeBrief(kind ? { ...r, requestedKind: kind, mine: { ...r.mine, type: undefined } } : r, a.project.language, a.project.country);
       }
-    );
+    ));
     return storeBrief(a.id, brief, "regenerate");
   },
 };
@@ -622,6 +631,14 @@ const DELETES: Record<string, H> = {
   content: async ({ id, body }) => db.contentAnalysis.deleteMany({ where: { projectId: id, id: body.cid } }),
 };
 
+const ADMIN_ONLY = new Set(["DELETE ", "POST gsc/connect", "DELETE gsc/connect", "POST social/connect", "DELETE social/connection", "POST volumes/csv"]);
+/** PATCH del proyecto: nombre, país e idioma los puede cambiar cualquiera; dominio, propiedad de GSC y ajustes, solo admin. */
+function needsWorkspaceAdmin(method: string, key: string, body: unknown) {
+  if (ADMIN_ONLY.has(`${method} ${key}`)) return true;
+  if (method === "PATCH" && key === "" && body && typeof body === "object") return ["domain", "gscProperty", "settings", "locationCode"].some((k) => k in body);
+  return false;
+}
+
 function make(table: Record<string, H>) {
   return async (req: Request, { params }: { params: { id: string; path: string[] } }) => {
     const path = params.path.filter((s) => s !== "_");
@@ -633,8 +650,7 @@ function make(table: Record<string, H>) {
     try {
       user = await requireUser(req);
       if (!memLimit(`api:${user.id}`, 600, 60_000)) return bad("Demasiadas solicitudes: espera un minuto", 429);
-      // borrar el proyecto: solo owner/admin del workspace; todo lo demás, cualquier miembro
-      await requireProject(user.id, params.id, req.method === "DELETE" && key === "" ? "admin" : "member");
+      await requireProject(user.id, params.id, "member");
       admin = await isInstanceAdmin(user.id);
     } catch (e) {
       if (e instanceof AuthError) return bad(e.message, e.status);
@@ -644,6 +660,15 @@ function make(table: Record<string, H>) {
     if (req.method !== "GET") {
       const ct = req.headers.get("content-type") ?? "";
       body = ct.includes("json") || !ct ? await req.json().catch(() => ({})) : Buffer.from(await req.arrayBuffer());
+    }
+    // lo que cambia conexiones, el dominio o datos compartidos: solo owner/admin del workspace
+    if (needsWorkspaceAdmin(req.method, key, body)) {
+      try {
+        await requireProject(user.id, params.id, "admin");
+      } catch (e) {
+        if (e instanceof AuthError) return bad("Solo el dueño o un administrador del espacio de trabajo puede hacer esto", 403);
+        throw e;
+      }
     }
     try {
       const r = await h({ id: params.id, path, url: new URL(req.url), body, user, admin });

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { INTERNAL_PLAN, PLANS, resolvePlan } from "./plans";
+import { INTERNAL_PLAN, PLANS, proLimits, resolvePlan, TRIAL_DAYS } from "./plans";
 
 const past = new Date(Date.now() - 864e5), future = new Date(Date.now() + 864e5);
 
@@ -23,7 +23,7 @@ const withBilling = (on: boolean, fn: () => void) => {
   }
 };
 
-test("con cobro: prueba = 1 proyecto y vence a los 14 días", () => withBilling(true, () => {
+test("con cobro: prueba = 1 proyecto y vence", () => withBilling(true, () => {
   const t = resolvePlan({ plan: "trial", trusted: false, trialEndsAt: future, planValidUntil: null });
   assert.equal(t.key, "trial");
   assert.equal(t.limits.projects, 1);
@@ -48,3 +48,22 @@ test("sin cobro: la prueba pasa a beta gratuita y nada vence", () => withBilling
 test("el plan interno no se ofrece entre los planes contratables", () => {
   assert.ok(!Object.keys(PLANS).includes("internal"));
 });
+
+test("la prueba dura 7 días y tiene menos cupo que el plan pagado", () => {
+  assert.equal(TRIAL_DAYS, 7);
+  for (const k of ["urls", "keywords", "rankings", "briefs", "reports", "images", "ai", "research"] as const) assert.ok(PLANS.trial[k] < PLANS.pro[k], k);
+});
+
+test("plan pagado: los cupos escalan por perfil contratado", () => withBilling(true, () => {
+  const future2 = new Date(Date.now() + 30 * 864e5);
+  const one = resolvePlan({ plan: "pro", trusted: false, trialEndsAt: past, planValidUntil: future2, seats: 1 });
+  const three = resolvePlan({ plan: "pro", trusted: false, trialEndsAt: past, planValidUntil: future2, seats: 3 });
+  assert.equal(one.key, "pro");
+  assert.equal(one.expired, false);
+  assert.equal(three.limits.projects, 3);
+  assert.equal(three.limits.images, PLANS.pro.images * 3);
+  assert.equal(three.limits.urls, PLANS.pro.urls);
+  assert.equal(resolvePlan({ plan: "pro", trusted: false, trialEndsAt: past, planValidUntil: past, seats: 1 }).expired, true);
+  assert.equal(proLimits(0).projects, 1);
+  assert.equal(proLimits(999).projects, 20);
+}));

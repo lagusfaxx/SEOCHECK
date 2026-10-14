@@ -1,4 +1,4 @@
-import { assertPlanActive } from "../plans";
+import { assertPlanActive, resolvePlan } from "../plans";
 import { db } from "../db";
 import { env } from "../env";
 import { serpProvider } from "../providers";
@@ -23,7 +23,17 @@ export async function checkRank(trackedId: string) {
 export async function dueTracked(projectId?: string, now = new Date()) {
   const weekday = Number(process.env.RANK_WEEKDAY ?? 1);
   const today = new Date(now.toLocaleString("en-US", { timeZone: env.tz })).getDay();
-  return db.trackedKeyword.findMany({
+  const due = await db.trackedKeyword.findMany({
     where: { active: true, ...(projectId ? { projectId } : {}), ...(today === weekday ? {} : { frequency: "daily" }) },
+    include: { project: { select: { workspace: true } } },
   });
+  // planes vencidos (prueba terminada, pago caído): no se sigue pagando su seguimiento
+  const active = new Map<string, boolean>();
+  return due
+    .filter((t) => {
+      const w = t.project.workspace;
+      if (!active.has(w.id)) active.set(w.id, !resolvePlan(w).expired);
+      return active.get(w.id);
+    })
+    .map(({ project: _p, ...t }) => t);
 }

@@ -38,6 +38,7 @@ export const ISSUE_LABELS: Record<string, string> = {
   blocked_robots: "Bloqueada por robots",
   hreflang_no_self: "hreflang sin auto-referencia",
   noindex: "noindex",
+  nofollow: "nofollow en la página",
 };
 
 export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; sitemapCount: number; site: string }): IssueRow[] {
@@ -80,6 +81,8 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
     if (p.status !== 200 || !(p.contentType ?? "").includes("html")) continue;
 
     if (p.noindex) add(p.url, p.inSitemap ? "noindex_in_sitemap" : "noindex", p.inSitemap ? "critical" : "info");
+    // nofollow corta el paso de autoridad a todo lo que enlaza (en filtros y listados, a los productos)
+    if (p.nofollow) add(p.url, "nofollow", p.outlinks > 0 ? "warning" : "info", p.noindex ? "noindex, nofollow" : "nofollow");
     if (!p.title) add(p.url, "title_missing", "critical");
     else if (p.titleLen > 60) add(p.url, "title_long", "warning", `${p.titleLen}`);
     else if (p.titleLen < 25) add(p.url, "title_short", "info", `${p.titleLen}`);

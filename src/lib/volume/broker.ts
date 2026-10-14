@@ -145,14 +145,29 @@ export async function resolveVolumes(keywords: string[], ctx: VolumeCtx): Promis
   return { data: out, stats };
 }
 
-/** Aplica a las keywords de todos los proyectos los volúmenes que llegaron después (standard queue / CSV). */
+/** Aplica a las keywords de todos los proyectos los volúmenes que llegaron después (standard queue de DataForSEO). */
 export async function backfillVolumes(country: string, language: string, keywords: string[]) {
   const cache = await readCache(keywords, { country, language }, env.volumeProviders[0]);
   if (!cache.size) return 0;
   const projects = await db.project.findMany({ where: { country, language }, select: { id: true } });
+  return applyVolumes(cache, projects.map((p) => p.id));
+}
+
+/**
+ * CSV de Keyword Planner: es dato del cliente, así que solo toca las keywords de SU proyecto. Nunca va a la caché
+ * compartida (si no, un cliente podría cambiar los volúmenes que ven los demás).
+ */
+export async function importProjectVolumes(projectId: string, rows: VolumeData[]) {
+  const now = new Date();
+  const map = new Map<string, VolumeData & { source: VolumeSource; at: Date }>();
+  for (const r of rows) map.set(volKey(r.keyword), { ...r, source: "csv", at: now });
+  return applyVolumes(map, [projectId]);
+}
+
+async function applyVolumes(cache: Map<string, VolumeData & { source: VolumeSource; at: Date }>, projectIds: string[]) {
   let n = 0;
   const clusters = new Set<string>();
-  for (const k of await db.keyword.findMany({ where: { projectId: { in: projects.map((p) => p.id) }, term: { in: [...cache.keys()] }, OR: [{ volumeSource: null }, { volumeSource: { not: "gsc" } }] } })) {
+  for (const k of await db.keyword.findMany({ where: { projectId: { in: projectIds }, term: { in: [...cache.keys()] }, OR: [{ volumeSource: null }, { volumeSource: { not: "gsc" } }] } })) {
     const v = cache.get(volKey(k.term))!;
     await db.keyword.update({
       where: { id: k.id },

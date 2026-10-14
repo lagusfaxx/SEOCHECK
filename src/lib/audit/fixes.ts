@@ -34,6 +34,7 @@ export const ISSUE_FIX: Record<string, string> = {
   blocked_robots: "Bloqueada por robots.txt: confirmar que sea intencional; si debe indexarse, quitar el Disallow.",
   hreflang_no_self: "Agregar el hreflang autorreferente.",
   noindex: "Página con noindex: confirmar que sea intencional.",
+  nofollow: "Meta robots con nofollow: Google no sigue sus links. En filtros y listados usar \"noindex, follow\" para que los productos sigan recibiendo autoridad.",
 };
 
 /** Qué significa cada issue y por qué importa, en una frase. */
@@ -72,4 +73,5 @@ export const ISSUE_WHY: Record<string, string> = {
   blocked_robots: "robots.txt impide que Google la rastree.",
   hreflang_no_self: "Las versiones por idioma deben incluirse a sí mismas en el hreflang.",
   noindex: "Tiene noindex: Google no la va a mostrar. Bien si es intencional (login, filtros).",
+  nofollow: "Tiene nofollow: Google no sigue los links de esta página, así que lo que enlaza (por ejemplo productos de un filtro) no recibe su autoridad.",
 };

@@ -20,7 +20,7 @@ export default function Signup() {
   return (
     <AuthForm
       title="Crea tu cuenta"
-      intro="Gratis durante la beta. Sin tarjeta de crédito."
+      intro={cfg?.trialDays ? `${cfg.trialDays} días gratis. Sin tarjeta de crédito.` : "Gratis durante la beta. Sin tarjeta de crédito."}
       google={cfg?.google ? { label: "Registrarme con Google", next: "/app" } : null}
       fields={[
         { name: "name", label: "Nombre", autoComplete: "name" },

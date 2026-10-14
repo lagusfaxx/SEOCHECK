@@ -32,7 +32,7 @@ export const ISSUE_KIND: Record<string, Kind> = {
   redirect_chain: "confirmed", noindex_in_sitemap: "confirmed", title_missing: "confirmed", jsonld_invalid: "confirmed",
   orphan: "possible", no_inlinks: "possible", dup_content: "possible", title_dup: "possible", meta_dup: "possible", canonical_other: "possible",
   blocked_robots: "possible", noindex: "possible", deep_page: "possible", slow: "possible", hreflang_no_self: "possible", redirect: "possible",
-  thin_content: "possible", sitemap_missing: "possible", ssrf_blocked: "possible", h1_missing: "possible",
+  thin_content: "possible", nofollow: "possible", sitemap_missing: "possible", ssrf_blocked: "possible", h1_missing: "possible",
   title_long: "opportunity", title_short: "opportunity", meta_missing: "opportunity", meta_long: "opportunity", meta_short: "opportunity",
   h1_multiple: "opportunity", img_no_alt: "opportunity", canonical_missing: "opportunity", robots_missing: "opportunity",
 };
@@ -336,7 +336,7 @@ export function detectPatterns(pages: PageIn[], issues: IssueIn[], cms: Cms | nu
         out.push({ kind: "pageKind", text: `Las ${PAGE_KIND_LABEL[ranked[0].k]} tienen ${f1(ranked[0].avg)} problemas por URL en promedio (el resto del sitio ${f1(restAvg)}).` });
     }
   }
-  // issues que aparecen juntos en las mismas URLs: probablemente el mismo origen
+  // issues que aparecen juntos en las mismas URLs: coincidencia, no causa (pueden compartir plantilla o no)
   const urlsBy = new Map<string, Set<string>>();
   for (const i of relevant) urlsBy.set(i.code, (urlsBy.get(i.code) ?? new Set()).add(i.url));
   const codes = [...urlsBy.entries()].filter(([, v]) => v.size >= 5).sort((a, b) => b[1].size - a[1].size).slice(0, 12);
@@ -349,7 +349,7 @@ export function detectPatterns(pages: PageIn[], issues: IssueIn[], cms: Cms | nu
       const jac = inter / (A.size + B.size - inter);
       if (jac >= 0.8 && !seen.has(ca) && !seen.has(cb)) {
         seen.add(ca).add(cb);
-        out.push({ kind: "together", text: `«${ISSUE_LABELS[ca] ?? ca}» y «${ISSUE_LABELS[cb] ?? cb}» aparecen juntas en las mismas ${f0(inter)} URLs: probablemente tienen el mismo origen (la misma plantilla o el mismo campo vacío).` });
+        out.push({ kind: "together", text: `«${ISSUE_LABELS[ca] ?? ca}» y «${ISSUE_LABELS[cb] ?? cb}» aparecen juntas en las mismas ${f0(inter)} URLs. Puede que compartan plantilla, pero revísalas por separado antes de asumir una causa común.` });
       }
     }
   return out.slice(0, 6);
