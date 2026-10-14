@@ -27,6 +27,13 @@ export type Preapproval = {
   summarized?: { charged_quantity?: number | null; last_charged_date?: string | null } | null;
 };
 
+/** Error de la API de Mercado Pago, con su estado HTTP (404 = el recurso no existe). */
+export class MpApiError extends BillingError {
+  constructor(public upstream: number, message: string) {
+    super(502, message);
+  }
+}
+
 export const mpConfigured = () => Boolean(process.env.MP_ACCESS_TOKEN?.trim());
 
 function origin() {
@@ -58,8 +65,8 @@ async function mp<T>(path: string, init: { method?: string; body?: unknown; idem
   });
   const j = (await res.json().catch(() => ({}))) as any;
   if (!res.ok) {
-    console.error("[mercadopago]", init.method ?? "GET", path, res.status, j?.message ?? j);
-    throw new BillingError(502, `Mercado Pago respondió con un error${j?.message ? `: ${String(j.message).slice(0, 200)}` : ""}. Intenta de nuevo en unos minutos.`);
+    (res.status === 404 ? console.warn : console.error)("[mercadopago]", init.method ?? "GET", path, res.status, j?.message ?? j);
+    throw new MpApiError(res.status, `Mercado Pago respondió con un error${j?.message ? `: ${String(j.message).slice(0, 200)}` : ""}. Intenta de nuevo en unos minutos.`);
   }
   return j as T;
 }
@@ -224,8 +231,23 @@ export function verifyMpSignature(signature: string | null, requestId: string | 
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(v1.toLowerCase()));
 }
 
-/** Procesa un aviso de Mercado Pago: suscripción creada/cambiada o cobro mensual. */
+/**
+ * Procesa un aviso de Mercado Pago: suscripción creada/cambiada o cobro mensual. Si el recurso no existe (404, p. ej.
+ * "Simular notificación" del panel, que manda id 123456) se ignora: reintentarlo no lo va a hacer existir.
+ */
 export async function handleMpNotification(type: string, dataId: string) {
+  try {
+    return await processNotification(type, dataId);
+  } catch (e) {
+    if (e instanceof MpApiError && e.upstream === 404) {
+      console.warn("[mercadopago] aviso ignorado: no existe en Mercado Pago", type, dataId);
+      return false;
+    }
+    throw e;
+  }
+}
+
+async function processNotification(type: string, dataId: string) {
   if (type === "subscription_preapproval") return syncPreapproval(dataId);
   if (type === "subscription_authorized_payment") {
     if (!/^[0-9]{1,30}$/.test(dataId)) return false;

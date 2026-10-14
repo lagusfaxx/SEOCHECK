@@ -18,6 +18,18 @@ export default function Home() {
         <Work />
         <Ventures />
       </main>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@graph": [
+              { "@type": "WebSite", name: "FSV", alternateName: ["fsvc.cl"], url: "https://fsvc.cl/" },
+              { "@type": "Organization", name: "FSV", url: "https://fsvc.cl/", logo: "https://fsvc.cl/icon.png", email: "contacto@fsvc.cl", address: { "@type": "PostalAddress", addressLocality: "Santiago", addressCountry: "CL" } },
+            ],
+          }),
+        }}
+      />
       <CtaAndFooter />
     </>
   );

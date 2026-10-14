@@ -41,6 +41,15 @@ test("firma del webhook de Mercado Pago", () => {
   assert.equal(verifyMpSignature(`ts=${ts},v1=${v1}`, rid, "abc123", ""), false);
 });
 
+test("aviso de prueba del panel (id que no existe): se ignora sin error para que Mercado Pago no reintente", { skip: !enabled }, async () => {
+  setMpFetch(async () => Response.json({ message: "The Authorized Payment with id 123456 does not exist" }, { status: 404 }));
+  assert.equal(await handleMpNotification("subscription_authorized_payment", "123456"), false);
+  assert.equal(await handleMpNotification("subscription_preapproval", "abc123def"), false);
+  setMpFetch(async () => Response.json({ message: "boom" }, { status: 500 }));
+  await assert.rejects(() => handleMpNotification("subscription_preapproval", "abc123def"));
+  setMpFetch(null);
+});
+
 test("una prueba nueva dura 7 días", { skip: !enabled }, async () => {
   const w = await db.workspace.findUniqueOrThrow({ where: { id: wid } });
   const days = (w.trialEndsAt.getTime() - Date.now()) / 864e5;
