@@ -16,7 +16,11 @@ const MENUS: Menu[] = [
   },
   {
     label: "Productos",
-    items: [{ title: "FSV / SEARCH", text: "SEO Intelligence Platform", href: "/search" }],
+    items: [
+      { title: "FSV / SEARCH", text: "Herramienta SEO con datos reales de Google", href: "/search" },
+      { title: "Auditoría SEO gratis", text: "Analiza una página en segundos, sin registro", href: "/search/auditoria-gratis" },
+      { title: "Guías de SEO", text: "Auditoría, keywords, Search Console y más", href: "/search/guias" },
+    ],
     note: "Más productos próximamente",
   },
 ];
@@ -29,8 +33,8 @@ const LINKS = [
 
 export function Logo({ white }: { white?: boolean }) {
   return (
-    <Link href="/" className="flex shrink-0 items-center" aria-label="Fullstack Ventures, inicio">
-      <img src={white ? "/brand/fsv-mark-white.png" : "/brand/fsv-mark.png"} alt="Fullstack Ventures" className="h-6 w-auto md:h-7" />
+    <Link href="/" className="flex shrink-0 items-center" aria-label="FSV, inicio">
+      <img src={white ? "/brand/fsv-mark-white.png" : "/brand/fsv-mark.png"} alt="FSV" className="h-6 w-auto md:h-7" />
     </Link>
   );
 }

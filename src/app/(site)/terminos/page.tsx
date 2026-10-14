@@ -5,7 +5,7 @@ import { LegalPage } from "@/components/site/Legal";
 
 export const metadata: Metadata = {
   title: "Términos de servicio",
-  description: "Condiciones de uso de FSV Search, la plataforma de SEO de Full Stack Ventures SpA.",
+  description: "Condiciones de uso de FSV Search, la plataforma de SEO de FSV.",
 };
 
 const SECTIONS: { title: string; body: React.ReactNode }[] = [
@@ -13,7 +13,7 @@ const SECTIONS: { title: string; body: React.ReactNode }[] = [
     title: "El servicio",
     body: (
       <p>
-        FSV Search es una plataforma de SEO técnico, análisis de keywords, seguimiento de posiciones y creación de contenido, operada por Full Stack Ventures SpA, Santiago de Chile. Al crear una
+        FSV Search es una plataforma de SEO técnico, análisis de keywords, seguimiento de posiciones y creación de contenido, operada por FSV (razón social Full Stack Ventures SpA), Santiago de Chile. Al crear una
         cuenta o usar el servicio aceptas estos términos y la <Link href="/privacidad">política de privacidad</Link>.
       </p>
     ),

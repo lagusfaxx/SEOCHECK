@@ -1,4 +1,4 @@
-/** Contenido del sitio público de Fullstack Ventures (fsvc.cl). Datos reales entregados por el equipo. */
+/** Contenido del sitio público de FSV (fsvc.cl). Datos reales entregados por el equipo. */
 
 export type Business = {
   name: string;
@@ -12,37 +12,37 @@ export type Business = {
   short?: string;
 };
 
-/** Construidos y operados por nuestro equipo. */
+/** Productos que construimos. Los textos dicen qué construimos, no que vendemos lo que ellos venden. */
 export const OWN_BUSINESSES: Business[] = [
-  { name: "Nomadbrew", logo: "nomadbrew.png", kind: "Café portátil", tags: "Importación / E-commerce", text: "Cafeteras portátiles Wacaco en Chile, en Mercado Libre Full, tienda propia y venta directa." },
-  { name: "Starseeker", logo: "starseeker.png", kind: "Máquinas de espresso compactas", tags: "Importación / Marca", text: "Máquinas de espresso compactas, directo de fábrica, con tienda propia en Chile.", href: "https://starseeker.cl" },
-  { name: "TAUPOC", short: "Marca de natación de competencia operada por FSV.", logo: "taupoc.png", kind: "Natación de competencia", tags: "Importación / E-commerce", text: "Trajes de natación homologados por World Aquatics, con nadadores federados como embajadores.", href: "https://taupoc.cl" },
-  { name: "Uzeed", logo: "uzeed.png", kind: "Directorio de contenido para adultos", tags: "Software / Next.js / Infraestructura", text: "Directorio de contenido para adultos en Next.js, con sistema PAC e infraestructura totalmente autoescalable.", href: "https://uzeed.cl" },
-  { name: "La Frida", logo: "la-frida.png", kind: "Gastronomía", tags: "Gastronomía", text: "Restaurante de comida mexicana." },
-  { name: "ANDES Technologies", short: "Tecnología y ciberseguridad para instituciones públicas.", logo: "andes-technologies.png", kind: "Proveedor del Estado", tags: "Security / Compras públicas", text: "Ciberseguridad, tecnología y retail para instituciones públicas, con licitaciones municipales adjudicadas." },
-  { name: "Centinela", logo: null, kind: "Seguridad ofensiva", tags: "Security / SaaS", text: "Plataforma de pruebas de seguridad con control de alcance y autorización, usada en licitaciones municipales." },
-  { name: "Rent A Hacker", logo: "rent-a-hacker.png", kind: "Ciberseguridad para empresas", tags: "Security / Pentest", text: "Pentesting y auditorías de seguridad para empresas, siempre con autorización firmada.", href: "https://rentahacker.cl" },
+  { name: "Nomadbrew", logo: "nomadbrew.png", kind: "E-commerce de café portátil", tags: "E-commerce / Mercado Libre", text: "Construimos su tienda online y la integración con Mercado Libre Full para vender cafeteras portátiles en Chile." },
+  { name: "Starseeker", logo: "starseeker.png", kind: "Marca de máquinas de espresso", tags: "Marca / E-commerce", text: "Construimos la marca y la tienda online de máquinas de espresso compactas en Chile.", href: "https://starseeker.cl" },
+  { name: "TAUPOC", short: "Marca y tienda online de natación construidas por FSV.", logo: "taupoc.png", kind: "Natación de competencia", tags: "E-commerce / Next.js / SEO", text: "Construimos la marca, la tienda online en Next.js y el SEO de una línea de trajes de natación homologados por World Aquatics.", href: "https://taupoc.cl" },
+  { name: "Uzeed", logo: "uzeed.png", kind: "Directorio de contenido para adultos", tags: "Software / Next.js / Infraestructura", text: "Construimos el directorio en Next.js, con pagos por PAC e infraestructura totalmente autoescalable.", href: "https://uzeed.cl" },
+  { name: "La Frida", logo: "la-frida.png", kind: "Restaurante de comida mexicana", tags: "Gastronomía / Digital", text: "Construimos la presencia digital de un restaurante de comida mexicana." },
+  { name: "ANDES Technologies", short: "Tecnología y ciberseguridad para instituciones públicas.", logo: "andes-technologies.png", kind: "Proveedor del Estado", tags: "Security / Compras públicas", text: "Construimos su oferta de ciberseguridad y tecnología para instituciones públicas, con licitaciones municipales adjudicadas." },
+  { name: "Centinela", logo: null, kind: "Seguridad ofensiva", tags: "Security / SaaS", text: "Construimos esta plataforma de pruebas de seguridad con control de alcance y autorización, usada en licitaciones municipales." },
+  { name: "Rent A Hacker", logo: "rent-a-hacker.png", kind: "Ciberseguridad para empresas", tags: "Security / Pentest", text: "Construimos el servicio de pentesting y auditorías de seguridad para empresas, siempre con autorización firmada.", href: "https://rentahacker.cl" },
 ];
 
 /** Construidos para un cliente. */
 export const CLIENT_WORK: Business[] = [
-  { name: "Barzuo", short: "Sistema de operación para bar, cocina y clientes.", logo: "barzuo.png", kind: "Bar, lounge y club en Santiago", tags: "Software / Web application", text: "Sitio, punto de venta, pantallas de cocina y barra, fidelización y karaoke, hoy en etapa de escalamiento." },
+  { name: "Barzuo", short: "Sistema de operación para bar, cocina y clientes.", logo: "barzuo.png", kind: "Bar, lounge y club en Santiago", tags: "Software / Web application", text: "Construimos su sitio, punto de venta, pantallas de cocina y barra, fidelización y karaoke; hoy en etapa de escalamiento." },
 ];
 
 /** Cifras entregadas por el equipo (CLP). `short` es la etiqueta en móvil. */
 export const STATS: { value: string; short: string; long: string }[] = [
-  { value: "+$20M", short: "Invertidos", long: "invertidos en negocios propios" },
+  { value: "+$20M", short: "Invertidos", long: "invertidos en los productos que construimos" },
   { value: "+$100M", short: "Retorno", long: "de retorno generado" },
   { value: "+$500M", short: "Valor SaaS", long: "valor estimado de los SaaS que creamos" },
-  { value: "+20", short: "Negocios", long: "negocios construidos y operados por nuestro equipo" },
+  { value: "+20", short: "Proyectos", long: "proyectos construidos por nuestro equipo" },
 ];
 
 /** Franja bajo el hero: productos y negocios construidos por FSV (evidencia antes de los servicios). */
 export const PROOF: { name: string; fact: string; href: string; logo: string | null; external?: boolean }[] = [
   { name: "FSV Search", fact: "Plataforma de SEO técnico y search intelligence", href: "/search", logo: "/brand/fsv-search.png" },
   { name: "Uzeed", fact: "Directorio en Next.js, infraestructura autoescalable", href: "https://uzeed.cl", logo: "/brand/clients/uzeed.png", external: true },
-  { name: "Centinela", fact: "Plataforma propia de pruebas de seguridad", href: "/work", logo: null },
-  { name: "Nomadbrew", fact: "Importación y e-commerce en Mercado Libre Full", href: "/work", logo: "/brand/clients/nomadbrew.png" },
+  { name: "Centinela", fact: "Plataforma de pruebas de seguridad", href: "/work", logo: null },
+  { name: "Nomadbrew", fact: "Tienda online e integración con Mercado Libre Full", href: "/work", logo: "/brand/clients/nomadbrew.png" },
 ];
 
 /** Capacidades como hechos, cada una con proyectos reales que la prueban. */
@@ -74,4 +74,4 @@ export const IDEA_STAGES = [
   { id: "startup", label: "Ya estoy vendiendo" },
 ];
 
-export const IDEA_NEEDS = ["Validación", "Desarrollo", "Diseño y fabricación", "Importación", "Ciberseguridad", "Ventas", "Compras públicas", "Legal", "Contabilidad", "Vender mi empresa"];
+export const IDEA_NEEDS = ["Validación", "Desarrollo", "Diseño y fabricación", "Ciberseguridad", "Ventas", "Compras públicas", "Legal", "Contabilidad", "Vender mi empresa"];

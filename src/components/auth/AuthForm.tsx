@@ -119,7 +119,7 @@ export function AuthForm({
             ))}
           </ul>
         </div>
-        <p className="relative mt-12 text-xs text-white/40">© {new Date().getFullYear()} Full Stack Ventures SpA · Santiago, Chile</p>
+        <p className="relative mt-12 text-xs text-white/40">© {new Date().getFullYear()} FSV · Santiago, Chile</p>
       </aside>
 
       <div className="flex flex-col px-4 py-8 sm:px-8">

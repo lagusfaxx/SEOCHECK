@@ -5,7 +5,7 @@ import { LegalPage } from "@/components/site/Legal";
 
 export const metadata: Metadata = {
   title: "Política de privacidad",
-  description: "Cómo Full Stack Ventures SpA trata los datos personales en FSV Search, incluida la integración con Instagram.",
+  description: "Cómo FSV trata los datos personales en FSV Search, incluida la integración con Instagram.",
 };
 
 const UPDATED = "13 de octubre de 2026";
@@ -15,7 +15,7 @@ const SECTIONS: { title: string; body: React.ReactNode }[] = [
     title: "Quiénes somos",
     body: (
       <p>
-        FSV Search es una plataforma de SEO y contenido operada por Full Stack Ventures SpA, Santiago de Chile (&quot;nosotros&quot;). Esta política explica qué datos tratamos, para qué y cómo puedes
+        FSV Search es una plataforma de SEO y contenido operada por FSV (razón social Full Stack Ventures SpA), Santiago de Chile (&quot;nosotros&quot;). Esta política explica qué datos tratamos, para qué y cómo puedes
         ejercer tus derechos. Contacto: <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
       </p>
     ),

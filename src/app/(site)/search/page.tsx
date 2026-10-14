@@ -3,6 +3,8 @@ import Link from "next/link";
 import { Header } from "@/components/site/Header";
 import { CtaAndFooter } from "@/components/site/Footer";
 import { PLANS, planPriceClp, TRIAL_DAYS } from "@/lib/plans";
+import { FEATURE_PAGES } from "@/lib/search-marketing";
+import { GuideLinks } from "@/components/site/SearchKit";
 
 export const revalidate = 3600;
 
@@ -28,15 +30,8 @@ const BLOCKS: { n: string; title: string; sub: string; img: string; alt: string 
   { n: "03", title: "Convierte datos en acciones.", sub: "Contenido, briefs e informes priorizados.", img: "/brand/search-content.png", alt: "Análisis de contenido en FSV Search: puntaje, términos faltantes y brief" },
 ];
 
-const FEATURES: [string, string][] = [
-  ["Auditoría SEO técnica", "Revisa tu sitio página por página: errores, indexación, velocidad, enlaces y datos estructurados, ordenados por impacto."],
-  ["Google Search Console", "Conecta tu cuenta con un clic: clics, impresiones, posición y oportunidades por página, sincronizados todos los días."],
-  ["Investigación de keywords", "Encuentra búsquedas reales con volumen, intención y dificultad, agrupadas en clusters y temas."],
-  ["Seguimiento de rankings", "Mide tu posición en Google para las keywords que importan y recibe alertas cuando algo cambia."],
-  ["Briefs de contenido con IA", "Compara tu página con el top 10 y recibe un brief con lo que falta: términos, secciones y preguntas."],
-  ["Instagram con IA", "Genera imágenes y textos para tu marca, publica o programa en Instagram y mide qué funciona."],
-  ["Informes y tareas", "Informes en PDF para tu equipo o clientes y una lista de tareas priorizada, explicada en simple."],
-];
+/** Funciones: cada una tiene su página (posiciona su propia búsqueda). */
+const FEATURES = FEATURE_PAGES.map((f) => [f.name, `${f.description.split(".")[0]}.`, f.slug] as const);
 
 const FAQ = (): [string, string][] => {
   const p = PLANS.pro;
@@ -65,7 +60,7 @@ const jsonLd = () => ({
       inLanguage: "es",
       featureList: FEATURES.map(([t]) => t),
       offers: { "@type": "Offer", price: planPriceClp(), priceCurrency: "CLP", url: "https://fsvc.cl/search#precios", availability: "https://schema.org/InStock", description: `Por perfil al mes, con ${TRIAL_DAYS} días de prueba gratis` },
-      publisher: { "@type": "Organization", name: "Full Stack Ventures SpA", url: "https://fsvc.cl" },
+      publisher: { "@type": "Organization", name: "FSV", url: "https://fsvc.cl" },
     },
     {
       "@type": "FAQPage",
@@ -74,7 +69,7 @@ const jsonLd = () => ({
     {
       "@type": "BreadcrumbList",
       itemListElement: [
-        { "@type": "ListItem", position: 1, name: "Fullstack Ventures", item: "https://fsvc.cl/" },
+        { "@type": "ListItem", position: 1, name: "FSV", item: "https://fsvc.cl/" },
         { "@type": "ListItem", position: 2, name: "FSV Search", item: "https://fsvc.cl/search" },
       ],
     },
@@ -103,6 +98,9 @@ export default function SearchPage() {
               <a href="#precios" className="font-medium underline decoration-fsv-violet decoration-2 underline-offset-[6px] transition hover:text-fsv-violet">
                 Ver precios
               </a>
+              <Link href="/search/auditoria-gratis" className="font-medium underline decoration-fsv-violet decoration-2 underline-offset-[6px] transition hover:text-fsv-violet">
+                Auditar mi sitio gratis
+              </Link>
               <Link href="/login" className="text-sm text-fsv-muted transition hover:text-fsv-ink">
                 ¿Ya tienes cuenta? Entrar
               </Link>
@@ -143,11 +141,11 @@ export default function SearchPage() {
           <div className="mx-auto max-w-6xl px-4 py-16 md:px-6 md:py-24">
             <h2 id="funciones" className="font-display text-[1.9rem] font-semibold leading-tight tracking-[-0.03em] md:text-5xl">Todo lo que necesitas para crecer en Google.</h2>
             <div className="mt-10 grid gap-px overflow-hidden rounded-sm border border-fsv-line bg-fsv-line sm:grid-cols-2 lg:grid-cols-3">
-              {FEATURES.map(([t, d]) => (
-                <div key={t} className="bg-white p-6">
-                  <h3 className="font-display text-lg font-semibold tracking-tight">{t}</h3>
+              {FEATURES.map(([t, d, slug]) => (
+                <Link key={t} href={`/search/${slug}`} className="group block bg-white p-6 transition hover:bg-fsv-bg">
+                  <h3 className="font-display text-lg font-semibold tracking-tight transition group-hover:text-fsv-violet">{t} <span aria-hidden>→</span></h3>
                   <p className="mt-2 text-sm leading-relaxed text-fsv-muted">{d}</p>
-                </div>
+                </Link>
               ))}
             </div>
           </div>
@@ -204,9 +202,21 @@ export default function SearchPage() {
           </div>
         </section>
 
-        <section className="border-t border-fsv-line bg-white">
+        <section aria-labelledby="guias" className="border-t border-fsv-line bg-white">
+          <div className="mx-auto max-w-3xl px-4 py-16 md:px-6 md:py-20">
+            <div className="flex items-baseline justify-between gap-4">
+              <h2 id="guias" className="font-display text-[1.9rem] font-semibold leading-tight tracking-[-0.03em] md:text-4xl">Guías de SEO</h2>
+              <Link href="/search/guias" className="shrink-0 text-sm font-medium transition hover:text-fsv-violet">Ver todas <span aria-hidden>→</span></Link>
+            </div>
+            <div className="mt-6">
+              <GuideLinks />
+            </div>
+          </div>
+        </section>
+
+        <section className="border-t border-fsv-line bg-fsv-bg">
           <div className="mx-auto flex max-w-6xl flex-wrap items-baseline justify-between gap-4 px-4 py-10 md:px-6 md:py-12">
-            <p className="font-display text-xl font-semibold tracking-tight md:text-2xl">Hecha y usada por el equipo de Fullstack Ventures.</p>
+            <p className="font-display text-xl font-semibold tracking-tight md:text-2xl">Hecha y usada por el equipo de FSV.</p>
             <Link href="/" className="text-sm font-medium transition hover:text-fsv-violet">
               Conocer FSV <span aria-hidden>→</span>
             </Link>

@@ -42,7 +42,7 @@ export function Capability({ id, n, title, text, cta, href = CONTACT_HREF, visua
                 <li>
                   <a href="/search" className="flex items-center gap-3 py-3 transition hover:text-fsv-violet">
                     <img src="/brand/fsv-search.png" alt="" className="h-4 w-auto" />
-                    <span className="ml-auto text-sm text-fsv-muted">Producto propio →</span>
+                    <span className="ml-auto text-sm text-fsv-muted">Ver producto →</span>
                   </a>
                 </li>
               )}
