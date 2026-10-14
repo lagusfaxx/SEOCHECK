@@ -9,6 +9,7 @@ import { newToken, tokenHash } from "../auth";
 import { encrypt, decrypt } from "../gsc-oauth";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { appBaseUrl, fetchT } from "../util";
+import { markIgRequestConnected } from "../ig-access";
 
 const GRAPH = "https://graph.instagram.com/v21.0";
 const SCOPES = "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_insights";
@@ -119,6 +120,7 @@ export async function finish(stateRaw: string, code: string, userId: string, ori
     lastError: long.ok ? null : `Conexión temporal: Instagram no entregó el acceso de 60 días (${long.error}). Si publicar falla, vuelve a conectar.`,
   };
   await db.metaConnection.upsert({ where: { projectId: st.projectId }, create: { projectId: st.projectId, ...data }, update: data });
+  await markIgRequestConnected(st.projectId, igAccountName).catch(() => {});
   return st.projectId;
 }
 

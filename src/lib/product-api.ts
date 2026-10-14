@@ -238,6 +238,8 @@ export const PRODUCT_GETS: Record<string, Handler> = {
     const byId = new Map(stats.map((m) => [m.mediaId, m]));
     return posts.map((p) => ({ ...p, stats: (p.metaPostId && byId.get(p.metaPostId)) || null }));
   },
+  "social/access-request": async ({ id }) =>
+    db.igAccessRequest.findMany({ where: { projectId: id }, orderBy: { createdAt: "desc" }, take: 10, select: { id: true, username: true, status: true, createdAt: true, updatedAt: true } }),
   "social/stats": async ({ id }) => {
     const { instagramStats } = await import("./social");
     return instagramStats(id);
@@ -483,6 +485,12 @@ export const PRODUCT_POSTS: Record<string, Handler> = {
     const r = await db.socialPost.updateMany({ where: { id: post.id, status: { in: ["draft", "failed"] } }, data: { status: "scheduled", scheduledAt: publishAt, errorMsg: null } });
     if (!r.count) throw new ProductError(409, "Solo se pueden programar borradores o posts con error");
     return { ok: true };
+  },
+  "social/access-request": async ({ id, user, body, url }) => {
+    const { requestIgAccess } = await import("./ig-access");
+    const { appBaseUrl } = await import("./util");
+    const r = await requestIgAccess(id, user, body.username, appBaseUrl(url.origin));
+    return { id: r.id, username: r.username, status: r.status, createdAt: r.createdAt, updatedAt: r.updatedAt };
   },
   "social/sync-stats": async ({ id }) => {
     const { syncInsights } = await import("./providers/meta");

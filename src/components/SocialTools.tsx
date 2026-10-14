@@ -604,6 +604,93 @@ function PostsPanel() {
   );
 }
 
+// ---------- Acceso en prueba ----------
+
+type AccessRequest = { id: string; username: string; status: "pending" | "invited" | "connected" | "rejected"; createdAt: string; updatedAt: string };
+
+const REQ_STATUS: Record<AccessRequest["status"], { label: string; cls: string }> = {
+  pending: { label: "En revisión", cls: "!bg-amber-100 !text-amber-800" },
+  invited: { label: "Invitación enviada", cls: "!bg-sky-100 !text-sky-800" },
+  connected: { label: "Conectada", cls: "!bg-emerald-100 !text-emerald-800" },
+  rejected: { label: "No habilitada", cls: "!bg-rose-100 !text-rose-800" },
+};
+
+/** Mientras Meta no aprueba la app, cada cuenta se habilita a mano: el cliente deja su @ y recibe los pasos por correo. */
+function TrialAccess() {
+  const { id } = useProject();
+  const { data: reqs, mutate } = useApi<AccessRequest[]>(`/api/p/${id}/social/access-request`);
+  const [username, setUsername] = useState("");
+  const [send, sending] = useAction(async () => {
+    await api(`/api/p/${id}/social/access-request`, "POST", { username });
+    setUsername("");
+    await mutate();
+    toast("Solicitud enviada: te avisaremos por correo", "ok");
+  });
+  const invited = reqs?.some((r) => r.status === "invited");
+  const open = reqs?.filter((r) => r.status !== "connected") ?? [];
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="flex items-start gap-3 border-b border-amber-200 bg-amber-50 px-5 py-4 dark:border-amber-900/50 dark:bg-amber-900/20">
+        <span className="chip mt-0.5 shrink-0 !bg-amber-200 !text-amber-900">Beta</span>
+        <div className="text-sm text-amber-900 dark:text-amber-200">
+          <div className="font-semibold">La publicación en Instagram está en prueba</div>
+          <p className="mt-0.5">Mientras Meta aprueba la integración, habilitamos cada cuenta a mano. Déjanos tu usuario de Instagram y te avisamos por correo cuando esté lista (normalmente en menos de un día hábil).</p>
+        </div>
+      </div>
+      <div className="space-y-4 p-5">
+        <form
+          className="flex flex-col gap-2 sm:flex-row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (username.trim()) send();
+          }}
+        >
+          <div className="relative flex-1">
+            <span className="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-sm text-ink-400">@</span>
+            <input className="input pl-7" placeholder="tunegocio" value={username} onChange={(e) => setUsername(e.target.value)} maxLength={80} aria-label="Usuario de Instagram" autoComplete="off" />
+          </div>
+          <button className="btn-p justify-center" disabled={sending || !username.trim()}>
+            {sending ? <Spinner /> : <Icon name="send" />}Solicitar acceso
+          </button>
+        </form>
+
+        {open.length > 0 && (
+          <div className="divide-y divide-ink-100 rounded-lg border border-ink-100 dark:divide-ink-800 dark:border-ink-800">
+            {open.map((r) => (
+              <div key={r.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                <span className="font-medium">@{r.username}</span>
+                <span className={cx("chip", REQ_STATUS[r.status].cls)}>{REQ_STATUS[r.status].label}</span>
+                <span className="ml-auto text-xs text-ink-400">{fmtDate(r.status === "pending" ? r.createdAt : r.updatedAt)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div>
+          <div className="lbl mb-2">Qué tienes que hacer</div>
+          <ol className="space-y-2 text-sm">
+            {[
+              <>Confirma que tu cuenta sea <b>profesional</b>: en Instagram, Configuración → Tipo de cuenta y herramientas → Cuenta profesional (Empresa o Creador).</>,
+              <>Envía tu usuario arriba. Revisamos la solicitud y te mandamos una <b>invitación</b> desde Instagram; te avisamos por correo.</>,
+              <>
+                Acepta la invitación con esa cuenta en Instagram: Configuración → <b>Apps y sitios web</b> → <b>Invitaciones de evaluador</b>. En el computador:{" "}
+                <a className="text-acc underline" href="https://www.instagram.com/accounts/manage_access/" target="_blank" rel="noreferrer">instagram.com/accounts/manage_access</a>.
+              </>,
+              <>Vuelve aquí y pulsa <b>Conectar Instagram</b>.</>,
+            ].map((t, i) => (
+              <li key={i} className={cx("flex gap-3", invited && i === 2 && "rounded-lg bg-sky-50 p-2 dark:bg-sky-900/20")}>
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-acc-soft text-[11px] font-semibold text-acc">{i + 1}</span>
+                <span className="text-ink-600 dark:text-ink-300">{t}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Página ----------
 
 export default function SocialTools() {
@@ -640,6 +727,7 @@ export default function SocialTools() {
         </div>
       )}
 
+      {conn?.configured && !conn.connected && <TrialAccess />}
       {conn && <ConnectionBar conn={conn} onChange={() => refreshConn()} />}
 
       {conn?.connected && (

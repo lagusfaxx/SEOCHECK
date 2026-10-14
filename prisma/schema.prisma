@@ -137,6 +137,7 @@ model Project {
   socialPosts    SocialPost[]
   socialImages   SocialImage[]
   igMedia        IgMedia[]
+  igAccessRequests IgAccessRequest[]
   tasks ProjectTask[]
   explorations Exploration[]
   reports ReportSnapshot[]
@@ -764,6 +765,23 @@ model IgMedia {
 
   @@unique([projectId, mediaId])
   @@index([projectId, postedAt])
+}
+
+/// Pedido de un cliente para habilitar su Instagram mientras la app de Meta está en prueba (se agrega como Instagram Tester).
+model IgAccessRequest {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  /// usuario de Instagram sin @
+  username  String
+  /// pending | invited | connected | rejected
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, username])
+  @@index([status, createdAt])
 }
 
 /// Ideas enviadas desde el formulario público de fsvc.cl/ventures.
