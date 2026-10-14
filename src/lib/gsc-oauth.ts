@@ -7,7 +7,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { appBaseUrl } from "./util";
 import { OAuth2Client } from "google-auth-library";
 import { db } from "./db";
-import { newToken, tokenHash } from "./auth";
+import { newToken, requireProject, tokenHash } from "./auth";
 
 export const GSC_SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly", "openid", "email"];
 
@@ -24,11 +24,24 @@ export const redirectUri = (origin: string) => `${appBaseUrl(origin)}/api/oauth/
 
 // ---------- cifrado de tokens ----------
 
+const parseKey = (raw: string) => (/^[A-Za-z0-9+/=_-]{43,}$/.test(raw) ? Buffer.from(raw.replace(/-/g, "+").replace(/_/g, "/"), "base64") : Buffer.alloc(0));
 function encKey(): Buffer {
-  const raw = process.env.TOKEN_ENC_KEY ?? "";
-  const k = /^[A-Za-z0-9+/=_-]{43,}$/.test(raw) ? Buffer.from(raw.replace(/-/g, "+").replace(/_/g, "/"), "base64") : Buffer.alloc(0);
+  const k = parseKey(process.env.TOKEN_ENC_KEY ?? "");
   if (k.length !== 32) throw new Error("TOKEN_ENC_KEY debe ser una clave de 32 bytes en base64 (genérala con: openssl rand -base64 32)");
   return k;
+}
+/** Rotación: con TOKEN_ENC_KEY nueva y la anterior en TOKEN_ENC_KEY_PREV, los tokens viejos se siguen leyendo y se re-cifran al usarse. */
+function prevKey(): Buffer | null {
+  const k = parseKey(process.env.TOKEN_ENC_KEY_PREV ?? "");
+  return k.length === 32 ? k : null;
+}
+
+/** Un token guardado que ya no se puede descifrar (clave cambiada sin TOKEN_ENC_KEY_PREV, dato dañado). */
+export class TokenDecryptError extends Error {
+  constructor() {
+    super("No se pudo leer la conexión guardada: hay que volver a conectar la cuenta");
+    this.name = "TokenDecryptError";
+  }
 }
 
 export function encrypt(plain: string): string {
@@ -38,13 +51,34 @@ export function encrypt(plain: string): string {
   return `v1.${iv.toString("base64")}.${c.getAuthTag().toString("base64")}.${data.toString("base64")}`;
 }
 
-export function decrypt(blob: string): string {
-  const [v, iv, tag, data] = blob.split(".");
-  if (v !== "v1") throw new Error("formato de token desconocido");
-  const d = createDecipheriv("aes-256-gcm", encKey(), Buffer.from(iv, "base64"));
-  d.setAuthTag(Buffer.from(tag, "base64"));
-  return Buffer.concat([d.update(Buffer.from(data, "base64")), d.final()]).toString("utf8");
+function decryptWith(key: Buffer, iv: Buffer, tag: Buffer, data: Buffer) {
+  const d = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
+  d.setAuthTag(tag);
+  return Buffer.concat([d.update(data), d.final()]).toString("utf8");
 }
+
+/** Descifra; `rotated` = se leyó con la clave anterior y conviene volver a guardarlo con encrypt(). */
+export function decryptToken(blob: string): { plain: string; rotated: boolean } {
+  const [v, ivB, tagB, dataB] = blob.split(".");
+  if (v !== "v1" || !ivB || !tagB || dataB === undefined) throw new TokenDecryptError();
+  const iv = Buffer.from(ivB, "base64"), tag = Buffer.from(tagB, "base64"), data = Buffer.from(dataB, "base64");
+  // tag truncado: GCM lo aceptaría con menos seguridad
+  if (iv.length !== 12 || tag.length !== 16) throw new TokenDecryptError();
+  const key = encKey();
+  try {
+    return { plain: decryptWith(key, iv, tag, data), rotated: false };
+  } catch {
+    const prev = prevKey();
+    if (prev) {
+      try {
+        return { plain: decryptWith(prev, iv, tag, data), rotated: true };
+      } catch {}
+    }
+    throw new TokenDecryptError();
+  }
+}
+
+export const decrypt = (blob: string) => decryptToken(blob).plain;
 
 // ---------- flujo ----------
 
@@ -73,8 +107,10 @@ export async function startUrl(projectId: string, userId: string, origin: string
 export async function finish(stateRaw: string, code: string, userId: string, origin: string) {
   const st = await db.oAuthState.findUnique({ where: { id: tokenHash(stateRaw) } });
   if (st) await db.oAuthState.delete({ where: { id: st.id } }).catch(() => {});
-  if (!st || st.expiresAt < new Date()) throw new Error("La autorización venció o no es válida: vuelve a intentarlo");
+  if (!st || st.expiresAt < new Date() || st.provider !== "google") throw new Error("La autorización venció o no es válida: vuelve a intentarlo");
   if (st.userId !== userId) throw new Error("La autorización la empezó otro usuario");
+  // pudo perder el acceso en los minutos que estuvo en Google
+  await requireProject(userId, st.projectId, "admin");
   const client = oauthClient(origin);
   const { tokens } = await client.getToken({ code, codeVerifier: st.codeVerifier });
   if (!tokens.refresh_token) throw new Error("Google no entregó acceso permanente: quita el acceso de FSV Search en tu cuenta de Google y vuelve a conectar");
@@ -97,7 +133,15 @@ export async function projectClient(projectId: string): Promise<{ client: OAuth2
   const c = await db.gscConnection.findUnique({ where: { projectId } });
   if (!c) return null;
   const client = new OAuth2Client(process.env.GOOGLE_OAUTH_CLIENT_ID, process.env.GOOGLE_OAUTH_CLIENT_SECRET);
-  client.setCredentials({ refresh_token: decrypt(c.refreshTokenEnc) });
+  let token: { plain: string; rotated: boolean };
+  try {
+    token = decryptToken(c.refreshTokenEnc);
+  } catch (e) {
+    if (e instanceof TokenDecryptError) throw new GscNotConnected("La conexión con Google ya no es válida: vuelve a conectar Search Console en Ajustes");
+    throw e;
+  }
+  if (token.rotated) await db.gscConnection.update({ where: { projectId }, data: { refreshTokenEnc: encrypt(token.plain) } }).catch(() => {});
+  client.setCredentials({ refresh_token: token.plain });
   return { client, email: c.googleEmail };
 }
 

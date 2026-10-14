@@ -56,6 +56,15 @@ test("cupo de imágenes con IA: se descuenta, se devuelve si falla y se bloquea 
   await db.quotaUsage.deleteMany({ where: { workspaceId: wid } });
 });
 
+test("tope de gasto por workspace: la prueba no puede pasar su límite en USD", { skip: !enabled }, async () => {
+  const { assertBudget, WorkspaceSpendError } = await import("./budget");
+  await db.workspace.update({ where: { id: wid }, data: { plan: "trial" } });
+  await assertBudget({ llm: 0.01 }, "caption", undefined, pid);
+  await db.providerUsage.create({ data: { provider: "llm", endpoint: "test", units: 1, projectId: pid, costUsd: 0.495 } });
+  await assert.rejects(() => assertBudget({ llm: 0.01 }, "caption", undefined, pid), WorkspaceSpendError);
+  await db.providerUsage.deleteMany({ where: { projectId: pid } });
+});
+
 test("suscripción: checkout, activación, monto que no calza y webhook", { skip: !enabled }, async () => {
   const calls: { url: string; method: string; body: any }[] = [];
   let pre: Preapproval = { id: "pre_" + suffix, status: "pending", external_reference: wid, init_point: "https://mp.example/checkout", auto_recurring: { transaction_amount: 19980, currency_id: "CLP" } };

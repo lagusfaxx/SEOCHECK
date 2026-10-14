@@ -20,6 +20,8 @@ export type Limits = {
   ai: number;
   /** investigaciones de keywords */
   research: number;
+  /** tope de gasto en proveedores (USD al mes): la red de seguridad si algo se escapa de los cupos */
+  spendUsd: number;
   whiteLabel: boolean;
 };
 
@@ -33,14 +35,14 @@ export const MAX_SEATS = 20;
 
 export const PLANS = {
   /** Mientras BILLING_ENABLED no sea "true": cuentas gratis sin vencimiento, con cupo mensual moderado (cuida el gasto en APIs). */
-  beta: { label: "Beta gratuita", projects: 2, urls: 500, keywords: 500, rankings: 50, briefs: 10, reports: 5, images: 20, ai: 60, research: 6, whiteLabel: false },
+  beta: { label: "Beta gratuita", projects: 2, urls: 500, keywords: 500, rankings: 50, briefs: 10, reports: 5, images: 20, ai: 60, research: 6, spendUsd: 3, whiteLabel: false },
   /** 7 días gratis al registrarse, sin tarjeta y con cupo bajo: alcanza para probar cada herramienta. */
-  trial: { label: `Prueba gratis (${TRIAL_DAYS} días)`, projects: 1, urls: 100, keywords: 100, rankings: 10, briefs: 2, reports: 1, images: 3, ai: 15, research: 2, whiteLabel: false },
+  trial: { label: `Prueba gratis (${TRIAL_DAYS} días)`, projects: 1, urls: 100, keywords: 100, rankings: 10, briefs: 2, reports: 1, images: 3, ai: 15, research: 2, spendUsd: 0.5, whiteLabel: false },
   /** Plan pagado: cupos por perfil (proyecto); se multiplican por los perfiles contratados (Workspace.seats). */
-  pro: { label: "FSV Search", projects: 1, urls: 1000, keywords: 500, rankings: 50, briefs: 8, reports: 4, images: 30, ai: 100, research: 6, whiteLabel: false },
+  pro: { label: "FSV Search", projects: 1, urls: 1000, keywords: 500, rankings: 50, briefs: 8, reports: 4, images: 30, ai: 100, research: 6, spendUsd: 2.5, whiteLabel: false },
   /** Planes anteriores: siguen funcionando para quien los tenga asignados, pero ya no se venden. */
-  seo: { label: "SEO", projects: 3, urls: 2000, keywords: 2000, rankings: 200, briefs: 30, reports: 10, images: 60, ai: 200, research: 15, whiteLabel: false },
-  agency: { label: "Agencia", projects: 20, urls: 10000, keywords: 10000, rankings: 2000, briefs: 200, reports: 100, images: 300, ai: 1000, research: 80, whiteLabel: true },
+  seo: { label: "SEO", projects: 3, urls: 2000, keywords: 2000, rankings: 200, briefs: 30, reports: 10, images: 60, ai: 200, research: 15, spendUsd: 6, whiteLabel: false },
+  agency: { label: "Agencia", projects: 20, urls: 10000, keywords: 10000, rankings: 2000, briefs: 200, reports: 100, images: 300, ai: 1000, research: 80, spendUsd: 30, whiteLabel: true },
 } as const satisfies Record<string, Limits>;
 export type PlanKey = keyof typeof PLANS;
 
@@ -62,6 +64,7 @@ export const INTERNAL_PLAN: Limits = {
   images: 1_000_000,
   ai: 1_000_000,
   research: 1_000_000,
+  spendUsd: 1_000_000,
   whiteLabel: true,
 };
 
@@ -69,7 +72,7 @@ export const INTERNAL_PLAN: Limits = {
 export function proLimits(seats: number): Limits {
   const n = Math.min(MAX_SEATS, Math.max(1, Math.floor(seats) || 1));
   const b = PLANS.pro;
-  return { ...b, label: n === 1 ? b.label : `${b.label} · ${n} perfiles`, projects: n, keywords: b.keywords * n, rankings: b.rankings * n, briefs: b.briefs * n, reports: b.reports * n, images: b.images * n, ai: b.ai * n, research: b.research * n };
+  return { ...b, label: n === 1 ? b.label : `${b.label} · ${n} perfiles`, projects: n, keywords: b.keywords * n, rankings: b.rankings * n, briefs: b.briefs * n, reports: b.reports * n, images: b.images * n, ai: b.ai * n, research: b.research * n, spendUsd: b.spendUsd * n };
 }
 
 /** Plan efectivo de un workspace: un solo lugar para límites y vencimiento. */

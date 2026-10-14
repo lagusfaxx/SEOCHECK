@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Page } from "@prisma/client";
-import { parseHtml, xRobotsNoindex } from "./audit/crawler";
+import { decodeCfEmail, parseHtml, xRobotsNoindex } from "./audit/crawler";
 import { computeIssues } from "./audit/issues";
 import { parseRobots, robotsAllows } from "./audit/robots";
 
@@ -209,4 +209,38 @@ test("Retry-After: segundos o fecha, con tope", async () => {
   assert.equal(retryAfterMs("120"), 10_000);
   assert.equal(retryAfterMs(null), 2000);
   assert.ok(retryAfterMs(new Date(Date.now() + 4000).toUTCString()) <= 4000);
+});
+
+// Streaming SSR de React/Next (app router con Suspense), como lo entrega taupoc.cl a un bot: el <main> trae solo
+// marcadores y el contenido llega al final del body en <div hidden id="S:n">.
+const STREAMED = `<!DOCTYPE html><html><head><title>Marca</title><meta name="robots" content="noindex, nofollow"/></head><body>
+<a href="/cdn-cgi/l/email-protection#c0a3afaeb4a1a3b4af80b4a1b5b0afa3eea3ac">correo</a>
+<!--$?--><template id="B:1"></template><div class="skeleton">Cargando</div><!--/$-->
+<div hidden id="S:1"><div class="layout"><main id="contenido"><template id="P:2"></template></main></div></div>
+<script>$RC("B:1","S:1")</script>
+<div hidden id="S:2"><h1>Equipamiento de competencia</h1><p>Trajes homologados por World Aquatics para nadadores de competencia en Chile.</p><a href="/lineas">Líneas</a><p>Escríbenos: <span class="__cf_email__" data-cfemail="c0a3afaeb4a1a3b4af80b4a1b5b0afa3eea3ac">[email&#160;protected]</span></p></div>
+<script>$RS("S:2","P:2")</script>
+</body></html>`;
+
+test("streaming de React: el contenido de los segmentos ocultos cuenta como contenido del <main>", () => {
+  const r = parseHtml(STREAMED, "https://taupoc.cl/marca");
+  assert.equal(r.h1[0], "Equipamiento de competencia");
+  assert.ok(r.wordCount >= 13, `palabras: ${r.wordCount}`);
+  assert.ok(!/Cargando/.test(r.text), "el fallback de carga no cuenta");
+  assert.ok(r.links.includes("https://taupoc.cl/lineas"));
+});
+
+test("Cloudflare: los correos ofuscados no son links rotos y se recupera el correo", () => {
+  assert.equal(decodeCfEmail("c0a3afaeb4a1a3b4af80b4a1b5b0afa3eea3ac"), "contacto@taupoc.cl");
+  assert.equal(decodeCfEmail("zz"), null);
+  const r = parseHtml(STREAMED, "https://taupoc.cl/marca");
+  assert.ok(!r.links.some((l) => l.includes("/cdn-cgi/")), r.links.join(","));
+  assert.ok(r.text.includes("contacto@taupoc.cl"));
+});
+
+test("meta robots nofollow se detecta", () => {
+  const r = parseHtml(STREAMED, "https://taupoc.cl/marca");
+  assert.equal(r.noindex, true);
+  assert.equal(r.nofollow, true);
+  assert.equal(parseHtml("<html><head><meta name='robots' content='noindex, follow'></head><body></body></html>", "https://x.cl/").nofollow, false);
 });

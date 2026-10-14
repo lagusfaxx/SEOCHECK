@@ -5,8 +5,8 @@
  */
 import { db } from "../db";
 import { env } from "../env";
-import { newToken, tokenHash } from "../auth";
-import { encrypt, decrypt } from "../gsc-oauth";
+import { newToken, requireProject, tokenHash } from "../auth";
+import { encrypt, decryptToken, TokenDecryptError } from "../gsc-oauth";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { appBaseUrl, fetchT } from "../util";
 import { markIgRequestConnected } from "../ig-access";
@@ -72,6 +72,7 @@ export async function finish(stateRaw: string, code: string, userId: string, ori
   if (st) await db.oAuthState.delete({ where: { id: st.id } }).catch(() => {});
   if (!st || st.expiresAt < new Date() || st.provider !== "meta") throw new Error("La autorización venció o no es válida");
   if (st.userId !== userId) throw new Error("La autorización la empezó otro usuario");
+  await requireProject(userId, st.projectId, "admin");
 
   // Instagram a veces agrega "#_" al final del code
   const cleanCode = code.replace(/#_$/, "");
@@ -169,7 +170,15 @@ async function readMe(token: string): Promise<{ ok: true; data: any } | { ok: fa
 async function getToken(projectId: string): Promise<{ token: string; igAccountId: string }> {
   const c = await db.metaConnection.findUnique({ where: { projectId } });
   if (!c) throw new MetaNotConnected();
-  let token = decrypt(c.accessTokenEnc);
+  let token: string;
+  try {
+    const t = decryptToken(c.accessTokenEnc);
+    token = t.plain;
+    if (t.rotated) await db.metaConnection.update({ where: { projectId }, data: { accessTokenEnc: encrypt(token) } }).catch(() => {});
+  } catch (e) {
+    if (e instanceof TokenDecryptError) throw new MetaNotConnected("La conexión con Instagram ya no es válida: vuelve a conectar la cuenta");
+    throw e;
+  }
   if (c.tokenExpiresAt && c.tokenExpiresAt < new Date()) throw new MetaNotConnected("El acceso a Instagram venció: vuelve a conectar la cuenta");
   const renewDue = c.tokenExpiresAt && c.tokenExpiresAt < new Date(Date.now() + 15 * 864e5) && c.updatedAt < new Date(Date.now() - 864e5);
   if (renewDue) {

@@ -337,6 +337,8 @@ model Page {
   canonical     String?
   canonicalType String?  // self | other | none
   noindex       Boolean  @default(false)
+  /// meta robots / X-Robots-Tag con nofollow: Google no sigue sus links
+  nofollow      Boolean  @default(false)
   hreflang      Json     @default("[]")
   jsonldTypes   String[]
   jsonldErrors  Int      @default(0)

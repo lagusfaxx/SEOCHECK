@@ -4,6 +4,14 @@
 import { db } from "./db";
 import { env } from "./env";
 import { fetchT } from "./util";
+import { assertBudget } from "./budget";
+import { logUsage } from "./costs";
+import { llmCost } from "./pricing";
+
+/** Costo estimado por imagen (gpt-image-1, 1024², calidad media; con foto de referencia sube por los tokens de entrada). */
+const IMAGE_USD = Number(process.env.IMAGE_USD_PER_IMAGE ?? 0.06);
+/** Cota de un caption (≈2k tokens de entrada con ejemplos + 500 de salida). */
+const CAPTION_USD = 0.01;
 
 // ---------- Caption ----------
 
@@ -45,6 +53,7 @@ Tono: ${toneDesc}. Responde SOLO con el caption, sin comillas ni explicaciones.`
 
 Genera el caption de Instagram.`;
 
+  await assertBudget({ llm: CAPTION_USD }, "Caption de Instagram", undefined, projectId);
   if (env.openaiKey) {
     const res = await fetchT("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -54,6 +63,8 @@ Genera el caption de Instagram.`;
     });
     const data = await res.json();
     if (!res.ok) throw new Error(`OpenAI error: ${data.error?.message ?? res.status}`);
+    const inT = data.usage?.prompt_tokens ?? 0, outT = data.usage?.completion_tokens ?? 0;
+    await logUsage({ provider: "llm", endpoint: "social.caption", model: env.llmModel, inputTokens: inT, outputTokens: outT, costUsd: llmCost(env.llmModel, inT, outT), projectId });
     return (data.choices?.[0]?.message?.content ?? "").trim();
   }
 
@@ -67,6 +78,8 @@ Genera el caption de Instagram.`;
   });
   const data = await res.json();
   if (!res.ok) throw new Error(`Anthropic error: ${data.error?.message ?? res.status}`);
+  const inT = data.usage?.input_tokens ?? 0, outT = data.usage?.output_tokens ?? 0;
+  await logUsage({ provider: "llm", endpoint: "social.caption", model: anthropicModel, inputTokens: inT, outputTokens: outT, costUsd: llmCost(anthropicModel, inT, outT), projectId });
   return ((data.content?.[0]?.text as string) ?? "").trim();
 }
 
@@ -98,6 +111,7 @@ export async function generateImage(projectId: string, prompt: string, reference
   // dall-e no entrega JPEG ni acepta imagen de referencia
   const model = env.imageModel.startsWith("dall-e") ? "gpt-image-1" : env.imageModel;
   const common = { model, prompt, size: "1024x1024", quality: "medium", output_format: "jpeg" };
+  await assertBudget({ llm: IMAGE_USD }, "Imagen con IA", undefined, projectId);
 
   let res: Response;
   if (reference) {
@@ -122,6 +136,7 @@ export async function generateImage(projectId: string, prompt: string, reference
   if (!res.ok) throw new Error(`OpenAI imágenes (${res.status}): ${data.error?.message ?? res.statusText}`);
   const b64: string | undefined = data.data?.[0]?.b64_json;
   if (!b64) throw new Error("OpenAI no devolvió una imagen");
+  await logUsage({ provider: "llm", endpoint: reference ? "social.image.edit" : "social.image", model, units: 1, costUsd: IMAGE_USD, projectId });
   return { url: await saveImage(projectId, Buffer.from(b64, "base64")) };
 }
 

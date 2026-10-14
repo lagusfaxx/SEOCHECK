@@ -1,6 +1,7 @@
 import { runInlineJob } from "./inline-job";
 import { buildReport } from "./report";
 import { billingConfig } from "./billing";
+import { clientMessage } from "./redact";
 import { cancelSubscription, changeSeats, createSubscription, syncWorkspace } from "./mercadopago";
 import { fetchPage } from "./audit/crawler";
 import { contentText } from "./content/clean";
@@ -225,12 +226,12 @@ export const PRODUCT_GETS: Record<string, Handler> = {
       note: "Sin llamadas registradas no se estima costo. El total incluye proveedores externos; no incluye infraestructura.",
     };
   },
-  "social/connection": async ({ id }) => {
+  "social/connection": async ({ id, admin }) => {
     const { metaConfigured } = await import("./providers/meta");
     const c = await db.metaConnection.findUnique({ where: { projectId: id }, select: { igAccountId: true, igAccountName: true, tokenExpiresAt: true, lastError: true, createdAt: true } });
     const { igProfile } = await import("./providers/meta");
     const profile = c ? await igProfile(id).catch(() => null) : null;
-    return { configured: metaConfigured(), connected: Boolean(c), igAccountName: profile?.username ?? c?.igAccountName ?? null, profile, tokenExpiresAt: c?.tokenExpiresAt ?? null, lastError: c?.lastError ?? null, connectedAt: c?.createdAt ?? null };
+    return { configured: metaConfigured(), connected: Boolean(c), igAccountName: profile?.username ?? c?.igAccountName ?? null, profile, tokenExpiresAt: c?.tokenExpiresAt ?? null, lastError: clientMessage(c?.lastError, admin), connectedAt: c?.createdAt ?? null };
   },
   "social/posts": async ({ id, url }) => {
     const status = url.searchParams.get("status") ?? undefined;

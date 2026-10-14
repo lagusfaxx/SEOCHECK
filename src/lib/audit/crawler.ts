@@ -41,6 +41,7 @@ export type PageData = {
   canonical: string | null;
   canonicalType: "self" | "other" | "none";
   noindex: boolean;
+  nofollow?: boolean;
   hreflang: { lang: string; href: string }[];
   jsonldTypes: string[];
   jsonldErrors: number;
@@ -295,12 +296,14 @@ function pageSignals($: cheerio.CheerioAPI, url: string): PageSignals {
 
 /** Directivas de robots: "noindex" o "none" (= noindex, nofollow). */
 const robotsNoindex = (directives: string) => /(^|[\s,])(noindex|none)([\s,]|$)/i.test(directives);
+/** "nofollow" o "none" (= noindex, nofollow). */
+const robotsNofollow = (directives: string) => /(^|[\s,])(nofollow|none)([\s,]|$)/i.test(directives);
 
 /**
  * X-Robots-Tag: "noindex", "googlebot: noindex" o "bingbot: noindex, otherbot: none". Solo cuenta lo que aplica a
  * Googlebot (sin bot o "googlebot:"); un "bingbot: noindex" no saca la página de Google.
  */
-export function xRobotsNoindex(header: string | null | undefined): boolean {
+export function xRobotsNoindex(header: string | null | undefined, test: (d: string) => boolean = robotsNoindex): boolean {
   if (!header) return false;
   let agent: string | null = null;
   for (const raw of header.split(",")) {
@@ -311,7 +314,7 @@ export function xRobotsNoindex(header: string | null | undefined): boolean {
       agent = m[1].toLowerCase();
       directive = m[2];
     }
-    if ((agent === null || agent === "googlebot") && robotsNoindex(directive)) return true;
+    if ((agent === null || agent === "googlebot") && test(directive)) return true;
   }
   return false;
 }
@@ -329,8 +332,98 @@ export function describeFetchError(e: unknown): string {
   return (err?.cause?.message ?? err?.message ?? String(e)).slice(0, 160);
 }
 
+type DomNode = { type: string; data?: string; parent?: DomNode | null; next?: DomNode | null; children?: DomNode[] };
+
+/**
+ * Streaming SSR de React (Next.js app router con Suspense): el servidor manda primero el layout con marcadores
+ * (<template id="B:0"> / <template id="P:1">) y al final del body el contenido real en <div hidden id="S:0">, que
+ * unos scripts ($RC/$RS) mueven a su lugar al cargar. Google ejecuta esos scripts; nosotros los replicamos sobre el
+ * HTML para medir el contenido donde de verdad aparece (si no, el <main> queda vacío: "0 palabras").
+ */
+export function resolveReactStreaming($: cheerio.CheerioAPI): number {
+  const calls: [string, string, string][] = [];
+  $("script").each((_, el) => {
+    for (const m of $(el).text().matchAll(/\$R([CS])\("([^"]+)","([^"]+)"/g)) calls.push([m[1], m[2], m[3]]);
+  });
+  // sin scripts reconocibles: emparejar por número (B:3/P:3 ↔ S:3), que es lo que hace React hoy
+  if (!calls.length)
+    $('div[hidden][id^="S:"]').each((_, el) => {
+      const n = ($(el).attr("id") ?? "").slice(2);
+      if ($(`template[id="B:${n}"]`).length) calls.push(["C", `B:${n}`, `S:${n}`]);
+      else if ($(`template[id="P:${n}"]`).length) calls.push(["S", `S:${n}`, `P:${n}`]);
+    });
+  const byId = (id: string) => $("[id]").filter((_, e) => $(e).attr("id") === id).first();
+  let done = 0;
+  for (const [kind, a, b] of calls) {
+    const segment = byId(kind === "C" ? b : a);
+    const marker = byId(kind === "C" ? a : b);
+    if (!segment.length || !marker.length) continue;
+    const content = segment.contents();
+    if (kind === "S") {
+      marker.replaceWith(content);
+    } else {
+      // $RC: quita el fallback (lo que hay entre el template y el comentario de cierre "/$") y pone el contenido
+      let node = (marker.get(0) as unknown as DomNode).next ?? null;
+      let depth = 0;
+      while (node) {
+        const nxt: DomNode | null = node.next ?? null;
+        if (node.type === "comment") {
+          const d = node.data ?? "";
+          if (d === "/$") {
+            if (depth === 0) break;
+            depth--;
+          } else if (d === "$" || d === "$?" || d === "$!") depth++;
+        }
+        $(node as never).remove();
+        node = nxt;
+      }
+      // se inserta junto al template (un elemento): cheerio no inserta al lado de un comentario
+      marker.replaceWith(content);
+    }
+    segment.remove();
+    done++;
+  }
+  return done;
+}
+
+/** Cloudflare Email Obfuscation: el correo va cifrado con XOR (primer byte = clave) en data-cfemail o en el #hash del link. */
+export function decodeCfEmail(hex: string): string | null {
+  if (!/^[0-9a-f]{4,}$/i.test(hex) || hex.length % 2) return null;
+  const key = parseInt(hex.slice(0, 2), 16);
+  let out = "";
+  for (let i = 2; i < hex.length; i += 2) out += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16) ^ key);
+  return /^[^\s@]+@[^\s@]+$/.test(out) ? out : null;
+}
+
+/**
+ * Cloudflare reescribe los correos del HTML a /cdn-cgi/l/email-protection#… y los descifra en el navegador: no son
+ * links internos ni páginas del sitio. Se vuelven mailto: y el texto "[email protected]" recupera el correo.
+ */
+function resolveCloudflareEmails($: cheerio.CheerioAPI) {
+  $("[data-cfemail]").each((_, el) => {
+    const email = decodeCfEmail($(el).attr("data-cfemail") ?? "");
+    if (email) $(el).replaceWith(email);
+  });
+  $('a[href*="/cdn-cgi/l/email-protection"]').each((_, el) => {
+    const hash = ($(el).attr("href") ?? "").split("#")[1] ?? "";
+    const email = decodeCfEmail(hash);
+    $(el).attr("href", email ? `mailto:${email}` : "#");
+  });
+}
+
+/** Rutas internas de Cloudflare (/cdn-cgi/…): las inyecta el CDN, no son parte del sitio. */
+export const isCdnInternal = (u: string) => {
+  try {
+    return new URL(u).pathname.startsWith("/cdn-cgi/");
+  } catch {
+    return false;
+  }
+};
+
 export function parseHtml(html: string, url: string) {
   const $ = cheerio.load(html);
+  resolveReactStreaming($);
+  resolveCloudflareEmails($);
   const canonicalRaw = $('link[rel="canonical"]').attr("href");
   const canonical = canonicalRaw ? normUrl(canonicalRaw, url) : null;
   const robotsMeta = $('meta[name="robots" i], meta[name="googlebot" i]').map((_, el) => $(el).attr("content") ?? "").get().join(" ");
@@ -355,7 +448,7 @@ export function parseHtml(html: string, url: string) {
   $("a[href]").each((_, el) => {
     const rel = $(el).attr("rel") ?? "";
     const u = normUrl($(el).attr("href")!, url);
-    if (u && !rel.includes("nofollow")) links.add(u);
+    if (u && !rel.includes("nofollow") && !isCdnInternal(u)) links.add(u);
   });
   const headings: { tag: string; text: string }[] = [];
   $("h1,h2,h3").each((_, el) => {
@@ -385,6 +478,7 @@ export function parseHtml(html: string, url: string) {
     canonical,
     canonicalType: (!canonical ? "none" : canonical === url ? "self" : "other") as PageData["canonicalType"],
     noindex: robotsNoindex(robotsMeta),
+    nofollow: robotsNofollow(robotsMeta),
     hreflang: $('link[rel="alternate"][hreflang]').map((_, el) => ({ lang: $(el).attr("hreflang")!, href: $(el).attr("href")! })).get(),
     jsonldTypes: [...new Set(jsonldTypes)],
     jsonldErrors,
@@ -416,6 +510,7 @@ export async function fetchPage(url: string, render = false, o: FetchOpts = {}):
     canonical: parsed?.canonical ?? null,
     canonicalType: parsed?.canonicalType ?? "none",
     noindex: (parsed?.noindex ?? false) || xRobotsNoindex(r.xRobots),
+    nofollow: (parsed?.nofollow ?? false) || xRobotsNoindex(r.xRobots, robotsNofollow),
     hreflang: parsed?.hreflang ?? [],
     jsonldTypes: parsed?.jsonldTypes ?? [],
     jsonldErrors: parsed?.jsonldErrors ?? 0,
@@ -579,6 +674,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     canonical: p.canonical,
     canonicalType: p.canonicalType,
     noindex: p.noindex,
+    nofollow: p.nofollow ?? false,
     hreflang: p.hreflang,
     jsonldTypes: p.jsonldTypes,
     jsonldErrors: p.jsonldErrors,

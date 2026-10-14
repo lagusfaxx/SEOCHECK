@@ -1,7 +1,8 @@
 import { db } from "./db";
 import { env } from "./env";
 import { llmCost, SERPENT_USD_PER_CALL } from "./pricing";
-import { currentJobRunId } from "./jobctx";
+import { currentJobRunId, currentProjectId } from "./jobctx";
+import { PlanLimitError, resolvePlan } from "./plans";
 
 /**
  * Presupuesto mensual por proveedor (USD). Se compara el gasto del mes (ProviderUsage.costUsd, mes
@@ -66,15 +67,18 @@ const RESERVE_HOURS = 6;
  * Dentro de un job (worker), la reserva queda a nombre del job hasta que termina; fuera de un job (pre-chequeo de la
  * API) solo comprueba. Así dos jobs en paralelo no pueden pasar juntos el chequeo y gastar los dos.
  */
-export async function assertBudget(estimates: Partial<Record<BudgetProvider, number>>, label: string, holder = currentJobRunId()) {
+export async function assertBudget(estimates: Partial<Record<BudgetProvider, number>>, label: string, holder = currentJobRunId(), projectId = currentProjectId()) {
   const limits = budgetLimits();
   const wanted = (Object.entries(estimates) as [BudgetProvider, number][]).filter(([p, need]) => need > 0 && limits[p] >= 0);
-  if (!wanted.length) return;
+  const total = (Object.values(estimates) as number[]).reduce((s, n) => s + Math.max(0, n ?? 0), 0);
+  if (!wanted.length && !(projectId && total > 0)) return;
   await db.$transaction(async (tx) => {
     // un solo lock para todo el presupuesto: los chequeos+reservas se hacen de a uno
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(4242002)`;
     await tx.budgetReservation.deleteMany({ where: { expiresAt: { lt: new Date() } } });
     const since = monthStart();
+    // tope por workspace (según su plan): un cliente no puede gastarse el presupuesto de todos
+    if (projectId && total > 0) await assertWorkspaceSpend(tx, projectId, total, since);
     const spentRows = await tx.providerUsage.groupBy({ by: ["provider"], where: { createdAt: { gte: since } }, _sum: { costUsd: true } });
     const spent = new Map(spentRows.map((r) => [r.provider, r._sum.costUsd ?? 0]));
     // reservado por OTROS = su reserva menos lo que ya gastaron (eso ya está en "spent")
@@ -99,6 +103,24 @@ export async function assertBudget(estimates: Partial<Record<BudgetProvider, num
         update: { usd: { increment: need }, expiresAt },
       });
   });
+}
+
+export class WorkspaceSpendError extends PlanLimitError {
+  noRetry = true;
+}
+
+/** Gasto real del mes del workspace + lo que pide este trabajo, contra el tope de su plan. */
+async function assertWorkspaceSpend(tx: Pick<typeof db, "project" | "workspace" | "$queryRaw">, projectId: string, need: number, since: Date) {
+  const p = await tx.project.findUnique({ where: { id: projectId }, select: { workspaceId: true } });
+  if (!p) return;
+  const w = await tx.workspace.findUniqueOrThrow({ where: { id: p.workspaceId } });
+  const { limits } = resolvePlan(w);
+  if (limits.spendUsd >= 1_000_000) return;
+  const [row] = await tx.$queryRaw<{ usd: number }[]>`
+    SELECT COALESCE(SUM(u."costUsd"), 0)::float AS usd FROM "ProviderUsage" u JOIN "Project" p ON p.id = u."projectId"
+    WHERE p."workspaceId" = ${p.workspaceId} AND u."createdAt" >= ${since}`;
+  if ((row?.usd ?? 0) + need > limits.spendUsd + 1e-9)
+    throw new WorkspaceSpendError("Tu plan llegó al uso máximo de IA y búsquedas de este mes. Se renueva el próximo mes; si necesitas más, suma un perfil o escríbenos a contacto@fsvc.cl.");
 }
 
 /** Libera las reservas del job (al terminar, falle o no). */

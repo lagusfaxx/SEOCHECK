@@ -140,9 +140,9 @@ test("informe: priorización por impacto, falsos positivos, tendencias, GSC agru
   assert.ok(idx(/Velocidad móvil de la plantilla `\/blog\/\*` \(laboratorio 22\/100 \(sin datos de campo\)/) >= 0);
   assert.ok(idx(/Subir posiciones/) < idx(/Imágenes sin alt/));
   assert.ok(idx(/Velocidad móvil de la plantilla `\/blog\/\*`/) < idx(/Imágenes sin alt/));
-  // aunque "Title largo" afecte más impresiones, es on-page menor: va después
+  // "Title largo" es on-page menor: su impacto pesa la mitad, pero compite por impacto (no va al final por regla)
   assert.ok(idx(/Subir posiciones/) < idx(/Título demasiado largo/));
-  assert.ok(idx(/Velocidad móvil de la plantilla `\/blog\/\*`/) < idx(/Título demasiado largo/));
+  assert.match(tasks, /Título demasiado largo[^\n]*\n[^\n]*× ½ \(on-page menor\)_/);
   assert.match(tasks, /_Impacto [\d.]+ = [\d.]+ impr × /);
   // 6. agrupado por plantilla con cambio concreto
   assert.match(tasks, /incluir «masajes providencia» en el title y el H1/);
@@ -167,15 +167,13 @@ test("informe: priorización por impacto, falsos positivos, tendencias, GSC agru
   assert.match(tasks, /Velocidad móvil de la plantilla `\/perfil\/\*` \(laboratorio 31\/100 pero los usuarios reales están bien\)[\s\S]*?× bajo ×/);
   // C7. contenido priorizado como cualquier tarea
   assert.match(tasks, /Contenido de https:\/\/mi-sitio\.cl\/perfil\/ana para «masajes providencia» \(score 45\/100\).*listado: intro corta/);
-  // por impacto descendente dentro de cada grupo (importantes, después on-page menores)
+  // solo por impacto (los on-page menores ya vienen con su peso a la mitad en el impacto)
   const meta = lines.map((l) => {
-    const m = /_Impacto ([\d.]+) = [^_]*?(· on-page menor)?_/.exec(tasks.slice(tasks.indexOf(l)))!;
+    const m = /_Impacto ([\d.]+) = [^_]*?(× ½ \(on-page menor\))?_/.exec(tasks.slice(tasks.indexOf(l)))!;
     return { score: Number(m[1].replace(/\./g, "")), minor: Boolean(m[2]) };
   });
-  for (let i = 1; i < meta.length; i++) {
-    assert.ok(Number(meta[i - 1].minor) <= Number(meta[i].minor), "los menores van al final");
-    if (meta[i - 1].minor === meta[i].minor) assert.ok(meta[i - 1].score >= meta[i].score, `orden: ${meta.map((x) => x.score).join(",")}`);
-  }
+  assert.ok(meta.some((m) => m.minor), "hay tareas on-page menores en el informe");
+  for (let i = 1; i < meta.length; i++) assert.ok(meta[i - 1].score >= meta[i].score, `orden: ${meta.map((x) => x.score).join(",")}`);
   // consultas de marca marcadas
   assert.match(sec("Search Console"), /\| mi sitio \| 90 \| 300 \| 1\.1 \| sí \|/);
 });
