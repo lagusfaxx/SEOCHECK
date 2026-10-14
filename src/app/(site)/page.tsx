@@ -14,6 +14,7 @@ export default function Home() {
         <Proof />
         <Capabilities />
         <Search />
+        <Pentest />
         <Work />
         <Ventures />
       </main>
@@ -148,6 +149,37 @@ function Search() {
         <Link href="/search" className="block overflow-hidden rounded-sm border border-fsv-line bg-white lg:col-span-7">
           <img src="/brand/fsv-search-dashboard.png" alt="Dashboard de FSV Search: tareas priorizadas, salud técnica y datos de Search Console" className="w-full" loading="lazy" />
         </Link>
+      </div>
+    </section>
+  );
+}
+
+function Pentest() {
+  return (
+    <section className="border-t border-fsv-line bg-white">
+      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-16 md:px-6 md:py-24 lg:grid-cols-12 lg:items-center">
+        <div className="lg:col-span-6">
+          <Kicker>Producto FSV</Kicker>
+          <div className="mt-6 font-display text-3xl font-semibold tracking-tight">SistemaW</div>
+          <h2 className="mt-4 font-display text-[1.9rem] font-semibold leading-tight tracking-[-0.03em] md:text-[2.6rem]">Pentest y evaluaciones de seguridad, con alcance y evidencia.</h2>
+          <p className="mt-4 text-fsv-muted">Webs, APIs e infraestructura. Dominio verificado, autorización registrada (Ley N° 21.663), informes en PDF y retest.</p>
+          <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
+            <Link href="/pentest" className="inline-flex items-center gap-2 rounded-sm bg-fsv-violet px-5 py-3 font-medium text-white transition hover:brightness-110">
+              Conocer SistemaW <span aria-hidden>→</span>
+            </Link>
+            <Link href="/pentest/revision-gratis" className="font-medium underline decoration-fsv-violet decoration-2 underline-offset-[6px] transition hover:text-fsv-violet">
+              Revisar mi web gratis
+            </Link>
+          </div>
+        </div>
+        <ul className="grid gap-px overflow-hidden rounded-sm border border-fsv-line bg-fsv-line lg:col-span-6">
+          {[["01 — Web & API", "Cabeceras, CORS, cookies, archivos expuestos y controles de acceso."], ["02 — Infraestructura", "Servicios, puertos, versiones y certificados TLS."], ["03 — Informes & retest", "Evidencia, impacto, remediación y comparación entre evaluaciones."]].map(([t, d]) => (
+            <li key={t} className="bg-fsv-bg p-5">
+              <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-fsv-violet">{t}</div>
+              <p className="mt-2 text-sm text-fsv-ink/80">{d}</p>
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   );

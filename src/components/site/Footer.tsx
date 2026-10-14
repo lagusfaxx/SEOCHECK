@@ -33,7 +33,10 @@ export function CtaAndFooter({ title = "¿Tienes algo que construir, proteger o 
               Santiago, Chile
             </p>
           </div>
-          <FooterCol title="Capacidades" links={[["Software", "/capacidades#software"], ["Security", "/capacidades#security"], ["Growth", "/capacidades#growth"]]} />
+          <div className="space-y-10">
+            <FooterCol title="Capacidades" links={[["Software", "/capacidades#software"], ["Security", "/capacidades#security"], ["Growth", "/capacidades#growth"]]} />
+            <FooterCol title="SistemaW" links={[["Pentest y seguridad", "/pentest"], ["Pentest web y API", "/pentest/pentest-web-y-api"], ["Revisión de seguridad gratis", "/pentest/revision-gratis"], ["Guías de ciberseguridad", "/pentest/guias"]]} />
+          </div>
           <FooterCol title="FSV Search" links={[["Herramienta SEO", "/search"], ["Auditoría SEO gratis", "/search/auditoria-gratis"], ["Auditoría técnica", "/search/auditoria-seo"], ["Investigación de keywords", "/search/investigacion-de-keywords"], ["Seguimiento de rankings", "/search/seguimiento-de-rankings"], ["Guías de SEO", "/search/guias"], ["Precios", "/search#precios"], ["Probar gratis", "/signup"], ["Entrar", "/login"]]} />
           <FooterCol title="Empresa" links={[["Nosotros", "/empresa"], ["Proyectos", "/work"], ["Ventures", "/ventures"], ["Cuéntanos tu idea", "/ventures#postular"], ["Contacto", "/#contacto"], ["Privacidad", "/privacidad"], ["Términos", "/terminos"]]} />
         </div>

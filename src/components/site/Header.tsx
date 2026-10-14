@@ -20,6 +20,8 @@ const MENUS: Menu[] = [
       { title: "FSV / SEARCH", text: "Herramienta SEO con datos reales de Google", href: "/search" },
       { title: "Auditoría SEO gratis", text: "Analiza una página en segundos, sin registro", href: "/search/auditoria-gratis" },
       { title: "Guías de SEO", text: "Auditoría, keywords, Search Console y más", href: "/search/guias" },
+      { title: "SISTEMAW", text: "Pentest y evaluaciones de seguridad web", href: "/pentest" },
+      { title: "Revisión de seguridad gratis", text: "Cabeceras, HTTPS y cookies de tu web", href: "/pentest/revision-gratis" },
     ],
     note: "Más productos próximamente",
   },

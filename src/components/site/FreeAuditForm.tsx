@@ -8,8 +8,10 @@ type Result = { url: string; finalUrl: string; score: number; title: string | nu
 const DOT = { ok: "bg-emerald-500", warn: "bg-amber-400", bad: "bg-rose-500" } as const;
 const WORD = { ok: "Bien", warn: "Mejorable", bad: "Problema" } as const;
 
-/** Formulario y resultado de la auditoría gratis de una página. */
-export function FreeAuditForm({ trialDays, price }: { trialDays: number; price: string }) {
+type Final = { title: string; text: string; label: string; href: string };
+
+/** Formulario y resultado de una revisión gratis (SEO de una página o seguridad pasiva). */
+export function FreeAuditForm({ endpoint = "/api/public/audit", scoreLabel = "Puntaje SEO básico de", button = "Auditar gratis", final }: { endpoint?: string; scoreLabel?: string; button?: string; final: Final }) {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -21,7 +23,7 @@ export function FreeAuditForm({ trialDays, price }: { trialDays: number; price: 
     setErr("");
     setR(null);
     try {
-      const res = await fetch("/api/public/audit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
+      const res = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error ?? "No pudimos auditar el sitio");
       setR(j);
@@ -48,7 +50,7 @@ export function FreeAuditForm({ trialDays, price }: { trialDays: number; price: 
           onChange={(e) => setUrl(e.target.value)}
         />
         <button className="inline-flex items-center justify-center gap-2 rounded-sm bg-fsv-violet px-6 py-3 font-medium text-white transition hover:brightness-110 disabled:opacity-60" disabled={busy}>
-          {busy ? "Analizando…" : "Auditar gratis"}
+          {busy ? "Analizando…" : button}
         </button>
       </form>
       {err && <p role="alert" className="mt-4 rounded-sm bg-rose-50 px-4 py-3 text-sm text-rose-800">{err}</p>}
@@ -58,7 +60,7 @@ export function FreeAuditForm({ trialDays, price }: { trialDays: number; price: 
           <div className="flex flex-wrap items-center gap-6 border-y border-fsv-line py-6">
             <div className={`font-display text-6xl font-semibold tracking-tight ${r.score >= 80 ? "text-emerald-600" : r.score >= 50 ? "text-amber-500" : "text-rose-600"}`}>{r.score}</div>
             <div className="min-w-0">
-              <div className="text-sm text-fsv-muted">Puntaje SEO básico de</div>
+              <div className="text-sm text-fsv-muted">{scoreLabel}</div>
               <div className="truncate font-medium">{r.finalUrl}</div>
               <div className="mt-1 text-sm text-fsv-muted">{bad ? `${bad} punto${bad === 1 ? "" : "s"} por mejorar` : "Todo en orden en los puntos básicos"}</div>
             </div>
@@ -81,10 +83,10 @@ export function FreeAuditForm({ trialDays, price }: { trialDays: number; price: 
             ))}
           </ul>
           <div className="mt-8 rounded-sm bg-fsv-ink p-6 text-white">
-            <p className="font-display text-xl font-semibold tracking-tight">Esto es una sola página.</p>
-            <p className="mt-2 text-sm text-white/70">Audita el sitio completo, cruza los hallazgos con tus datos de Google Search Console y recibe las tareas ordenadas por impacto. {trialDays} días gratis, luego ${price} al mes por perfil.</p>
-            <Link href="/signup" className="mt-5 inline-flex items-center gap-2 rounded-sm bg-fsv-violet px-5 py-3 font-medium text-white transition hover:brightness-110">
-              Auditar mi sitio completo <span aria-hidden>→</span>
+            <p className="font-display text-xl font-semibold tracking-tight">{final.title}</p>
+            <p className="mt-2 text-sm text-white/70">{final.text}</p>
+            <Link href={final.href} className="mt-5 inline-flex items-center gap-2 rounded-sm bg-fsv-violet px-5 py-3 font-medium text-white transition hover:brightness-110">
+              {final.label} <span aria-hidden>→</span>
             </Link>
           </div>
         </div>

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 /** Sitio público de FSV (landing y páginas de producto). */
-const SITE = [/^\/$/, /^\/search(\/[a-z0-9-]+){0,2}$/, /^\/ventures$/, /^\/capacidades$/, /^\/work$/, /^\/empresa$/, /^\/privacidad(\/eliminacion)?$/, /^\/terminos$/, /^\/robots\.txt$/, /^\/sitemap\.xml$/, /^\/brand\//, /^\/api\/ideas$/, /^\/api\/public\/audit$/];
+const SITE = [/^\/$/, /^\/search(\/[a-z0-9-]+){0,2}$/, /^\/pentest(\/[a-z0-9-]+){0,2}$/, /^\/ventures$/, /^\/capacidades$/, /^\/work$/, /^\/empresa$/, /^\/privacidad(\/eliminacion)?$/, /^\/terminos$/, /^\/robots\.txt$/, /^\/sitemap\.xml$/, /^\/brand\//, /^\/api\/ideas$/, /^\/api\/public\/(audit|security)$/];
 /** Rutas de la app que se pueden ver sin sesión. */
 const PUBLIC = [/^\/login$/, /^\/signup$/, /^\/setup$/, /^\/forgot$/, /^\/reset$/, /^\/api\/auth\//, /^\/api\/health$/, /^\/api\/oauth\/google\/callback$/, /^\/api\/oauth\/meta\/callback$/];
 

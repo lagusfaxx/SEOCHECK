@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Header } from "@/components/site/Header";
 import { CtaAndFooter } from "@/components/site/Footer";
-import { Breadcrumbs, breadcrumbLd, FeatureLinks, JsonLd, price, SITE_URL } from "@/components/site/SearchKit";
+import { Breadcrumbs, breadcrumbLd, FeatureLinks, JsonLd } from "@/components/site/Marketing";
+import { priceClp as price, searchProduct, SITE_URL } from "@/lib/products";
 import { FreeAuditForm } from "@/components/site/FreeAuditForm";
 import { TRIAL_DAYS } from "@/lib/plans";
 
@@ -37,7 +38,7 @@ export default function FreeAuditPage() {
             <h1 className="mt-8 font-display text-[2.3rem] font-semibold leading-[1.02] tracking-[-0.035em] md:text-[3.6rem]">Auditoría SEO gratis de tu página</h1>
             <p className="mt-5 max-w-2xl text-lg leading-relaxed text-fsv-ink/80">Escribe la dirección de tu sitio y revisamos en segundos los puntos básicos que Google mira en esa página. Sin registro.</p>
             <div className="mt-10">
-              <FreeAuditForm trialDays={TRIAL_DAYS} price={price()} />
+              <FreeAuditForm final={{ title: "Esto es una sola página.", text: `Audita el sitio completo, cruza los hallazgos con tus datos de Google Search Console y recibe las tareas ordenadas por impacto. ${TRIAL_DAYS} días gratis, luego $${price()} al mes por perfil.`, label: "Auditar mi sitio completo", href: "/signup" }} />
             </div>
           </div>
         </section>
@@ -46,7 +47,7 @@ export default function FreeAuditPage() {
             <h2 className="font-display text-2xl font-semibold tracking-tight md:text-3xl">¿Y el resto del sitio?</h2>
             <p className="mt-3 max-w-2xl text-fsv-muted">Esta revisión mira una sola página. Con FSV Search auditas el sitio completo y lo cruzas con tus datos reales de Google.</p>
             <div className="mt-8">
-              <FeatureLinks />
+              <FeatureLinks product={searchProduct()} />
             </div>
           </div>
         </section>
