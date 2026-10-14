@@ -2,10 +2,9 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://fsvc.cl"),
-  title: { default: "FSV — Software, seguridad y crecimiento digital", template: "%s · FSV" },
+  title: { absolute: "FSV — Software, seguridad y crecimiento digital", template: "%s · FSV" },
   description: "Construimos, protegemos y hacemos crecer productos digitales. Software a medida, ciberseguridad y productos tecnológicos. Santiago, Chile.",
   robots: { index: true, follow: true },
-  icons: { icon: "/brand/fsv-mark.png" },
   openGraph: { type: "website", locale: "es_CL", siteName: "FSV", images: ["/brand/fsv-og.png"] },
 };
 
