@@ -24,6 +24,7 @@ export function digestParagraphs(mk: Overview, actions: { title: string }[], bl?
     if (g?.target != null) out.push(`Objetivo ${mk.goalProgress!.month}: ${n(g.mtd)} de ${n(g.target)} clics, proyección ${n(g.projected)} (${g.status}).`);
     const done = mk.annotations.filter((a) => a.impact?.conclusive).slice(0, 3);
     for (const a of done) out.push(`Efecto de «${a.title}» (${a.date}): ${a.impact!.beforePerDay} → ${a.impact!.afterPerDay} clics/día${a.impact!.change != null ? ` (${a.impact!.change >= 0 ? "+" : ""}${Math.round(a.impact!.change * 100)} %)` : ""}.`);
+    if (mk.ga4 && !mk.ga4.empty) out.push(`Desde buscadores: ${n(mk.ga4.current.keyEvents)} conversiones${delta(mk.ga4.current.keyEvents, mk.ga4.previous.keyEvents)}${mk.ga4.current.revenue ? ` e ingresos por ${n(mk.ga4.current.revenue)}${mk.ga4.currency ? ` ${mk.ga4.currency}` : ""}` : ""} (Google Analytics).`);
     if (mk.opportunities?.extraClicks) out.push(`Crecimiento disponible: ~${n(mk.opportunities.extraClicks)} clics/mes estimados si las consultas en posición 4–20 llegan al top 3.`);
     if (mk.decay?.length) out.push(`${mk.decay.length} página(s) vienen cayendo hace 3 meses: conviene refrescarlas.`);
   } else out.push("Search Console no está conectado: sin datos de clics ni impresiones.");

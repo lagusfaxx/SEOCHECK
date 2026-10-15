@@ -15,6 +15,7 @@ import { gscPeriod, isoDay, periodLabel, type GscPeriod } from "./gsc-period";
 import { brandFromDomain, expectedCtrAt, isBrandQuery } from "./report-rules";
 import { urlSection } from "./audit/insights";
 import { hostOf, urlKey } from "./util";
+import { ga4Overview } from "./ga4";
 
 const DAY = 864e5;
 
@@ -152,7 +153,7 @@ export async function marketingOverview(projectId: string) {
   const annotations = await db.annotation.findMany({ where: { projectId }, orderBy: { date: "desc" }, take: 50 });
 
   const competitors = await competitorsOverview(projectId, own);
-  if (!period) return { connected: false as const, goals, annotations: annotations.map((a) => ({ ...a, impact: null })), competitors };
+  if (!period) return { connected: false as const, goals, annotations: annotations.map((a) => ({ ...a, impact: null })), competitors, ga4: await ga4Overview(projectId, null) };
 
   const cur = { gte: period.start, lt: period.endExclusive };
   const prev = { gte: period.prevStart, lt: period.start };
@@ -267,6 +268,7 @@ export async function marketingOverview(projectId: string) {
     decay,
     opportunities: { rows: opportunities, extraClicks: opportunities.reduce((s, r) => s + r.extraClicks, 0), note: "Clics extra estimados si cada consulta llegara a la posición 3, con una curva de CTR promedio de la industria. Es un orden de magnitud para priorizar, no una promesa." },
     competitors,
+    ga4: await ga4Overview(projectId, period),
   };
 }
 

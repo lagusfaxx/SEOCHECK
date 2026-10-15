@@ -9,6 +9,8 @@ import { runCrawl } from "../lib/audit/crawler";
 import { runInspection, runPsi } from "../lib/audit/extras";
 import { checkRank, dueTracked } from "../lib/rank/rank";
 import { syncGsc } from "../lib/rank/gsc";
+import { ga4Of, syncGa4 } from "../lib/ga4";
+import { jobLog } from "../lib/jobctx";
 import { computeAlerts } from "../lib/rank/alerts";
 import { analyzeContent } from "../lib/content/analyze";
 import { runWithJob } from "../lib/jobctx";
@@ -62,6 +64,9 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
     }
     case QUEUES.gscSync:
       await syncGsc(d.projectId, d.backfillDays ?? 90, (pct) => jobProgress(d.jobRunId, pct * 0.9));
+      // GA4 va con la misma sincronización diaria; si falla, no tira el sync de Search Console
+      if (ga4Of((await db.project.findUnique({ where: { id: d.projectId }, select: { settings: true } }))?.settings).property)
+        await syncGa4(d.projectId).catch((e) => jobLog("warn", `Google Analytics: ${e instanceof Error ? e.message : String(e)}`));
       await computeAlerts(d.projectId);
       return;
     case QUEUES.gscDaily: {

@@ -38,6 +38,7 @@ import type { Brief, ContentResult } from "./content/analyze";
 import { assertBudget, est, releaseBudget } from "./budget";
 import { marketingOverview } from "./marketing";
 import { backlinksOverview, bareDomain } from "./backlinks";
+import { ga4Properties, ga4Status, setGa4Property, syncGa4 } from "./ga4";
 
 /** Fecha YYYY-MM-DD (no futura) para anotaciones. */
 function dayParam(v: unknown) {
@@ -169,6 +170,8 @@ export const PRODUCT_GETS: Record<string, Handler> = {
   "rank/opportunities": async ({ id }) => rankOpportunities(id),
   marketing: async ({ id }) => marketingOverview(id),
   backlinks: async ({ id }) => backlinksOverview(id),
+  "ga4/status": async ({ id }) => ga4Status(id),
+  "ga4/properties": async ({ id }) => ga4Properties(id),
   explorations: async ({ id }) =>
     db.exploration.findMany({
       where: { projectId: id },
@@ -585,6 +588,14 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
     await db.project.update({ where: { id }, data: { settings: { ...((p.settings ?? {}) as Record<string, any>), competitors } } });
     return { competitors };
   },
+  "ga4/property": async ({ id, body, user }) => {
+    await admin(id, user.id);
+    const r = await setGa4Property(id, boundedText(body.property, 50));
+    // primera carga al tiro: 90 días de datos
+    await runInlineJob(id, "ga4.sync", () => syncGa4(id));
+    return r;
+  },
+  "ga4/sync": async ({ id }) => runInlineJob(id, "ga4.sync", () => syncGa4(id)),
   "marketing/goals": async ({ id, body }) => {
     const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });
     const settings = (p.settings ?? {}) as Record<string, any>;

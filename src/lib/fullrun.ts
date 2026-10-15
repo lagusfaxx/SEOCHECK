@@ -13,6 +13,7 @@ import { runKeywordPipeline } from "./keywords/pipeline";
 import { assertBudget, BudgetError, est } from "./budget";
 import { normTerm } from "./util";
 import { backlinksConfigured, runBacklinks } from "./backlinks";
+import { ga4Of, syncGa4 } from "./ga4";
 
 export type FullRunOpts = {
   maxPages?: number;
@@ -37,7 +38,7 @@ export type StepResult = { step: string; status: "ok" | "skipped" | "error"; det
 export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: string): Promise<StepResult[]> {
   const p = await db.project.findUniqueOrThrow({ where: { id: projectId } });
   const results: StepResult[] = [];
-  const steps = 8;
+  const steps = 9;
   let n = 0;
   const step = async (name: string, label: string, fn: () => Promise<string | void | null>) => {
     await jobProgress(jobRunId, (n / steps) * 100, label);
@@ -77,6 +78,12 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
     if (opts.gsc === false) return skip("gsc", "desactivado");
     if (!gscReady) return skip("gsc", p.gscProperty ? "Search Console no está conectado" : "sin propiedad GSC en el proyecto");
     await syncGsc(projectId, 90);
+  });
+
+  await step("ga4", "Google Analytics", async () => {
+    if (opts.gsc === false) return skip("ga4", "desactivado");
+    if (!ga4Of(p.settings).property) return skip("ga4", "sin propiedad de Google Analytics");
+    return `${await syncGa4(projectId)} filas`;
   });
 
   // URLs más enlazadas del crawl: las más importantes del sitio

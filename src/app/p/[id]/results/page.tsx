@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useProject } from "@/components/Shell";
 import { GscConnect } from "@/components/GscConnect";
+import { Ga4Card, type Ga4Data } from "@/components/Ga4Card";
 import { api, Bar, cx, DataTable, Delta, Empty, fmt, Hint, pct, Spinner, Stat, useAction, useApi, type Col } from "@/components/ui";
 
 type Pace = { mtd: number; projected: number | null; target: number | null; status: string | null; needPerDay: number | null; daysWithData: number; daysInMonth: number };
@@ -32,6 +33,7 @@ type Overview = {
     aiOverview: { keywords: number; cited: number; examples: { keyword: string; cited: boolean }[] };
     note: string;
   };
+  ga4: Ga4Data;
 };
 
 type Sum = { target: string; backlinks: number; referringDomains: number; rank: number; brokenBacklinks: number };
@@ -126,6 +128,8 @@ export default function Results() {
           <p className="mt-3 text-xs text-ink-500">{k.source}</p>
         </section>
       )}
+
+      <Ga4Card data={data.ga4} onChange={() => mutate()} />
 
       <section className="card space-y-3 p-4">
         <h2 className="text-base font-semibold">Objetivo del mes{data.goalProgress ? ` (${data.goalProgress.month})` : ""}</h2>

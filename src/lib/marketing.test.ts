@@ -79,3 +79,18 @@ test("resumen por correo: clics sin marca, objetivo, efecto concluyente y próxi
   assert.doesNotMatch(lines, /Reciente/, "lo no concluyente no se reporta como resultado");
   assert.match(lines, /1\) Error 4xx/);
 });
+
+import { landingPath, parseReport } from "./ga4";
+
+test("GA4: landings normalizadas (sin query ni barra) y sumadas por día", () => {
+  assert.equal(landingPath("/catalogo/?utm_source=x"), "/catalogo");
+  assert.equal(landingPath("https://www.x.cl/lineas/"), "/lineas");
+  assert.equal(landingPath(""), "/");
+  const rows = parseReport([
+    { dimensionValues: [{ value: "20260915" }, { value: "/catalogo?talla=m" }], metricValues: [{ value: "10" }, { value: "1" }, { value: "59990" }] },
+    { dimensionValues: [{ value: "20260915" }, { value: "/catalogo/" }], metricValues: [{ value: "5" }, { value: "0" }, { value: "0" }] },
+    { dimensionValues: [{ value: "20260915" }, { value: "(not set)" }], metricValues: [{ value: "2" }, { value: "0" }, { value: "0" }] },
+  ]);
+  assert.deepEqual(rows.find((r) => r.landing === "/catalogo"), { date: "2026-09-15", landing: "/catalogo", sessions: 15, keyEvents: 1, revenue: 59990 });
+  assert.ok(rows.some((r) => r.landing === "/"));
+});

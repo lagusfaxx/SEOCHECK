@@ -613,6 +613,16 @@ export async function buildReport(projectId: string): Promise<string> {
     else resultsOut.push("- Sin cambios anotados: anotar cada cambio publicado (Resultados → Cambios) para medir su efecto. Las tareas resueltas se miden solas.");
     if (mk.decay?.length) resultsOut.push("", `**Contenido en caída sostenida** (3 períodos de 28 días bajando): ${mk.decay.slice(0, 8).map((d) => `${d.page} (${d.clicks.join(" → ")})`).join(" · ")}`);
   }
+  if (mk?.ga4 && !mk.ga4.empty) {
+    const g = mk.ga4;
+    const money = (v: number) => (g.currency ? new Intl.NumberFormat("es-CL", { style: "currency", currency: g.currency, maximumFractionDigits: 0 }).format(v) : f0(v));
+    resultsOut.push(
+      "",
+      `**Conversiones del tráfico orgánico** (${g.note} ${g.period.start} a ${g.period.end}): ${f0(g.current.sessions)} sesiones (${pctChange(g.current.sessions, g.previous.sessions)}), ${f0(g.current.keyEvents)} conversiones (${pctChange(g.current.keyEvents, g.previous.keyEvents)}), ingresos ${money(g.current.revenue)} (${pctChange(g.current.revenue, g.previous.revenue)}).`,
+      "",
+      table(["Landing", "Sesiones", "Conversiones", "Tasa", "Ingresos"], g.landings.slice(0, 10).map((l) => [l.landing, f0(l.sessions), f0(l.keyEvents), pctS(l.conversionRate), money(l.revenue)]))
+    );
+  } else if (mk && !mk.ga4) resultsOut.push("", "- Sin Google Analytics: no se miden conversiones ni ingresos del SEO. Conectarlo en Resultados.");
   if (mk?.competitors) {
     const c = mk.competitors;
     resultsOut.push(

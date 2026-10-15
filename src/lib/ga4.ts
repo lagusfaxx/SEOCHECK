@@ -1,0 +1,178 @@
+/**
+ * Google Analytics 4 con la misma conexión de Google del proyecto (OAuth del cliente, sin claves).
+ * Solo tráfico del canal Organic Search: sesiones, eventos clave (conversiones) e ingresos por landing y día.
+ * Así se puede responder "cuánto vende el SEO" y qué landings convierten.
+ */
+import { db } from "./db";
+import { projectClient } from "./gsc-oauth";
+import { jobLog } from "./jobctx";
+
+export const GA4_SCOPE = "https://www.googleapis.com/auth/analytics.readonly";
+const DAY = 864e5;
+const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+
+export type Ga4Settings = { property?: string; displayName?: string; currency?: string };
+export const ga4Of = (settings: unknown): Ga4Settings => ((settings as any)?.ga4 ?? {}) as Ga4Settings;
+
+/** ¿La conexión de Google del proyecto incluye permiso de Analytics? */
+export async function ga4Status(projectId: string) {
+  const c = await db.gscConnection.findUnique({ where: { projectId }, select: { scope: true, googleEmail: true } });
+  const p = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { settings: true } });
+  const last = await db.ga4Row.findFirst({ where: { projectId }, orderBy: { date: "desc" }, select: { date: true } });
+  return {
+    connected: Boolean(c),
+    hasScope: Boolean(c?.scope.includes("analytics")),
+    email: c?.googleEmail ?? null,
+    ...ga4Of(p.settings),
+    lastDate: last ? isoDay(last.date) : null,
+  };
+}
+
+async function client(projectId: string) {
+  const c = await projectClient(projectId);
+  if (!c) throw new Error("Google no está conectado: conecta la cuenta de Google del proyecto");
+  return c.client;
+}
+
+function ga4Error(e: unknown): Error {
+  const status = (e as any)?.response?.status;
+  const msg = (e as any)?.response?.data?.error?.message ?? (e instanceof Error ? e.message : String(e));
+  if (status === 403) return new Error(`Sin permiso para leer Google Analytics: vuelve a conectar Google marcando la casilla de Analytics, con una cuenta que tenga acceso a la propiedad. Detalle: ${msg}`);
+  if (status === 401) return new Error("La conexión con Google ya no es válida: vuelve a conectarla.");
+  return new Error(`Google Analytics: ${msg}`);
+}
+
+/** Propiedades GA4 que ve la cuenta conectada. */
+export async function ga4Properties(projectId: string): Promise<{ property: string; displayName: string; account: string }[]> {
+  const c = await client(projectId);
+  try {
+    const res = await c.request<{ accountSummaries?: { displayName: string; propertySummaries?: { property: string; displayName: string }[] }[] }>({ url: "https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=200" });
+    return (res.data.accountSummaries ?? []).flatMap((a) => (a.propertySummaries ?? []).map((p) => ({ property: p.property, displayName: p.displayName, account: a.displayName })));
+  } catch (e) {
+    throw ga4Error(e);
+  }
+}
+
+/** Guarda la propiedad elegida (debe estar entre las que ve la cuenta) y su moneda. */
+export async function setGa4Property(projectId: string, property: string) {
+  if (!/^properties\/\d+$/.test(property)) throw new Error("Propiedad GA4 inválida");
+  const props = await ga4Properties(projectId);
+  const found = props.find((p) => p.property === property);
+  if (!found) throw new Error("La cuenta conectada no tiene acceso a esa propiedad");
+  const c = await client(projectId);
+  let currency: string | undefined;
+  try {
+    currency = (await c.request<{ currencyCode?: string }>({ url: `https://analyticsadmin.googleapis.com/v1beta/${property}` })).data.currencyCode;
+  } catch {
+    /* sin moneda se muestra el número solo */
+  }
+  const p = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { settings: true } });
+  const settings = (p.settings ?? {}) as Record<string, any>;
+  await db.project.update({ where: { id: projectId }, data: { settings: { ...settings, ga4: { property, displayName: found.displayName, currency } } } });
+  await db.ga4Row.deleteMany({ where: { projectId } });
+  return { property, displayName: found.displayName, currency };
+}
+
+/** Ruta de la landing sin dominio, query ni barra final: así cruza con las páginas de Search Console. */
+export function landingPath(raw: string) {
+  let path = raw || "/";
+  try {
+    path = new URL(raw, "https://x.invalid").pathname;
+  } catch {
+    path = raw.split("?")[0];
+  }
+  return path.replace(/\/+$/, "") || "/";
+}
+
+/** Filas de runReport → registros por día y landing (sumando las que quedan iguales al normalizar). */
+export function parseReport(rows: { dimensionValues: { value: string }[]; metricValues: { value: string }[] }[]) {
+  const out = new Map<string, { date: string; landing: string; sessions: number; keyEvents: number; revenue: number }>();
+  for (const r of rows) {
+    const [d, landing] = r.dimensionValues.map((x) => x.value);
+    if (!/^\d{8}$/.test(d)) continue;
+    const date = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
+    const path = landingPath(landing === "(not set)" ? "/" : landing);
+    const k = `${date}|${path}`;
+    const e = out.get(k) ?? { date, landing: path, sessions: 0, keyEvents: 0, revenue: 0 };
+    e.sessions += Number(r.metricValues[0]?.value ?? 0);
+    e.keyEvents += Number(r.metricValues[1]?.value ?? 0);
+    e.revenue += Number(r.metricValues[2]?.value ?? 0);
+    out.set(k, e);
+  }
+  return [...out.values()];
+}
+
+/** Sincroniza los últimos días (90 la primera vez; luego desde el último dato menos 3 por datos tardíos). */
+export async function syncGa4(projectId: string, backfillDays = 90) {
+  const p = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { settings: true } });
+  const { property } = ga4Of(p.settings);
+  if (!property) throw new Error("Falta elegir la propiedad de Google Analytics");
+  const c = await client(projectId);
+  const last = await db.ga4Row.findFirst({ where: { projectId }, orderBy: { date: "desc" }, select: { date: true } });
+  const end = new Date(Date.now() - DAY);
+  const start = last ? new Date(last.date.getTime() - 3 * DAY) : new Date(end.getTime() - backfillDays * DAY);
+  const all: ReturnType<typeof parseReport> = [];
+  for (let offset = 0; ; offset += 100000) {
+    let res;
+    try {
+      res = await c.request<{ rows?: any[]; rowCount?: number }>({
+        url: `https://analyticsdata.googleapis.com/v1beta/${property}:runReport`,
+        method: "POST",
+        data: {
+          dateRanges: [{ startDate: isoDay(start), endDate: isoDay(end) }],
+          dimensions: [{ name: "date" }, { name: "landingPagePlusQueryString" }],
+          metrics: [{ name: "sessions" }, { name: "keyEvents" }, { name: "totalRevenue" }],
+          dimensionFilter: { filter: { fieldName: "sessionDefaultChannelGroup", stringFilter: { value: "Organic Search" } } },
+          limit: 100000,
+          offset,
+        },
+      });
+    } catch (e) {
+      throw ga4Error(e);
+    }
+    all.push(...parseReport(res.data.rows ?? []));
+    if (!res.data.rows?.length || offset + 100000 >= (res.data.rowCount ?? 0)) break;
+  }
+  await db.ga4Row.deleteMany({ where: { projectId, date: { gte: new Date(`${isoDay(start)}T00:00:00Z`) } } });
+  for (let i = 0; i < all.length; i += 1000)
+    await db.ga4Row.createMany({ data: all.slice(i, i + 1000).map((r) => ({ projectId, date: new Date(`${r.date}T00:00:00Z`), landing: r.landing, sessions: r.sessions, keyEvents: r.keyEvents, revenue: r.revenue })), skipDuplicates: true });
+  await jobLog("info", `Google Analytics: ${all.length} filas (${isoDay(start)} a ${isoDay(end)})`);
+  return all.length;
+}
+
+/** Totales y landings del período (mismas fechas que Search Console) contra el período anterior. */
+export async function ga4Overview(projectId: string, period: { start: Date; endExclusive: Date; prevStart: Date } | null) {
+  const p = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { settings: true } });
+  const g = ga4Of(p.settings);
+  if (!g.property) return null;
+  const last = await db.ga4Row.findFirst({ where: { projectId }, orderBy: { date: "desc" }, select: { date: true } });
+  if (!last) return { property: g.displayName ?? g.property, currency: g.currency ?? null, empty: true as const };
+  // sin Search Console se usan los últimos 28 días de GA4
+  const end = period?.endExclusive ?? new Date(last.date.getTime() + DAY);
+  const start = period?.start ?? new Date(end.getTime() - 28 * DAY);
+  const prevStart = period?.prevStart ?? new Date(start.getTime() - 28 * DAY);
+  const sum = async (gte: Date, lt: Date) => {
+    const r = await db.ga4Row.aggregate({ where: { projectId, date: { gte, lt } }, _sum: { sessions: true, keyEvents: true, revenue: true } });
+    return { sessions: r._sum.sessions ?? 0, keyEvents: r._sum.keyEvents ?? 0, revenue: r._sum.revenue ?? 0 };
+  };
+  const [cur, prev, byLanding] = await Promise.all([
+    sum(start, end),
+    sum(prevStart, start),
+    db.ga4Row.groupBy({ by: ["landing"], where: { projectId, date: { gte: start, lt: end } }, _sum: { sessions: true, keyEvents: true, revenue: true } }),
+  ]);
+  const landings = byLanding
+    .map((r) => ({ landing: r.landing, sessions: r._sum.sessions ?? 0, keyEvents: r._sum.keyEvents ?? 0, revenue: r._sum.revenue ?? 0 }))
+    .map((r) => ({ ...r, conversionRate: r.sessions ? r.keyEvents / r.sessions : 0 }))
+    .sort((a, b) => b.revenue - a.revenue || b.keyEvents - a.keyEvents || b.sessions - a.sessions)
+    .slice(0, 20);
+  return {
+    property: g.displayName ?? g.property,
+    currency: g.currency ?? null,
+    empty: false as const,
+    period: { start: isoDay(start), end: isoDay(new Date(end.getTime() - DAY)) },
+    current: cur,
+    previous: prev,
+    landings,
+    note: "Google Analytics, canal Organic Search (todos los buscadores, no solo Google). Eventos clave = las conversiones configuradas en GA4.",
+  };
+}

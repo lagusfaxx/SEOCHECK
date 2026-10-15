@@ -9,7 +9,8 @@ import { OAuth2Client } from "google-auth-library";
 import { db } from "./db";
 import { newToken, requireProject, tokenHash } from "./auth";
 
-export const GSC_SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly", "openid", "email"];
+/** Search Console y Google Analytics (solo lectura) con una sola autorización del cliente. */
+export const GSC_SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly", "https://www.googleapis.com/auth/analytics.readonly", "openid", "email"];
 
 export class GscNotConnected extends Error {
   constructor(msg = "Search Console no está conectado: conéctalo en Ajustes del proyecto") {

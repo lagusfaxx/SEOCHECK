@@ -20,7 +20,7 @@ async function lastJob(projectId: string, kind: string) {
 }
 
 export async function coverage(projectId: string): Promise<Module[]> {
-  const p = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { gscProperty: true } });
+  const p = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { gscProperty: true, settings: true } });
   const out: Module[] = [];
 
   // Auditoría
@@ -81,6 +81,15 @@ export async function coverage(projectId: string): Promise<Module[]> {
   else if (lastCheck) out.push({ key: "rank", label: "Rankings", state: "ok", detail: `${tracked} keywords, revisadas el ${day(lastCheck.date)}` });
   else out.push({ key: "rank", label: "Rankings", state: "never", detail: `${tracked} keywords sin revisar aún` });
 
+  // Google Analytics (misma conexión de Google)
+  const ga4 = ((p.settings ?? {}) as any).ga4?.property as string | undefined;
+  const ga4Last = await db.ga4Row.findFirst({ where: { projectId }, orderBy: { date: "desc" }, select: { date: true } });
+  const ga4Job = await db.jobRun.findFirst({ where: { projectId, kind: "ga4.sync" }, orderBy: { createdAt: "desc" }, select: { status: true, message: true } });
+  if (!ga4) out.push({ key: "ga4", label: "Google Analytics", state: "missing", detail: "Falta conectar y elegir la propiedad (Resultados)" });
+  else if (ga4Job?.status === "error") out.push({ key: "ga4", label: "Google Analytics", state: "failed", detail: `La última sincronización falló: ${ga4Job.message ?? "sin detalle"}` });
+  else if (ga4Last) out.push({ key: "ga4", label: "Google Analytics", state: "ok", detail: `Datos hasta ${day(ga4Last.date)}` });
+  else out.push({ key: "ga4", label: "Google Analytics", state: "never", detail: "Propiedad elegida, falta sincronizar" });
+
   // Backlinks (cuenta DataForSEO del servidor: el cliente no configura nada)
   const bl = await db.backlinkSnapshot.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { createdAt: true, errors: true } });
   if (!env.dfsLogin || !env.dfsPassword) out.push({ key: "backlinks", label: "Backlinks", state: "missing", detail: "No disponible en este servidor" });
@@ -102,6 +111,7 @@ export function shortLabel(m: Module): string {
     inspect: { ok: "Indexación revisada", failed: "Indexación falló", missing: "Indexación no configurada", never: "Indexación sin revisar" },
     keywords: { ok: "Keywords al día", failed: "Keywords falló", never: "Keywords sin investigar" },
     rank: { ok: "Rankings activos", failed: "Rankings falló", missing: "Rankings no configurado", never: "Rankings sin keywords" },
+    ga4: { ok: "Analytics conectado", failed: "Analytics con error", missing: "Analytics no conectado", never: "Analytics sin sincronizar" },
     backlinks: { ok: "Backlinks con datos", partial: "Backlinks parcial", missing: "Backlinks no disponible", never: "Backlinks pendiente" },
   };
   return S[m.key]?.[m.state] ?? `${m.label}: ${STATE_LABEL[m.state]}`;

@@ -150,6 +150,7 @@ model Project {
   reportSchedule ReportSchedule?
   annotations Annotation[]
   backlinks   BacklinkSnapshot[]
+  ga4Rows     Ga4Row[]
 }
 
 /// Conexión OAuth de Google Search Console del proyecto (la cuenta de Google del cliente). Token cifrado.
@@ -861,4 +862,18 @@ model BacklinkSnapshot {
   createdAt   DateTime @default(now())
 
   @@index([projectId, createdAt])
+}
+
+/// Google Analytics 4: tráfico orgánico por día y landing (canal Organic Search).
+model Ga4Row {
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  /// ruta de la landing (sin dominio ni query)
+  landing   String
+  sessions  Int
+  keyEvents Float
+  revenue   Float
+
+  @@id([projectId, date, landing])
 }

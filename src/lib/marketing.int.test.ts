@@ -28,6 +28,9 @@ before(async () => {
   }
   await db.gscDay.createMany({ data: days });
   await db.gscRow.createMany({ data: rows });
+  await db.ga4Row.createMany({
+    data: Array.from({ length: 56 }, (_, i) => ({ projectId, date: day(i), landing: "/perfil/ana", sessions: 20, keyEvents: i < 28 ? 2 : 1, revenue: i < 28 ? 10000 : 5000 })),
+  });
   await db.annotation.create({ data: { projectId, date: new Date(END - 14 * 864e5), title: "Nuevos titles" } });
   await db.trackedKeyword.create({ data: { projectId, keyword: "masajes providencia" } });
   await db.serpSnapshot.create({
@@ -49,7 +52,7 @@ after(async () => {
 test("resultados: KPIs con y sin marca, objetivo, efecto de un cambio, caída y competidores", { skip: !hasDb }, async () => {
   const { db } = await import("./db");
   const { marketingOverview } = await import("./marketing");
-  await db.project.update({ where: { id: projectId }, data: { settings: { marketing: { goals: { clicks: 600 } } } } });
+  await db.project.update({ where: { id: projectId }, data: { settings: { marketing: { goals: { clicks: 600 } }, ga4: { property: "properties/1", displayName: "Mi sitio", currency: "CLP" } } } });
   const r = await marketingOverview(projectId);
   assert.ok(r.connected);
   if (!r.connected) return;
@@ -70,4 +73,14 @@ test("resultados: KPIs con y sin marca, objetivo, efecto de un cambio, caída y 
   assert.equal(r.competitors!.top[0].domain, "rival.cl");
   assert.equal(r.competitors!.aiOverview.keywords, 1);
   assert.equal(r.competitors!.aiOverview.cited, 0);
+  // GA4 en las mismas fechas que Search Console
+  const g = r.ga4!;
+  assert.ok(g && !g.empty);
+  if (g && !g.empty) {
+    assert.equal(g.period.end, "2026-09-30");
+    assert.equal(g.current.keyEvents, 56);
+    assert.equal(g.previous.keyEvents, 28);
+    assert.equal(g.landings[0].landing, "/perfil/ana");
+    assert.equal(g.landings[0].conversionRate, 0.1);
+  }
 });
