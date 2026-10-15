@@ -45,12 +45,19 @@ export function Ga4Card({ data, onChange }: { data: Ga4Data; onChange: () => voi
         <h2 className="text-base font-semibold">Conversiones e ingresos del SEO</h2>
         {st?.displayName && <span className="text-xs text-ink-500">Google Analytics · {st.displayName}{st.lastDate ? ` · datos hasta ${st.lastDate}` : ""} <button className="btn-g" onClick={() => setPick(true)}>Cambiar</button></span>}
       </div>
-      {!st ? null : !st.connected || !st.hasScope ? (
+      {st && (!st.connected || !st.hasScope) && (
         <div className="flex flex-wrap items-center gap-3 text-sm">
-          <span className="text-ink-500">{st.connected ? "La conexión de Google no incluye permiso de Analytics: vuelve a conectar y marca la casilla de Google Analytics." : "Conecta tu cuenta de Google para ver ventas y contactos que trae el SEO."}</span>
+          <span className="text-ink-500">
+            {data && !data.empty
+              ? "Estos datos ya no se actualizan: la conexión con Google no está activa o no incluye Analytics."
+              : st.connected
+                ? "La conexión de Google no incluye permiso de Analytics: vuelve a conectar y marca la casilla de Google Analytics."
+                : "Conecta tu cuenta de Google para ver ventas y contactos que trae el SEO."}
+          </span>
           <button className="btn-p" disabled={connecting} onClick={connect}>{st.connected ? "Volver a conectar Google" : "Conectar Google"}</button>
         </div>
-      ) : !st.property || pick ? (
+      )}
+      {!st ? null : (!st.connected || !st.hasScope) && (!data || data.empty) ? null : !st.property || pick ? (
         <div className="space-y-2 text-sm">
           {!pick ? <button className="btn-p" onClick={() => setPick(true)}>Elegir propiedad de Google Analytics</button> : propsErr ? <div className="text-rose-600">{String(propsErr.message ?? propsErr)}</div> : !props ? <div className="text-ink-500">Cargando propiedades…</div> : props.length ? (
             <ul className="divide-y divide-ink-100 dark:divide-ink-800">

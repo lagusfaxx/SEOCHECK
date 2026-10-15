@@ -43,6 +43,15 @@ El informe (`GET /api/p/{id}/report`, `?download=1` para bajar el `.md`) se arma
 - Títulos y descripciones se evalúan por ancho estimado en px (~600 / ~920), como aviso opcional; "poco texto" solo bajo 100 palabras y sin pedir relleno; `nofollow` solo cuando la página es la única vía hacia otras URLs.
 - **Briefs verificados**: los links internos solo pueden ir a URLs que existen en el último crawl; los filtros que la página ya muestra no se proponen; las afirmaciones comerciales o de público sin respaldo en la página quedan como avisos a verificar.
 
+## Resultados (marketing)
+
+`/p/{id}/results`: clics con y sin marca, objetivo del mes con proyección, efecto de cada cambio anotado y de las tareas resueltas, oportunidades 4–20 con clics extra estimados, contenido en caída, conversiones e ingresos orgánicos (GA4), backlinks, visibilidad en IA, SEO local, keyword gap con estacionalidad, competencia, avisos y exportación CSV. Mapa completo en `docs/funcionalidades-marketing.md`.
+
+- **GA4:** la conexión de Google pide Search Console y Analytics (`analytics.readonly`) en una sola autorización. Las conexiones anteriores deben reconectarse para habilitar Analytics. Se sincroniza con el cron de GSC.
+- **Avisos inmediatos:** después de cada crawl, sync de GSC y revisión de rankings; una vez por semana por clave, solo a miembros (por defecto dueños y admins). Requiere `RESEND_API_KEY` y `MAIL_FROM` para enviarse.
+- **IA y local:** `/api/ai/rank` y `/api/maps/search/quick` de Serpent con `SERPENT_API_KEY`; cotas `SERPENT_AI_USD_PER_ENGINE` (0,02) y `SERPENT_MAPS_USD_PER_CALL` (0,015) contra `SERPENT_MONTHLY_USD`.
+- **CSV para Sheets/Looker:** `GET /api/feed/{token}/{diario|paginas|consultas|tareas|rankings}.csv`, sin sesión ni BASIC_AUTH; solo se guarda el hash del token y generar otro revoca el anterior.
+
 ## Backlinks
 
 Con `DATAFORSEO_LOGIN/PASSWORD` del servidor (la misma cuenta del volumen de keywords; el cliente no pone ninguna clave), el análisis completo guarda una foto semanal por proyecto: resumen del sitio y de hasta 3 competidores (los de Resultados o, si no hay, los que más aparecen en sus SERPs, sin YouTube/Wikipedia/redes), dominios de referencia nuevos y perdidos, backlinks que llegan a páginas con error (tarea: 301) y dominios que enlazan a la competencia y no al sitio (tarea de prospección). Cota de gasto por foto ~$0,40 contra `DATAFORSEO_MONTHLY_USD`; el costo real queda en `ProviderUsage`. Serpent no ofrece datos de backlinks.

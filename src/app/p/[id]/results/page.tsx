@@ -172,7 +172,7 @@ export default function Results() {
                     <>
                       <div className="tabular-nums">
                         {fmt(a.impact.beforePerDay, 1)} → {fmt(a.impact.afterPerDay, 1)} clics/día{" "}
-                        {a.impact.change != null && <span className={cx(a.impact.conclusive ? (a.impact.change >= 0 ? "text-emerald-600" : "text-rose-600") : "text-ink-400")}>({a.impact.change >= 0 ? "+" : ""}{Math.round(a.impact.change * 100)} %)</span>}
+                        {a.impact.change != null && <span className={cx(a.impact.conclusive && Math.abs(a.impact.change) >= 0.05 ? (a.impact.change > 0 ? "text-emerald-600" : "text-rose-600") : "text-ink-400")}>({a.impact.change >= 0 ? "+" : ""}{Math.round(a.impact.change * 100)} %)</span>}
                       </div>
                       <div className="text-ink-500">{a.impact.conclusive ? "" : "No concluyente: "}{a.impact.note}</div>
                     </>

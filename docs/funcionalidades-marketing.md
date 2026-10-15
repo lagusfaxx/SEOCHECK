@@ -16,8 +16,8 @@ Estados: ✅ disponible · 🆕 agregado en esta versión · ⏳ pendiente (orde
 | Medición automática de tareas resueltas | 🆕 | Resultados, Informe |
 | Resumen por correo con lo esencial y próximas acciones | 🆕 solo a miembros del equipo | Informe → Programación |
 | Informe PDF ejecutivo y técnico, white-label | ✅ | Informe |
-| **Conversiones e ingresos por landing (GA4)** | ⏳ 1 | — |
-| Exportación a Looker Studio / Sheets (API o CSV programado) | ⏳ 4 | — |
+| **Conversiones e ingresos por landing (GA4)**, canal Organic Search, mismo período que Search Console | 🆕 con la conexión de Google del cliente (sin claves) | Resultados, Informe, correo |
+| Exportación a Google Sheets / Looker Studio (CSV con token revocable) | 🆕 | Resultados |
 
 ## 2. Encontrar crecimiento
 
@@ -31,8 +31,8 @@ Estados: ✅ disponible · 🆕 agregado en esta versión · ⏳ pendiente (orde
 | Canibalización con excepciones (marca, posición ≤ 1,5) | ✅ | Rankings, Informe |
 | Variantes ortográficas con tráfico | ✅ | Informe |
 | Brief de contenido verificado contra el sitio | 🆕 links reales, sin filtros repetidos ni afirmaciones sin respaldo | Contenido |
-| **Keyword gap contra competidores** (lo que ellos rankean y tú no) | ⏳ 2 | — |
-| Estacionalidad de la demanda (tendencia mensual del volumen) | ⏳ 6 | — |
+| **Keyword gap contra competidores** (top 20 de ellos, el sitio no aparece) | 🆕 DataForSEO Labs del servidor, mensual | Resultados, Informe |
+| Estacionalidad: meses pico por keyword y "se viene la temporada" | 🆕 | Resultados, Informe |
 
 ## 3. Competencia y visibilidad
 
@@ -42,7 +42,8 @@ Estados: ✅ disponible · 🆕 agregado en esta versión · ⏳ pendiente (orde
 | Cuota de visibilidad por dominio en las keywords monitoreadas | 🆕 | Resultados |
 | Presencia en **AI Overviews** y si te citan | 🆕 | Resultados |
 | **Backlinks**: dominios de referencia vs competidores, nuevos/perdidos, links rotos entrantes a recuperar con 301 y dominios que enlazan a la competencia y no a ti | 🆕 con la cuenta DataForSEO del servidor; el cliente no configura nada | Resultados, Informe, correo |
-| SEO local: Google Business Profile, reseñas, rankings por comuna | ⏳ 5 | — |
+| Visibilidad en IA: si ChatGPT, Claude, Gemini y Perplexity citan el sitio | 🆕 Serpent del servidor, semanal | Resultados, Informe, correo |
+| SEO local: posición y rating en Google Maps por ciudad o comuna, top 3 | 🆕 Serpent del servidor, semanal | Resultados, Informe, correo |
 
 ## 4. Salud técnica (que no se pierda lo ganado)
 
@@ -56,7 +57,7 @@ Estados: ✅ disponible · 🆕 agregado en esta versión · ⏳ pendiente (orde
 | Embudo de URLs: sitemap → rastreadas → con impresiones → indexadas | 🆕 | Informe |
 | Core Web Vitals de campo separados del laboratorio | ✅ | Auditoría, Informe, PDF |
 | Verificación específica por corrección (qué cambia y qué se conserva) | 🆕 | Informe, PDF |
-| **Monitoreo de cambios entre crawls** (title, canonical, noindex, robots que cambian solos) | ⏳ 7 | — |
+| Cambios entre crawls (estado, noindex, title, canonical, H1, páginas desaparecidas) | 🆕 | Resultados → Avisos, Informe |
 
 ## 5. Trabajo en equipo
 
@@ -64,16 +65,16 @@ Estados: ✅ disponible · 🆕 agregado en esta versión · ⏳ pendiente (orde
 |---|---|
 | Tareas con estados e historial, verificadas por el siguiente crawl | ✅ |
 | Workspaces, roles e invitaciones | ✅ |
-| **Responsable y fecha límite por tarea** | ⏳ 8 |
-| Notificaciones de alertas por correo/Slack al ocurrir (no solo en el resumen) | ⏳ 9 |
+| Responsable (miembro del equipo, avisado por correo) y fecha límite por tarea | 🆕 |
+| Avisos inmediatos por correo: home caída, robots.txt que bloquea todo, noindex o errores nuevos en páginas con tráfico, cambios masivos, caída de clics, caída de keywords, backlinks perdidos | 🆕 |
 
-## Orden sugerido de lo pendiente
+## Qué configura cada uno
 
-1. **GA4** (conversiones e ingresos por landing orgánica): sin esto no se puede hablar de retorno. Requiere agregar el permiso `analytics.readonly` a la conexión de Google existente y elegir la propiedad.
-2. **Keyword gap**: con las SERPs que ya se guardan se puede listar qué keywords traen tráfico a los competidores y no al sitio; para cobertura completa hace falta un proveedor (DataForSEO Labs).
-4. Exportación programada a Sheets/Looker Studio.
-5. SEO local (Google Business Profile API).
-6. Estacionalidad del volumen (ya viene en la respuesta de DataForSEO; falta guardarla).
-7. Monitoreo de cambios entre crawls.
-8. Responsable y fecha límite por tarea.
-9. Alertas inmediatas por correo/Slack.
+- **Servidor (una vez, quien opera la instalación):** `DATAFORSEO_LOGIN/PASSWORD` (backlinks, keyword gap, volumen), `SERPENT_API_KEY` (rankings, IA, Google Maps), `GOOGLE_OAUTH_CLIENT_ID/SECRET` + `TOKEN_ENC_KEY` (conexión de Google), `RESEND_API_KEY` + `MAIL_FROM` (correos), `PAGESPEED_API_KEY`. Los límites de gasto mensuales (`DATAFORSEO_MONTHLY_USD`, `SERPENT_MONTHLY_USD`) frenan cualquier paso que no quepa.
+- **Cliente:** solo inicia sesión con Google (Search Console y Analytics en una autorización) y, si quiere, define objetivo del mes, competidores, búsquedas locales y quién recibe correos. No pone claves.
+
+## Siguientes pasos posibles
+
+- Slack o WhatsApp como canal de avisos además del correo.
+- Google Business Profile API (con OAuth del cliente) para responder reseñas y ver llamadas/rutas desde Maps.
+- Atribución de ingresos por consulta (cruce GSC × GA4 por landing) y pronóstico de tráfico por keyword.
