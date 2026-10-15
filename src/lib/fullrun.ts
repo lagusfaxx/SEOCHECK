@@ -153,7 +153,8 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
 
   await step("alerts", "alertas", async () => {
     const a = await computeAlerts(projectId);
-    return `${a} alertas`;
+    const w = await import("./watch").then((m) => m.runWatch(projectId));
+    return `${a} alertas${w.length ? ` · ${w.length} aviso(s) enviado(s)` : ""}`;
   });
 
   await jobLog("info", "informe completo", results);

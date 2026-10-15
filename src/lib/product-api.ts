@@ -39,6 +39,7 @@ import { assertBudget, est, releaseBudget } from "./budget";
 import { marketingOverview } from "./marketing";
 import { backlinksOverview, bareDomain } from "./backlinks";
 import { ga4Properties, ga4Status, setGa4Property, syncGa4 } from "./ga4";
+import { alertRecipients, FIELD_LABEL, latestCrawlChanges } from "./watch";
 
 /** Fecha YYYY-MM-DD (no futura) para anotaciones. */
 function dayParam(v: unknown) {
@@ -171,6 +172,23 @@ export const PRODUCT_GETS: Record<string, Handler> = {
   marketing: async ({ id }) => marketingOverview(id),
   backlinks: async ({ id }) => backlinksOverview(id),
   "ga4/status": async ({ id }) => ga4Status(id),
+  /** Avisos inmediatos de los últimos 30 días, cambios entre crawls y a quién llegan */
+  watch: async ({ id }) => {
+    const [alerts, c, p, recipients] = await Promise.all([
+      db.alert.findMany({ where: { projectId: id, type: "watch", createdAt: { gte: new Date(Date.now() - 30 * 864e5) } }, orderBy: { createdAt: "desc" }, take: 30 }),
+      latestCrawlChanges(id),
+      db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } }),
+      alertRecipients(id),
+    ]);
+    const byField: Record<string, number> = {};
+    for (const ch of c?.changes ?? []) byField[FIELD_LABEL[ch.field]] = (byField[FIELD_LABEL[ch.field]] ?? 0) + 1;
+    return {
+      alerts: alerts.map((a) => ({ id: a.id, at: a.createdAt, ...(a.data as object) })),
+      changes: c ? { from: c.previous.startedAt, to: c.current.startedAt, total: c.changes.length, byField, sample: c.changes.slice(0, 50) } : null,
+      immediate: (((p.settings ?? {}) as any).alerts?.immediate ?? true) !== false,
+      recipients,
+    };
+  },
   "ga4/properties": async ({ id }) => ga4Properties(id),
   explorations: async ({ id }) =>
     db.exploration.findMany({
@@ -596,6 +614,18 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
     return r;
   },
   "ga4/sync": async ({ id }) => runInlineJob(id, "ga4.sync", () => syncGa4(id)),
+  "marketing/alerts": async ({ id, body, user }) => {
+    await admin(id, user.id);
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true, workspaceId: true } });
+    const members = await db.membership.findMany({ where: { workspaceId: p.workspaceId }, select: { user: { select: { email: true } } } });
+    const allowed = new Set(members.map((m) => m.user.email.toLowerCase()));
+    const emails = Array.isArray(body.emails) ? ([...new Set(body.emails.map((e: unknown) => String(e).trim().toLowerCase()).filter(Boolean))] as string[]) : [];
+    const outside = emails.filter((e) => !allowed.has(e));
+    if (outside.length) throw invalid(`Solo miembros del equipo pueden recibir avisos: ${outside.join(", ")}`);
+    const settings = (p.settings ?? {}) as Record<string, any>;
+    await db.project.update({ where: { id }, data: { settings: { ...settings, alerts: { ...(settings.alerts ?? {}), emails, immediate: body.immediate !== false } } } });
+    return { emails, immediate: body.immediate !== false };
+  },
   "marketing/goals": async ({ id, body }) => {
     const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });
     const settings = (p.settings ?? {}) as Record<string, any>;

@@ -769,6 +769,8 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   if (await cancelled()) throw new NoRetryError("Crawl cancelado");
   await db.crawl.update({ where: { id: crawlId }, data: { status: outcome.status, reason: outcome.reason, stats, finishedAt: new Date() } });
   await syncCrawlTasks(crawlId);
+  // avisos inmediatos (home caída, noindex o errores nuevos en páginas con tráfico, cambios masivos): no deben tirar el crawl
+  await import("../watch").then((w) => w.runWatch(crawl.projectId)).catch(() => {});
   if (outcome.status === "failed") throw new NoRetryError(outcome.reason ?? "Crawl fallido");
   return { ...stats, status: outcome.status };
 }

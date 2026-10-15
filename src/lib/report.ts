@@ -5,6 +5,7 @@ import { DEFAULT_VERIFY, ISSUE_VERIFY } from "./audit/fixes";
 import { gscPeriod, isoDay, periodLabel, SOURCE_NOTE } from "./gsc-period";
 import { marketingOverview } from "./marketing";
 import { backlinksOverview } from "./backlinks";
+import { FIELD_LABEL, latestCrawlChanges } from "./watch";
 import { hostOf, urlKey } from "./util";
 import { coverage, emptyText, STATE_LABEL } from "./coverage";
 import { buildFindings, KIND_LABEL, kindOf, urlSection, type Pattern } from "./audit/insights";
@@ -631,6 +632,21 @@ export async function buildReport(projectId: string): Promise<string> {
     );
   }
 
+  // ---------- Cambios desde el crawl anterior ----------
+  const changesOut: string[] = [];
+  const ch = await latestCrawlChanges(projectId);
+  if (ch?.changes.length) {
+    const byField = new Map<string, typeof ch.changes>();
+    for (const c of ch.changes) byField.set(c.field, [...(byField.get(c.field) ?? []), c]);
+    changesOut.push(
+      `_Crawl del ${isoDay(ch.previous.startedAt)} contra el del ${isoDay(ch.current.startedAt)}. Un cambio que nadie pidió (sobre todo en noindex, canonical o estado HTTP) suele venir de un deploy: confirmar que fue intencional._\n`,
+      table(
+        ["Qué cambió", "URLs", "Ejemplo"],
+        [...byField.entries()].sort((a, b) => b[1].length - a[1].length).map(([f, l]) => [FIELD_LABEL[f as keyof typeof FIELD_LABEL], l.length, `${l[0].url}: «${l[0].before}» → «${l[0].after}»`])
+      )
+    );
+  }
+
   // ---------- Backlinks ----------
   const blOut: string[] = [];
   const bl = (await backlinksOverview(projectId)).snapshot;
@@ -802,6 +818,7 @@ export async function buildReport(projectId: string): Promise<string> {
   out.push("## Auditoría técnica", "", ...auditOut, "");
   if (httpOut.length) out.push("### Errores HTTP con evidencia", "", ...httpOut, "");
   if (linkOut.length) out.push("### Enlazado interno de páginas clave", "", ...linkOut, "");
+  if (changesOut.length) out.push("### Cambios desde el crawl anterior", "", ...changesOut, "");
   out.push(
     "## Indexación (URL Inspection)",
     "",

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useProject } from "@/components/Shell";
 import { GscConnect } from "@/components/GscConnect";
 import { Ga4Card, type Ga4Data } from "@/components/Ga4Card";
+import { WatchCard } from "@/components/WatchCard";
 import { api, Bar, cx, DataTable, Delta, Empty, fmt, Hint, pct, Spinner, Stat, useAction, useApi, type Col } from "@/components/ui";
 
 type Pace = { mtd: number; projected: number | null; target: number | null; status: string | null; needPerDay: number | null; daysWithData: number; daysInMonth: number };
@@ -128,6 +129,8 @@ export default function Results() {
           <p className="mt-3 text-xs text-ink-500">{k.source}</p>
         </section>
       )}
+
+      <WatchCard />
 
       <Ga4Card data={data.ga4} onChange={() => mutate()} />
 
