@@ -668,6 +668,8 @@ model ReportSchedule {
   frequency String
   nextAt    DateTime
   enabled   Boolean  @default(true)
+  /// correos que reciben el resumen de resultados al guardarse cada versión
+  recipients String[] @default([])
 
   @@index([enabled, nextAt])
 }

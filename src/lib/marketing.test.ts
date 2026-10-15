@@ -55,3 +55,27 @@ test("alcance de anotaciones y citas en AI Overview", () => {
   assert.ok(citedInAiOverview({ references: [{ link: "https://www.mio.cl/guia" }] }, "mio.cl"));
   assert.ok(!citedInAiOverview(null, "mio.cl"));
 });
+
+import { digestParagraphs } from "./digest";
+
+test("resumen por correo: clics sin marca, objetivo, efecto concluyente y próximas acciones", () => {
+  const pace = { mtd: 300, projected: 900, target: 1200, status: "bajo el ritmo", needPerDay: 45, daysWithData: 10, daysInMonth: 30 };
+  const lines = digestParagraphs(
+    {
+      connected: true,
+      kpis: { period: { start: "2026-09-03", end: "2026-09-30", label: "" }, clicks: { now: 1200, before: 1000 }, impressions: { now: 0, before: 0 }, brand: { now: 200, before: 200 }, nonBrand: { now: 1000, before: 800 }, nonBrandImpressions: { now: 0, before: 0 }, source: "" },
+      sections: [], goals: {}, goalProgress: { month: "2026-09", clicks: pace, nonBrandClicks: { ...pace, target: null } },
+      annotations: [
+        { id: "a", kind: "manual", date: "2026-09-01", title: "Nuevos titles", scope: null, note: null, impact: { beforePerDay: 10, afterPerDay: 15, change: 0.5, conclusive: true, note: "", impressionsBeforePerDay: 0, impressionsAfterPerDay: 0 } },
+        { id: "b", kind: "manual", date: "2026-09-28", title: "Reciente", scope: null, note: null, impact: { beforePerDay: 10, afterPerDay: 30, change: 2, conclusive: false, note: "", impressionsBeforePerDay: 0, impressionsAfterPerDay: 0 } },
+      ],
+      decay: [], opportunities: { rows: [], extraClicks: 120, note: "" }, competitors: null,
+    } as any,
+    [{ title: "Error 4xx · /viejo" }]
+  ).join("\n");
+  assert.match(lines, /Sin marca: 1\.000 \(\+25 %/);
+  assert.match(lines, /Objetivo 2026-09: 300 de 1\.200 clics, proyección 900 \(bajo el ritmo\)/);
+  assert.match(lines, /Nuevos titles.*10 → 15 clics\/día \(\+50 %\)/);
+  assert.doesNotMatch(lines, /Reciente/, "lo no concluyente no se reporta como resultado");
+  assert.match(lines, /1\) Error 4xx/);
+});

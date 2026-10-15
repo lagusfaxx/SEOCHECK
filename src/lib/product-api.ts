@@ -586,6 +586,17 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
     await admin(id, user.id);
     if (!["weekly", "monthly"].includes(body.frequency))
       throw invalid("Frecuencia inválida");
+    // el resumen solo va a miembros del workspace: la app no envía correo a terceros
+    let recipients: string[] | undefined;
+    if (body.recipients !== undefined) {
+      if (!Array.isArray(body.recipients) || body.recipients.length > 20) throw invalid("Destinatarios inválidos");
+      const p = await db.project.findUniqueOrThrow({ where: { id }, select: { workspaceId: true } });
+      const members = await db.membership.findMany({ where: { workspaceId: p.workspaceId }, select: { user: { select: { email: true } } } });
+      const allowed = new Set(members.map((m) => m.user.email.toLowerCase()));
+      recipients = [...new Set(body.recipients.map((e: unknown) => String(e).trim().toLowerCase()).filter(Boolean))] as string[];
+      const outside = recipients.filter((e) => !allowed.has(e));
+      if (outside.length) throw invalid(`Solo miembros del equipo pueden recibir el resumen: ${outside.join(", ")}`);
+    }
     return db.reportSchedule.upsert({
       where: { projectId: id },
       create: {
@@ -593,11 +604,13 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
         frequency: body.frequency,
         nextAt: nextReportAt(body.frequency),
         enabled: body.enabled !== false,
+        recipients: recipients ?? [],
       },
       update: {
         frequency: body.frequency,
         nextAt: nextReportAt(body.frequency),
         enabled: body.enabled !== false,
+        ...(recipients ? { recipients } : {}),
       },
     });
   },

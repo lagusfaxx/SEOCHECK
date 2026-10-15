@@ -1,4 +1,5 @@
 import { nextReportAt, saveReport } from "../lib/reporting";
+import { sendDigest } from "../lib/digest";
 import type PgBoss from "pg-boss";
 import { db } from "../lib/db";
 import { env } from "../lib/env";
@@ -100,8 +101,12 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
       }
       return;
     }
-    case QUEUES.reportSnapshot:
-      return saveReport(d.projectId);
+    case QUEUES.reportSnapshot: {
+      const snap = await saveReport(d.projectId);
+      // el correo no debe hacer fallar (ni reintentar) el guardado del informe
+      const mail = await sendDigest(d.projectId).catch((e) => ({ sent: 0, error: e instanceof Error ? e.message : String(e) }));
+      return { snapshot: snap.id, mail };
+    }
     case QUEUES.socialDue:
       return publishDue();
     case QUEUES.socialInsights: {
