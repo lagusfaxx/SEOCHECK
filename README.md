@@ -35,8 +35,13 @@ El informe (`GET /api/p/{id}/report`, `?download=1` para bajar el `.md`) se arma
 
 - **Tendencias** arriba: clics, impresiones, CTR y posición contra los 28 días anteriores.
 - **Tareas por impacto** = tráfico afectado (impresiones GSC de las URLs, o peso de la plantilla sin GSC) × severidad × facilidad, agrupadas por plantilla (`/perfil/*`) con el cambio concreto. Las oportunidades GSC 4–20, el CTR bajo para la posición, las variantes ortográficas, PageSpeed (datos de campo primero; aviso cuando el laboratorio no se parece a la realidad), caídas de clics, canibalización y los análisis de Contenido entran en la misma lista; los issues on-page menores (largo de title/meta, alt…) van al final.
-- **Revisado, parece intencional**: canonical de URLs con parámetros a su versión limpia, robots bloqueando login/cuenta/carrito/checkout y canibalización en consultas de marca (distancia de edición ≤ 2) o con todas las URLs en posición ≤ 1,5.
-- Si el crawl tocó el límite de páginas, las huérfanas quedan solo como aviso; si parecen páginas de menú/footer, sugiere repetir con render JS.
+- **Revisado, parece intencional**: canonical de URLs con parámetros a su versión limpia, canonical que consolida variantes (modelo, color) en una URL que responde 200 y es autocanónica, `noindex` en URLs de filtro, robots bloqueando login/cuenta/carrito/checkout y canibalización en consultas de marca (distancia de edición ≤ 2) o con todas las URLs en posición ≤ 1,5. El canonical solo es error si su destino está roto, redirige, tiene noindex u otro canonical.
+- Si el crawl tocó el límite de páginas, las URLs sin link encontrado quedan solo como aviso; si parecen páginas de menú/footer, sugiere repetir con render JS. "Sin link encontrado", "sin H1" y "poco texto" son hipótesis cuando el crawl no ejecutó JavaScript.
+- **Un solo período** para todas las cifras de Search Console (informe, PDF y tareas): los 28 días que terminan en el último día con datos, con la fuente al lado (totales del sitio vs. filas por consulta, que excluyen consultas anonimizadas).
+- **Evidencia por tarea**: URL, valor observado y fecha del crawl. Los errores HTTP traen estado, si están en el sitemap y qué páginas los enlazan; los conteos de 4xx/5xx/sin respuesta salen de los mismos issues que la tabla, y lo bloqueado por robots no cuenta como error HTTP.
+- **Estados**: error confirmado, hipótesis por verificar, mejora opcional y comportamiento intencional. Cada tarea trae confianza (alta ×1, media ×0,8, baja ×0,6, entra al puntaje), riesgo y una verificación que dice qué debe cambiar y qué debe conservarse. Con menos de 1.000 impresiones en 28 días no se ordena por impresiones.
+- Títulos y descripciones se evalúan por ancho estimado en px (~600 / ~920), como aviso opcional; "poco texto" solo bajo 100 palabras y sin pedir relleno; `nofollow` solo cuando la página es la única vía hacia otras URLs.
+- **Briefs verificados**: los links internos solo pueden ir a URLs que existen en el último crawl; los filtros que la página ya muestra no se proponen; las afirmaciones comerciales o de público sin respaldo en la página quedan como avisos a verificar.
 
 ## Explorar
 

@@ -14,6 +14,7 @@ type Block = { id: string; tag: "h2" | "h3"; text: string; notes?: string; state
 type Brief = {
   kind?: "article" | "listing" | "landing" | "product";
   provenance?: "ai" | "rules";
+  warnings?: string[];
   titles: string[];
   metas: string[];
   outline: Block[];
@@ -414,6 +415,14 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
                 <div className="line-clamp-2 text-xs text-ink-600 dark:text-ink-300">{brief.meta}</div>
               </div>
             </div>
+              {brief.warnings && brief.warnings.length > 0 && (
+                <div className="card border-amber-300 p-3 dark:border-amber-700">
+                  <span className="lbl">Verificar antes de publicar</span>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-ink-600 dark:text-ink-300">
+                    {brief.warnings.map((w) => <li key={w}>{w}</li>)}
+                  </ul>
+                </div>
+              )}
               {brief.notes && brief.notes.length > 0 && (
                 <div className="card p-3">
                   <span className="lbl">Notas</span>

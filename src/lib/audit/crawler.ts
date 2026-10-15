@@ -704,7 +704,12 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     pages: saved.length,
     ok: saved.filter((p) => p.status === 200).length,
     redirects: saved.filter((p) => p.redirects && (p.redirects as unknown[]).length).length,
-    errors: saved.filter((p) => p.status >= 400 || p.status === 0).length,
+    // errores HTTP = 4xx + 5xx + sin respuesta; lo bloqueado por robots.txt no se pidió y no es un error
+    errors: saved.filter((p) => !p.blocked && !p.error && (p.status >= 400 || p.status === 0)).length,
+    http4xx: saved.filter((p) => !p.error && p.status >= 400 && p.status < 500).length,
+    http5xx: saved.filter((p) => !p.error && p.status >= 500).length,
+    noResponse: saved.filter((p) => !p.blocked && !p.error && p.status === 0).length,
+    robotsBlocked: saved.filter((p) => p.blocked).length,
     blockedByWaf: saved.filter((p) => p.error === "blocked_by_waf").length,
     wafAborted: wafAbort,
     trapSkipped: [...patterns.skipped.values()].reduce((a, b) => a + b, 0),

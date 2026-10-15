@@ -141,8 +141,8 @@ test("informe: priorización por impacto, falsos positivos, tendencias, GSC agru
   assert.ok(idx(/Subir posiciones/) < idx(/Imágenes sin alt/));
   assert.ok(idx(/Velocidad móvil de la plantilla `\/blog\/\*`/) < idx(/Imágenes sin alt/));
   // "Title largo" es on-page menor: su impacto pesa la mitad, pero compite por impacto (no va al final por regla)
-  assert.ok(idx(/Subir posiciones/) < idx(/Título demasiado largo/));
-  assert.match(tasks, /Título demasiado largo[^\n]*\n[^\n]*× ½ \(on-page menor\)_/);
+  assert.ok(idx(/Subir posiciones/) < idx(/Título que puede cortarse/));
+  assert.match(tasks, /Título que puede cortarse[^\n]*\n(?:   - [^\n]*\n)*?   - _Impacto[^\n]*× ½ \(on-page menor\)_/);
   assert.match(tasks, /_Impacto [\d.]+ = [\d.]+ impr × /);
   // 6. agrupado por plantilla con cambio concreto
   assert.match(tasks, /incluir «masajes providencia» en el title y el H1/);
@@ -152,12 +152,12 @@ test("informe: priorización por impacto, falsos positivos, tendencias, GSC agru
   assert.match(tasks, /Cubrir variantes de escritura en `\/perfil\/\*`.*«masajes peñalolen»/);
   // 2. límite de páginas: huérfanas solo como aviso
   assert.doesNotMatch(tasks, /Huérfana/);
-  assert.match(sec("Avisos"), /llegó al límite de 2 páginas: 1 URL del sitemap no se alcanzaron.*No se generan tareas de huérfanas/);
+  assert.match(sec("Avisos"), /llegó al límite de 2 páginas: 1 URL del sitemap no se alcanzaron.*No se generan tareas sobre eso/);
   // 3. falsos positivos
   assert.doesNotMatch(tasks, /Canonical a otra URL|Bloqueada por robots/);
   const ok = sec("Revisado, parece intencional");
-  assert.match(ok, /Canonical a otra URL\*\* en 1 URL con parámetros/);
-  assert.match(ok, /Bloqueadas por robots\*\* 2 URLs/);
+  assert.match(ok, /\*\*Canonical a otra URL en 1 URL con parámetros/);
+  assert.match(ok, /\*\*Bloqueadas por robots 2 URLs/);
   assert.match(ok, /«mi sitio chile» \(consulta de marca\)/);
   assert.match(ok, /«spa» \(todas las URLs en posición ≤ 1,5\)/);
   assert.match(tasks, /Canibalización en 1 consulta\b/);
@@ -176,6 +176,14 @@ test("informe: priorización por impacto, falsos positivos, tendencias, GSC agru
   for (let i = 1; i < meta.length; i++) assert.ok(meta[i - 1].score >= meta[i].score, `orden: ${meta.map((x) => x.score).join(",")}`);
   // consultas de marca marcadas
   assert.match(sec("Search Console"), /\| mi sitio \| 90 \| 300 \| 1\.1 \| sí \|/);
+  // un solo período, con fuente, en todas las secciones con cifras de Search Console
+  assert.match(sec("Tendencias"), /Período: 2026-08-25 a 2026-09-21 \(28 días\) · Search Console, totales del sitio/);
+  assert.match(sec("Search Console"), /Período: 2026-08-25 a 2026-09-21 \(28 días\) · Search Console, filas por consulta/);
+  // el 4xx trae su URL y los conteos cuadran con la tabla de issues
+  assert.match(md, /### Errores HTTP con evidencia[\s\S]*\| https:\/\/mi-sitio\.cl\/viejo \| Error 4xx \| 404 \|/);
+  assert.match(md, /_Errores HTTP: 1 \(1 con 4xx, 0 con 5xx, 0 sin respuesta\)/);
+  assert.match(tasks, /Error 4xx · `\/viejo`[^\n]*\n   - Evidencia: https:\/\/mi-sitio\.cl\/viejo — 404/);
+  assert.match(tasks, /Cómo se prioriza/);
 });
 
 test("correr todo: sigue aunque un paso falle y salta lo que no tiene credenciales", { skip: !hasDb }, async () => {

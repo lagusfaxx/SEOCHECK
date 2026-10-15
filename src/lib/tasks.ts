@@ -1,5 +1,6 @@
 import { groupTasks, taskGroupKey } from "./task-groups";
 import { db } from "./db";
+import { gscPeriod } from "./gsc-period";
 import { ISSUE_LABELS } from "./audit/issues";
 import { ISSUE_WHY, ISSUE_FIX } from "./audit/fixes";
 import {
@@ -14,17 +15,17 @@ import {
 export async function syncCrawlTasks(crawlId: string) {
   const crawl = await db.crawl.findUniqueOrThrow({ where: { id: crawlId } });
   if (!["completed", "partial"].includes(crawl.status)) return;
+  const period = await gscPeriod(crawl.projectId);
   const [issues, pages, traffic] = await Promise.all([
     db.issue.findMany({ where: { crawlId } }),
     db.page.findMany({ where: { crawlId } }),
-    db.gscRow.groupBy({
-      by: ["page"],
-      where: {
-        projectId: crawl.projectId,
-        date: { gte: new Date(Date.now() - 30 * 864e5) },
-      },
-      _sum: { impressions: true },
-    }),
+    period
+      ? db.gscRow.groupBy({
+          by: ["page"],
+          where: { projectId: crawl.projectId, date: { gte: period.start, lt: period.endExclusive } },
+          _sum: { impressions: true },
+        })
+      : [],
   ]);
   const pageMap = new Map(pages.map((p) => [p.url, p]));
   const impressions = new Map(
@@ -66,7 +67,7 @@ export async function syncCrawlTasks(crawlId: string) {
           url: i.url,
           severity: i.severity,
           category: i.severity === "critical" ? "fix" : "improvement",
-          reason: `${ISSUE_WHY[i.code] ?? i.detail ?? "Incidencia detectada en la auditoría."} ${ISSUE_FIX[i.code] ?? ""} Prioridad: ${impr ? `${impr} impresiones GSC` : `${inlinks} enlaces internos (sin datos GSC)`} × severidad ${i.severity}.`,
+          reason: `${ISSUE_WHY[i.code] ?? "Incidencia detectada en la auditoría."}${i.detail ? ` Evidencia (${crawl.startedAt.toISOString().slice(0, 10)}): ${i.detail}.` : ""} ${ISSUE_FIX[i.code] ?? ""} Prioridad: ${impr ? `${impr} impresiones GSC` : `${inlinks} enlaces internos (sin datos GSC)`} × severidad ${i.severity}.`,
           priority: priorityFor(i.severity, impr, inlinks),
           status,
           lastCrawlId: crawlId,
@@ -151,7 +152,8 @@ export async function projectActions(projectId: string) {
   });
   const tracked = await db.trackedKeyword.findMany({ where: { projectId, active: true }, select: { checks: { orderBy: { date: "desc" }, take: 1, select: { url: true, position: true } } } });
   const rankedUrls = new Set(tracked.flatMap(t => t.checks.filter(c => c.url && c.position != null).map(c => c.url!)));
-  const traffic = await db.gscRow.groupBy({ by: ["page"], where: { projectId, date: { gte: new Date(Date.now()-28*864e5) } }, _sum: { impressions: true } });
+  const period = await gscPeriod(projectId);
+  const traffic = period ? await db.gscRow.groupBy({ by: ["page"], where: { projectId, date: { gte: period.start, lt: period.endExclusive } }, _sum: { impressions: true } }) : [];
   const groups = groupTasks(rows, rankedUrls, new Map(traffic.map(t=>[t.page,t._sum.impressions ?? 0])));
   return {
     tasks: rows,

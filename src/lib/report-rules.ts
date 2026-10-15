@@ -57,6 +57,25 @@ export function isParamCanonical(url: string, canonical: string | null | undefin
 /** Rutas privadas que es normal bloquear en robots.txt. */
 export const PRIVATE_PATH = /\/(login|logout|signin|sign-in|signup|sign-up|ingresar|iniciar-sesion|registro|registrarse|register|cuenta|mi-cuenta|my-account|account|perfil\/editar|panel|dashboard|admin|wp-admin|carrito|carro|cart|checkout|pago|pagar|payment|pedido|orders?)(\/|$|\?)/i;
 
+/**
+ * Ancho aproximado en px de un texto en el resultado de Google (Arial). Es una estimación: el corte real depende
+ * del dispositivo y Google puede reescribir title y descripción, así que solo sirve para avisar, no como regla.
+ */
+export function serpWidthPx(text: string, fontPx: number): number {
+  let em = 0;
+  for (const ch of text) {
+    if (/[ijlI.,:;!|'’`ftr ]/.test(ch)) em += 0.3;
+    else if (/[mwMW@%]/.test(ch)) em += 0.85;
+    else if (/[A-ZÁÉÍÓÚÑ]/.test(ch)) em += 0.68;
+    else if (/[0-9]/.test(ch)) em += 0.56;
+    else em += 0.52;
+  }
+  return Math.round(em * fontPx);
+}
+/** Ancho visible típico en escritorio: title ~600 px a 20 px; descripción ~2 líneas (~920 px) a 14 px. */
+export const TITLE_MAX_PX = 600;
+export const META_MAX_PX = 920;
+
 /** CTR esperado (curva aproximada de la industria) para la posición. */
 export function expectedCtrAt(pos: number) {
   const t = [0.28, 0.15, 0.1, 0.07, 0.05, 0.04, 0.03, 0.025, 0.02, 0.018];
@@ -116,7 +135,7 @@ export const DISCREPANCY_HINT =
 export const SEV_WEIGHT: Record<string, number> = { critical: 3, warning: 2, info: 1 };
 export const EASE: Record<string, number> = {
   title_missing: 1, title_long: 1, title_short: 1, title_dup: 0.9, meta_missing: 1, meta_long: 1, meta_short: 1, meta_dup: 0.9,
-  h1_missing: 1, h1_multiple: 1, canonical_missing: 1, canonical_other: 0.9, jsonld_invalid: 0.9, img_no_alt: 0.9, hreflang_no_self: 0.9,
+  h1_missing: 1, h1_multiple: 1, canonical_missing: 1, canonical_other: 0.9, canonical_bad_target: 0.9, jsonld_invalid: 0.9, img_no_alt: 0.9, hreflang_no_self: 0.9,
   robots_missing: 1, sitemap_missing: 1, noindex_in_sitemap: 1, blocked_robots: 0.9, noindex: 0.9, nofollow: 0.9, redirect: 0.9,
   broken_link: 0.8, redirect_chain: 0.8, http_4xx: 0.7, http_5xx: 0.6, fetch_failed: 0.6, blocked_by_waf: 0.7,
   orphan: 0.6, no_inlinks: 0.6, deep_page: 0.5, slow: 0.5, thin_content: 0.4, dup_content: 0.4,
@@ -139,12 +158,38 @@ export type Task = {
   ease: number;
   score: number;
   detail?: string[];
+  /** qué tan seguro es que el problema exista y tenga ese impacto */
+  confidence?: Confidence;
+  /** en qué se basa la confianza */
+  evidence?: string;
+  /** qué se rompe si se aplica mal */
+  risk?: string;
+  /** qué debe cambiar y qué debe conservarse */
+  verify?: string;
 };
+
+export type Confidence = "alta" | "media" | "baja";
+/** La confianza entra al puntaje: una hipótesis no compite de igual a igual con un error comprobado. */
+export const CONFIDENCE_FACTOR: Record<Confidence, number> = { alta: 1, media: 0.8, baja: 0.6 };
 
 export const MINOR_FACTOR = 0.5;
 export function makeTask(t: Omit<Task, "score">): Task {
-  return { ...t, score: Math.round(t.traffic * t.sev * t.ease * (t.minor ? MINOR_FACTOR : 1) * 10) / 10 };
+  const conf = CONFIDENCE_FACTOR[t.confidence ?? "media"];
+  return { ...t, score: Math.round(t.traffic * t.sev * t.ease * conf * (t.minor ? MINOR_FACTOR : 1) * 10) / 10 };
 }
+
+/** Cambios que pueden sacar páginas de Google si se aplican mal. */
+export const ISSUE_RISK: Record<string, string> = {
+  canonical_other: "cambiar un canonical intencional puede dividir señales entre variantes",
+  canonical_bad_target: "apuntar el canonical a una URL equivocada puede desindexar esta página",
+  noindex: "quitar o poner noindex cambia qué URLs aparecen en Google",
+  noindex_in_sitemap: "quitar el noindex equivocado expone filtros o páginas privadas",
+  blocked_robots: "abrir robots.txt puede exponer carrito, cuenta o búsquedas",
+  redirect: "un 301 mal apuntado pierde la página original",
+  redirect_chain: "un 301 mal apuntado pierde la página original",
+  http_4xx: "redirigir todo a la home se trata como soft 404; redirigir solo a equivalentes reales",
+  nofollow: "quitar el noindex de filtros puede indexar combinaciones sin valor",
+};
 
 /**
  * Orden final: solo por impacto. Antes los on-page menores iban siempre al final, y un title de la home con mucho
