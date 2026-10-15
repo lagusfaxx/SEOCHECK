@@ -148,6 +148,7 @@ model Project {
   explorations Exploration[]
   reports ReportSnapshot[]
   reportSchedule ReportSchedule?
+  annotations Annotation[]
 }
 
 /// Conexión OAuth de Google Search Console del proyecto (la cuenta de Google del cliente). Token cifrado.
@@ -810,4 +811,20 @@ model IdeaSubmission {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+/// Cambio publicado en el sitio (o tarea resuelta) para medir su efecto en Search Console antes/después.
+model Annotation {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  title     String
+  /// URL exacta, sección (/blog/*) o vacío = todo el sitio
+  scope     String?
+  note      String?
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  @@index([projectId, date])
 }

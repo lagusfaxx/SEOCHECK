@@ -36,6 +36,21 @@ import {
 } from "./content/brief-tools";
 import type { Brief, ContentResult } from "./content/analyze";
 import { assertBudget, est, releaseBudget } from "./budget";
+import { marketingOverview } from "./marketing";
+
+/** Fecha YYYY-MM-DD (no futura) para anotaciones. */
+function dayParam(v: unknown) {
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw invalid("Fecha inválida (AAAA-MM-DD)");
+  const d = new Date(`${v}T00:00:00Z`);
+  if (Number.isNaN(d.getTime()) || d.getTime() > Date.now() + 864e5) throw invalid("Fecha inválida");
+  return d;
+}
+function goalParam(v: unknown) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 0 || n > 1e9) throw invalid("Objetivo inválido");
+  return n;
+}
 
 type Ctx = {
   id: string;
@@ -151,6 +166,7 @@ export const PRODUCT_GETS: Record<string, Handler> = {
   "keywords/insights": async ({ id, url }) =>
     clusterInsights(id, url.searchParams.get("run") ?? undefined),
   "rank/opportunities": async ({ id }) => rankOpportunities(id),
+  marketing: async ({ id }) => marketingOverview(id),
   explorations: async ({ id }) =>
     db.exploration.findMany({
       where: { projectId: id },
@@ -552,6 +568,20 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
           user.id,
         );
   },
+  "marketing/annotations": async ({ id, body, user }) => {
+    const scope = typeof body.scope === "string" && body.scope.trim() ? body.scope.trim().slice(0, 500) : null;
+    if (scope && !/^(https?:\/\/|\/)/.test(scope)) throw invalid("Alcance: una URL completa, una ruta (/blog/*) o vacío para todo el sitio");
+    return db.annotation.create({
+      data: { projectId: id, date: dayParam(body.date), title: boundedText(body.title, 200), scope, note: typeof body.note === "string" ? body.note.slice(0, 1000) : null, createdBy: user.email },
+    });
+  },
+  "marketing/goals": async ({ id, body }) => {
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });
+    const settings = (p.settings ?? {}) as Record<string, any>;
+    const goals = { clicks: goalParam(body.clicks), nonBrandClicks: goalParam(body.nonBrandClicks) };
+    await db.project.update({ where: { id }, data: { settings: { ...settings, marketing: { ...(settings.marketing ?? {}), goals } } } });
+    return goals;
+  },
   "report/schedule": async ({ id, body, user }) => {
     await admin(id, user.id);
     if (!["weekly", "monthly"].includes(body.frequency))
@@ -594,6 +624,8 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
   },
 };
 export const PRODUCT_DELETES: Record<string, Handler> = {
+  "marketing/annotations": async ({ id, body }) =>
+    db.annotation.deleteMany({ where: { projectId: id, id: boundedText(body.annotationId) } }),
   explorations: async ({ id, body }) =>
     db.exploration.deleteMany({
       where: { projectId: id, id: boundedText(body.eid) },
