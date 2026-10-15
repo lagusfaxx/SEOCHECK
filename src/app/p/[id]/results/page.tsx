@@ -83,11 +83,14 @@ export default function Results() {
     await api(`/api/p/${id}/marketing/competitors`, "POST", { competitors: (comp ?? "").split(/[\s,;]+/).filter(Boolean) });
     setComp(null);
   });
+  const [showForm, setShowForm] = useState(false);
+  const [showAllChanges, setShowAllChanges] = useState(false);
   const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), title: "", scope: "", note: "" });
   const [goals, setGoals] = useState<{ clicks: string; nonBrandClicks: string } | null>(null);
   const [addNote, adding] = useAction(async () => {
     await api(`/api/p/${id}/marketing/annotations`, "POST", form);
     setForm({ ...form, title: "", scope: "", note: "" });
+    setShowForm(false);
     await mutate();
   });
   const [delNote] = useAction(async (annotationId: string) => {
@@ -103,6 +106,7 @@ export default function Results() {
   if (!project) return null;
   if (isLoading || !data) return <div className="p-6"><Spinner /></div>;
   const k = data.kpis;
+  const changes = data.annotations.filter((a) => a.kind === "manual" || (a.impact?.conclusive && a.impact.change != null));
   const g = goals ?? { clicks: data.goals.clicks?.toString() ?? "", nonBrandClicks: data.goals.nonBrandClicks?.toString() ?? "" };
 
   const oppCols: Col<NonNullable<Overview["opportunities"]>["rows"][number]>[] = [
@@ -148,41 +152,46 @@ export default function Results() {
         </form>
       </section>
 
-      <section className="card space-y-3 p-4">
-        <div>
-          <h2 className="text-base font-semibold">Cambios y su efecto</h2>
-          <p className="text-xs text-ink-500">Anota cada cambio publicado (nuevo title, contenido, migración, campaña). Se compara clics por día antes y después en el mismo alcance. Las tareas resueltas se miden solas.</p>
+      <section className="card space-y-2 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="inline-flex items-center gap-1 text-base font-semibold">
+            Cambios y su efecto
+            <Hint text="Clics por día en el alcance del cambio, con ventanas iguales antes y después. Comparación simple: no descuenta estacionalidad ni otros cambios del mismo período. Las tareas resueltas aparecen solo si su efecto ya es medible." />
+          </h2>
+          <button className="btn-g" onClick={() => setShowForm(!showForm)}>{showForm ? "Cancelar" : "+ Anotar cambio"}</button>
         </div>
-        <form className="grid gap-2 md:grid-cols-[140px_1fr_1fr_auto]" onSubmit={(e) => { e.preventDefault(); addNote(); }}>
-          <input className="input" type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
-          <input className="input" placeholder="Qué cambió (ej. nuevos titles en fichas)" maxLength={200} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
-          <input className="input" placeholder="Alcance: URL, /seccion/* o vacío = todo el sitio" value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })} />
-          <button className="btn" disabled={adding || !form.title}>Anotar</button>
-        </form>
-        {data.annotations.length ? (
-          <ul className="divide-y divide-ink-100 text-sm dark:divide-ink-800">
-            {data.annotations.map((a) => (
-              <li key={`${a.kind}${a.id}`} className="flex flex-wrap items-start justify-between gap-2 py-2">
-                <div className="min-w-0">
-                  <div className="font-medium">{a.title}</div>
-                  <div className="text-xs text-ink-500">{a.date} · {a.scope ? path(a.scope) : "todo el sitio"}{a.kind === "task" ? " · tarea resuelta" : ""}</div>
-                </div>
-                <div className="text-right text-xs">
-                  {a.impact ? (
-                    <>
-                      <div className="tabular-nums">
-                        {fmt(a.impact.beforePerDay, 1)} → {fmt(a.impact.afterPerDay, 1)} clics/día{" "}
-                        {a.impact.change != null && <span className={cx(a.impact.conclusive && Math.abs(a.impact.change) >= 0.05 ? (a.impact.change > 0 ? "text-emerald-600" : "text-rose-600") : "text-ink-400")}>({a.impact.change >= 0 ? "+" : ""}{Math.round(a.impact.change * 100)} %)</span>}
-                      </div>
-                      <div className="text-ink-500">{a.impact.conclusive ? "" : "No concluyente: "}{a.impact.note}</div>
-                    </>
-                  ) : <span className="text-ink-400">sin Search Console</span>}
-                  {a.kind === "manual" && <button className="mt-1 text-ink-400 hover:text-rose-600" onClick={() => delNote(a.id)}>Quitar</button>}
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : <Empty compact icon="clock" title="Sin cambios anotados">Anota el próximo cambio que publiques para medir su efecto.</Empty>}
+        {showForm && (
+          <form className="grid gap-2 md:grid-cols-[140px_1fr_1fr_auto]" onSubmit={(e) => { e.preventDefault(); addNote(); }}>
+            <input className="input" type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+            <input className="input" placeholder="Qué cambió (ej. nuevos titles en fichas)" maxLength={200} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
+            <input className="input" placeholder="Alcance: URL, /seccion/* o vacío = todo el sitio" value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })} />
+            <button className="btn" disabled={adding || !form.title}>Anotar</button>
+          </form>
+        )}
+        {changes.length ? (
+          <>
+            <table className="w-full text-sm">
+              <tbody>
+                {(showAllChanges ? changes : changes.slice(0, 5)).map((a) => (
+                  <tr key={`${a.kind}${a.id}`} className="group border-t border-ink-100 first:border-t-0 dark:border-ink-800">
+                    <td className="w-full max-w-0 py-1.5 pr-3">
+                      <div className="truncate" title={`${a.title} · ${a.scope ?? "todo el sitio"}`}>{a.title}</div>
+                    </td>
+                    <td className="whitespace-nowrap pr-3 text-xs text-ink-500">{a.date.slice(5)}{a.scope ? ` · ${path(a.scope).slice(0, 24)}` : ""}</td>
+                    <td className="whitespace-nowrap pr-3 text-right text-xs tabular-nums">{a.impact ? `${fmt(a.impact.beforePerDay, 1)} → ${fmt(a.impact.afterPerDay, 1)}/día` : "—"}</td>
+                    <td className="w-28 whitespace-nowrap text-right text-xs" title={a.impact?.note}>
+                      {!a.impact ? <span className="text-ink-400">sin datos</span> : !a.impact.conclusive ? <span className="text-ink-400">{/días/.test(a.impact.note) ? "esperar datos" : "pocos clics"}</span> : a.impact.change == null ? "—" : (
+                        <span className={cx("font-medium tabular-nums", Math.abs(a.impact.change) < 0.05 ? "text-ink-500" : a.impact.change > 0 ? "text-emerald-600" : "text-rose-600")}>{a.impact.change >= 0 ? "+" : ""}{Math.round(a.impact.change * 100)} %</span>
+                      )}
+                      {a.kind === "manual" && <button className="ml-2 hidden text-ink-400 hover:text-rose-600 group-hover:inline" title="Quitar" onClick={() => delNote(a.id)}>×</button>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {changes.length > 5 && <button className="btn-g text-xs" onClick={() => setShowAllChanges(!showAllChanges)}>{showAllChanges ? "Ver menos" : `Ver todos (${changes.length})`}</button>}
+          </>
+        ) : <p className="text-xs text-ink-500">Sin cambios anotados. Anota el próximo cambio que publiques para medir su efecto.</p>}
       </section>
 
       {data.opportunities && (

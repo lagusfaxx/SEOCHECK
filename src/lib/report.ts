@@ -604,13 +604,15 @@ export async function buildReport(projectId: string): Promise<string> {
     );
     for (const [label, g] of [["Clics", mk.goalProgress!.clicks], ["Clics sin marca", mk.goalProgress!.nonBrandClicks]] as const)
       if (g.target != null) resultsOut.push(`- **Objetivo ${label.toLowerCase()} ${mk.goalProgress!.month}:** ${f0(g.mtd)} de ${f0(g.target)} con ${g.daysWithData}/${g.daysInMonth} días; proyección ${f0(g.projected)} (${g.status}).`);
-    if (mk.annotations.length)
+    // anotaciones manuales siempre; tareas resueltas solo si su efecto ya es medible
+    const changes = mk.annotations.filter((a) => a.kind === "manual" || (a.impact?.conclusive && a.impact.change != null)).slice(0, 10);
+    if (changes.length)
       resultsOut.push(
         "",
-        "**Efecto de los cambios** (clics por día en el alcance del cambio, ventanas iguales antes y después)\n",
+        "**Efecto de los cambios** (clics/día en el alcance, ventanas iguales antes y después; no descuenta estacionalidad)\n",
         table(
-          ["Fecha", "Cambio", "Alcance", "Antes", "Después", "Variación", "Lectura"],
-          mk.annotations.slice(0, 15).map((a) => [a.date, a.title, a.scope ?? "todo el sitio", a.impact ? f1(a.impact.beforePerDay) : "–", a.impact ? f1(a.impact.afterPerDay) : "–", a.impact?.change != null ? `${a.impact.change >= 0 ? "+" : ""}${Math.round(a.impact.change * 100)} %` : "–", a.impact ? `${a.impact.conclusive ? "" : "no concluyente: "}${a.impact.note}` : "–"])
+          ["Fecha", "Cambio", "Clics/día", "Variación"],
+          changes.map((a) => [a.date, `${a.title}${a.scope ? ` (${a.scope.replace(/^https?:\/\/[^/]+/, "")})` : ""}`, a.impact ? `${f1(a.impact.beforePerDay)} → ${f1(a.impact.afterPerDay)}` : "–", !a.impact ? "–" : !a.impact.conclusive ? (/días/.test(a.impact.note) ? "esperar datos" : "pocos clics") : a.impact.change != null ? `${a.impact.change >= 0 ? "+" : ""}${Math.round(a.impact.change * 100)} %` : "–"])
         )
       );
     else resultsOut.push("- Sin cambios anotados: anotar cada cambio publicado (Resultados → Cambios) para medir su efecto. Las tareas resueltas se miden solas.");
