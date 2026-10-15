@@ -4,6 +4,7 @@ import { ISSUE_LABELS } from "./audit/issues";
 import { DEFAULT_VERIFY, ISSUE_VERIFY } from "./audit/fixes";
 import { gscPeriod, isoDay, periodLabel, SOURCE_NOTE } from "./gsc-period";
 import { marketingOverview } from "./marketing";
+import { backlinksOverview } from "./backlinks";
 import { hostOf, urlKey } from "./util";
 import { coverage, emptyText, STATE_LABEL } from "./coverage";
 import { buildFindings, KIND_LABEL, kindOf, urlSection, type Pattern } from "./audit/insights";
@@ -620,6 +621,65 @@ export async function buildReport(projectId: string): Promise<string> {
     );
   }
 
+  // ---------- Backlinks ----------
+  const blOut: string[] = [];
+  const bl = (await backlinksOverview(projectId)).snapshot;
+  if (bl) {
+    const blDay = bl.at.slice(0, 10);
+    const s = bl.summary;
+    blOut.push(
+      `_DataForSEO, foto del ${blDay}. Dominios de referencia = sitios distintos que enlazan; pesa más que el total de links._\n`,
+      table(
+        ["Sitio", "Dominios de referencia", "Backlinks", "Rank (0–1000)", "Links rotos entrantes"],
+        [s, ...bl.competitorSummaries].map((x) => [x.target === bl.target ? `${x.target} (tú)` : x.target, f0(x.referringDomains), f0(x.backlinks), f0(x.rank), f0(x.brokenBacklinks)])
+      )
+    );
+    if (bl.previous) blOut.push("", `Variación desde la foto anterior: ${f0(s.referringDomains - bl.previous.referringDomains)} dominios de referencia.`);
+    if (bl.newDomains.length) blOut.push("", `**Nuevos (30 días):** ${bl.newDomains.slice(0, 10).map((d) => `${d.domain} (rank ${d.rank})`).join(" · ")}`);
+    if (bl.lost.length) blOut.push("", `**Perdidos:** ${bl.lost.slice(0, 10).map((d) => `${d.domain} (rank ${d.rank}${d.lostDate ? `, ${String(d.lostDate).slice(0, 10)}` : ""})`).join(" · ")}`);
+    if (bl.errors.length) blOut.push("", `_Sin datos en: ${bl.errors.join("; ")}._`);
+    // links que llegan a páginas con error: se recuperan con un 301, es lo más rentable en link building
+    const brokenTargets = new Map<string, typeof bl.broken>();
+    for (const b of bl.broken) brokenTargets.set(b.to, [...(brokenTargets.get(b.to) ?? []), b]);
+    if (brokenTargets.size) {
+      const rows = [...brokenTargets.entries()].sort((a, b) => Math.max(...b[1].map((x) => x.rank)) - Math.max(...a[1].map((x) => x.rank)));
+      blOut.push("", "**Backlinks que llegan a páginas con error**\n", table(["Página destino", "Estado", "Links", "Desde (mejor dominio)"], rows.slice(0, 15).map(([to, l]) => [to, l[0].status ?? "–", l.length, l.sort((a, b) => b.rank - a.rank)[0].from])));
+      tasks.push(
+        makeTask({
+          title: `Recuperar ${pl(bl.broken.length, "backlink")} que llegan a ${pl(brokenTargets.size, "página")} con error`,
+          fix: `Redirigir con 301 cada URL destino a su equivalente actual (o restaurarla): ${rows.slice(0, 3).map(([to]) => to).join(", ")}${rows.length > 3 ? "…" : ""}. Así esos links vuelven a contar.`,
+          traffic: Math.max(1, ...rows.flatMap(([, l]) => l.map((x) => x.rank))),
+          trafficLabel: "rank del mejor dominio que enlaza",
+          sev: 2.5,
+          sevLabel: "alto",
+          ease: 0.9,
+          confidence: "alta",
+          evidence: `DataForSEO, foto del ${blDay}: backlinks con destino en error`,
+          risk: ISSUE_RISK.http_4xx,
+          verify: "Las URLs destino responden 200 o 301 a una página equivalente que responde 200.",
+          detail: rows.slice(0, 3).map(([to, l]) => `${to} — HTTP ${l[0].status ?? "?"} · ${l.length} link(s), ej. ${l[0].from}`),
+        })
+      );
+    }
+    if (bl.gap.length) {
+      blOut.push("", `**Enlazan a ${bl.competitors.length > 1 ? "todos tus competidores" : "tu competidor"} (${bl.competitors.join(", ")}) y no a ti:** ${bl.gap.slice(0, 15).map((g) => `${g.domain} (rank ${g.rank})`).join(" · ")}`);
+      tasks.push(
+        makeTask({
+          title: `Conseguir links de ${pl(Math.min(bl.gap.length, 50), "dominio")} que ya enlazan a la competencia`,
+          fix: `Empezar por los de más autoridad: ${bl.gap.slice(0, 5).map((g) => g.domain).join(", ")}. Revisar qué enlazan de la competencia (directorios, prensa, proveedores, asociaciones) y proponer algo equivalente.`,
+          traffic: bl.gap.slice(0, 10).reduce((sum, g) => sum + g.rank, 0) / 10,
+          trafficLabel: "rank medio de los 10 mejores dominios",
+          sev: 1.5,
+          sevLabel: "oportunidad",
+          ease: 0.4,
+          confidence: "media",
+          evidence: `DataForSEO, foto del ${blDay}; competidores ${bl.competitors.join(", ")}`,
+          verify: "Los dominios contactados aparecen como dominios de referencia en la próxima foto.",
+        })
+      );
+    }
+  }
+
   // ---------- Armado ----------
   tasks.sort(byPriority);
   const top = tasks.slice(0, MAX_TASKS);
@@ -714,6 +774,7 @@ export async function buildReport(projectId: string): Promise<string> {
     );
   if (intentional.length) out.push("## Revisado, parece intencional", "", "_Comportamiento esperado del sitio: no se generan tareas y no hay que «corregirlo». Confirmar solo si no corresponde a lo que el sitio quiere._", "", ...intentional, "");
   out.push("## Search Console", "", ...gscOut, "");
+  out.push("## Backlinks", "", ...(blOut.length ? blOut : [emptyText(mod("backlinks"))]), "");
   out.push(
     "## Velocidad (PageSpeed)",
     "",

@@ -17,7 +17,7 @@ import { DFS_USD_PER_TASK, fitsBudget } from "../budget";
  */
 const PATH = "/v3/keywords_data/google_ads/search_volume";
 export const dfsBase = () => env.dfsBaseOverride || (env.dfsEnv === "live" ? "https://api.dataforseo.com" : "https://sandbox.dataforseo.com");
-const auth = () => `Basic ${Buffer.from(`${env.dfsLogin}:${env.dfsPassword}`).toString("base64")}`;
+export const dfsAuth = () => `Basic ${Buffer.from(`${env.dfsLogin}:${env.dfsPassword}`).toString("base64")}`;
 
 type Row = { keyword: string; search_volume: number | null; cpc: number | null; competition_index: number | null };
 
@@ -40,7 +40,7 @@ export function dfsAccountError(httpStatus: number, json: any): NoBalanceError |
 }
 
 async function post(path: string, body: unknown) {
-  const res = await fetchT(`${dfsBase()}${PATH}${path}`, { method: "POST", headers: { Authorization: auth(), "Content-Type": "application/json" }, body: JSON.stringify(body), timeoutMs: 120000 });
+  const res = await fetchT(`${dfsBase()}${PATH}${path}`, { method: "POST", headers: { Authorization: dfsAuth(), "Content-Type": "application/json" }, body: JSON.stringify(body), timeoutMs: 120000 });
   const json: any = await res.json().catch(() => null);
   const acct = dfsAccountError(res.status, json);
   if (acct) throw acct;
@@ -145,7 +145,7 @@ export async function collectDfsQueue(writeCache: (rows: VolumeData[], country: 
   let done = 0, waiting = 0;
   const touched: { country: string; language: string; keywords: string[] }[] = [];
   for (const [taskId, rows] of byTask) {
-    const res = await fetchT(`${dfsBase()}${PATH}/task_get/${taskId}`, { headers: { Authorization: auth() }, timeoutMs: 60000 });
+    const res = await fetchT(`${dfsBase()}${PATH}/task_get/${taskId}`, { headers: { Authorization: dfsAuth() }, timeoutMs: 60000 });
     if (!res.ok) { waiting++; continue; }
     const task = ((await res.json()) as any).tasks?.[0];
     // 40601 Task Handed / 40602 Task in Queue → aún no

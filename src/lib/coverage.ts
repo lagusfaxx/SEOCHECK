@@ -81,6 +81,12 @@ export async function coverage(projectId: string): Promise<Module[]> {
   else if (lastCheck) out.push({ key: "rank", label: "Rankings", state: "ok", detail: `${tracked} keywords, revisadas el ${day(lastCheck.date)}` });
   else out.push({ key: "rank", label: "Rankings", state: "never", detail: `${tracked} keywords sin revisar aún` });
 
+  // Backlinks (cuenta DataForSEO del servidor: el cliente no configura nada)
+  const bl = await db.backlinkSnapshot.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { createdAt: true, errors: true } });
+  if (!env.dfsLogin || !env.dfsPassword) out.push({ key: "backlinks", label: "Backlinks", state: "missing", detail: "No disponible en este servidor" });
+  else if (!bl) out.push({ key: "backlinks", label: "Backlinks", state: "never", detail: "Se obtienen al ejecutar el análisis completo" });
+  else out.push({ key: "backlinks", label: "Backlinks", state: bl.errors.length ? "partial" : "ok", detail: `Foto del ${day(bl.createdAt)}${bl.errors.length ? ` (${bl.errors.length} parte(s) sin datos)` : ""}` });
+
   return out;
 }
 
@@ -96,6 +102,7 @@ export function shortLabel(m: Module): string {
     inspect: { ok: "Indexación revisada", failed: "Indexación falló", missing: "Indexación no configurada", never: "Indexación sin revisar" },
     keywords: { ok: "Keywords al día", failed: "Keywords falló", never: "Keywords sin investigar" },
     rank: { ok: "Rankings activos", failed: "Rankings falló", missing: "Rankings no configurado", never: "Rankings sin keywords" },
+    backlinks: { ok: "Backlinks con datos", partial: "Backlinks parcial", missing: "Backlinks no disponible", never: "Backlinks pendiente" },
   };
   return S[m.key]?.[m.state] ?? `${m.label}: ${STATE_LABEL[m.state]}`;
 }

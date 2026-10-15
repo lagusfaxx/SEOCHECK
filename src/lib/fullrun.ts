@@ -12,6 +12,7 @@ import { computeAlerts } from "./rank/alerts";
 import { runKeywordPipeline } from "./keywords/pipeline";
 import { assertBudget, BudgetError, est } from "./budget";
 import { normTerm } from "./util";
+import { backlinksConfigured, runBacklinks } from "./backlinks";
 
 export type FullRunOpts = {
   maxPages?: number;
@@ -23,6 +24,8 @@ export type FullRunOpts = {
   /** Semillas para el research de keywords; vacío = no corre keywords */
   seeds?: string[];
   rank?: boolean;
+  /** Backlinks con la cuenta DataForSEO del servidor (una foto por semana) */
+  backlinks?: boolean;
 };
 
 export type StepResult = { step: string; status: "ok" | "skipped" | "error"; detail?: string };
@@ -34,7 +37,7 @@ export type StepResult = { step: string; status: "ok" | "skipped" | "error"; det
 export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: string): Promise<StepResult[]> {
   const p = await db.project.findUniqueOrThrow({ where: { id: projectId } });
   const results: StepResult[] = [];
-  const steps = 7;
+  const steps = 8;
   let n = 0;
   const step = async (name: string, label: string, fn: () => Promise<string | void | null>) => {
     await jobProgress(jobRunId, (n / steps) * 100, label);
@@ -130,6 +133,15 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
     for (const t of tracked) await checkRank(t.id).catch(() => fails++);
     if (fails === tracked.length) throw new Error("ningún check de ranking funcionó (revisa SERPENT_API_KEY)");
     return `${tracked.length - fails}/${tracked.length} keywords`;
+  });
+
+  await step("backlinks", "backlinks", async () => {
+    if (opts.backlinks === false) return skip("backlinks", "desactivado");
+    if (!backlinksConfigured()) return skip("backlinks", "no disponible en este servidor");
+    const r = await runBacklinks(projectId);
+    if ("reused" in r) return "se usa la foto de esta semana";
+    if ("skipped" in r) return skip("backlinks", r.skipped!);
+    return `${r.competitors?.length ?? 0} competidores${r.errors?.length ? ` · ${r.errors.length} parte(s) sin datos` : ""}`;
   });
 
   await step("alerts", "alertas", async () => {

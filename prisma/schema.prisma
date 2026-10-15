@@ -149,6 +149,7 @@ model Project {
   reports ReportSnapshot[]
   reportSchedule ReportSchedule?
   annotations Annotation[]
+  backlinks   BacklinkSnapshot[]
 }
 
 /// Conexión OAuth de Google Search Console del proyecto (la cuenta de Google del cliente). Token cifrado.
@@ -835,4 +836,29 @@ model Annotation {
   createdAt DateTime @default(now())
 
   @@index([projectId, date])
+}
+
+/// Backlinks del sitio y sus competidores (DataForSEO, con la cuenta del servidor).
+model BacklinkSnapshot {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  target      String
+  competitors String[]
+  summary     Json
+  /// resumen de cada competidor: [{ target, backlinks, referringDomains, rank }]
+  competitorSummaries Json @default("[]")
+  /// dominios de referencia del sitio (los de mayor rank)
+  referring   Json     @default("[]")
+  /// dominios perdidos recientemente
+  lost        Json     @default("[]")
+  /// backlinks que apuntan a páginas con error
+  broken      Json     @default("[]")
+  /// dominios que enlazan a los competidores y no al sitio
+  gap         Json     @default("[]")
+  errors      String[]
+  costUsd     Float?
+  createdAt   DateTime @default(now())
+
+  @@index([projectId, createdAt])
 }

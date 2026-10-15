@@ -41,7 +41,7 @@ Estados: ✅ disponible · 🆕 agregado en esta versión · ⏳ pendiente (orde
 | Rank tracking diario/semanal con alertas de caída | ✅ | Rankings |
 | Cuota de visibilidad por dominio en las keywords monitoreadas | 🆕 | Resultados |
 | Presencia en **AI Overviews** y si te citan | 🆕 | Resultados |
-| **Backlinks**: dominios de referencia, nuevos/perdidos, links rotos entrantes | ⏳ 3 | — |
+| **Backlinks**: dominios de referencia vs competidores, nuevos/perdidos, links rotos entrantes a recuperar con 301 y dominios que enlazan a la competencia y no a ti | 🆕 con la cuenta DataForSEO del servidor; el cliente no configura nada | Resultados, Informe, correo |
 | SEO local: Google Business Profile, reseñas, rankings por comuna | ⏳ 5 | — |
 
 ## 4. Salud técnica (que no se pierda lo ganado)
@@ -71,7 +71,6 @@ Estados: ✅ disponible · 🆕 agregado en esta versión · ⏳ pendiente (orde
 
 1. **GA4** (conversiones e ingresos por landing orgánica): sin esto no se puede hablar de retorno. Requiere agregar el permiso `analytics.readonly` a la conexión de Google existente y elegir la propiedad.
 2. **Keyword gap**: con las SERPs que ya se guardan se puede listar qué keywords traen tráfico a los competidores y no al sitio; para cobertura completa hace falta un proveedor (DataForSEO Labs).
-3. **Backlinks**: proveedor externo (DataForSEO Backlinks); presupuesto mensual como los demás proveedores.
 4. Exportación programada a Sheets/Looker Studio.
 5. SEO local (Google Business Profile API).
 6. Estacionalidad del volumen (ya viene en la respuesta de DataForSEO; falta guardarla).

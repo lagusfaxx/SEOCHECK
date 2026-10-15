@@ -37,6 +37,7 @@ import {
 import type { Brief, ContentResult } from "./content/analyze";
 import { assertBudget, est, releaseBudget } from "./budget";
 import { marketingOverview } from "./marketing";
+import { backlinksOverview, bareDomain } from "./backlinks";
 
 /** Fecha YYYY-MM-DD (no futura) para anotaciones. */
 function dayParam(v: unknown) {
@@ -167,6 +168,7 @@ export const PRODUCT_GETS: Record<string, Handler> = {
     clusterInsights(id, url.searchParams.get("run") ?? undefined),
   "rank/opportunities": async ({ id }) => rankOpportunities(id),
   marketing: async ({ id }) => marketingOverview(id),
+  backlinks: async ({ id }) => backlinksOverview(id),
   explorations: async ({ id }) =>
     db.exploration.findMany({
       where: { projectId: id },
@@ -574,6 +576,14 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
     return db.annotation.create({
       data: { projectId: id, date: dayParam(body.date), title: boundedText(body.title, 200), scope, note: typeof body.note === "string" ? body.note.slice(0, 1000) : null, createdBy: user.email },
     });
+  },
+  /** Dominios de la competencia (no son credenciales): se usan para backlinks; vacío = automáticos desde las SERPs */
+  "marketing/competitors": async ({ id, body }) => {
+    if (!Array.isArray(body.competitors) || body.competitors.length > 5) throw invalid("Hasta 5 competidores");
+    const competitors = [...new Set(body.competitors.map((d: unknown) => bareDomain(String(d))).filter((d: string) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)))] as string[];
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });
+    await db.project.update({ where: { id }, data: { settings: { ...((p.settings ?? {}) as Record<string, any>), competitors } } });
+    return { competitors };
   },
   "marketing/goals": async ({ id, body }) => {
     const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });

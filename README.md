@@ -43,6 +43,10 @@ El informe (`GET /api/p/{id}/report`, `?download=1` para bajar el `.md`) se arma
 - Títulos y descripciones se evalúan por ancho estimado en px (~600 / ~920), como aviso opcional; "poco texto" solo bajo 100 palabras y sin pedir relleno; `nofollow` solo cuando la página es la única vía hacia otras URLs.
 - **Briefs verificados**: los links internos solo pueden ir a URLs que existen en el último crawl; los filtros que la página ya muestra no se proponen; las afirmaciones comerciales o de público sin respaldo en la página quedan como avisos a verificar.
 
+## Backlinks
+
+Con `DATAFORSEO_LOGIN/PASSWORD` del servidor (la misma cuenta del volumen de keywords; el cliente no pone ninguna clave), el análisis completo guarda una foto semanal por proyecto: resumen del sitio y de hasta 3 competidores (los de Resultados o, si no hay, los que más aparecen en sus SERPs, sin YouTube/Wikipedia/redes), dominios de referencia nuevos y perdidos, backlinks que llegan a páginas con error (tarea: 301) y dominios que enlazan a la competencia y no al sitio (tarea de prospección). Cota de gasto por foto ~$0,40 contra `DATAFORSEO_MONTHLY_USD`; el costo real queda en `ProviderUsage`. Serpent no ofrece datos de backlinks.
+
 ## Explorar
 
 Mapa de relaciones estilo Maltego (`/p/{id}/explore`). Cada nodo es una entidad (sitio, topic, cluster, keyword, página propia o externa, dominio, problema, pregunta) y cada uno tiene transformaciones que agregan lo relacionado: top 10 de Google de una keyword, quién enlaza a una página, keywords donde aparece un competidor, páginas afectadas por un problema, consultas de Search Console, etc. Las transformaciones solo leen la base (`GET /api/p/{id}/graph/expand`), no llaman APIs pagadas. El mapa se guarda en el navegador.

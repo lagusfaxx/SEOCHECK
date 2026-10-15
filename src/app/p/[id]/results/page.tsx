@@ -34,6 +34,16 @@ type Overview = {
   };
 };
 
+type Sum = { target: string; backlinks: number; referringDomains: number; rank: number; brokenBacklinks: number };
+type Backlinks = {
+  configured: boolean;
+  snapshot: null | {
+    at: string; target: string; competitors: string[]; summary: Sum; previous: Sum | null; competitorSummaries: Sum[];
+    newDomains: { domain: string; rank: number }[]; lost: { domain: string; rank: number }[];
+    broken: { from: string; to: string; status: number | null; rank: number }[]; gap: { domain: string; rank: number }[]; errors: string[];
+  };
+};
+
 const path = (u: string) => u.replace(/^https?:\/\/[^/]+/, "") || "/";
 const change = (now: number, before: number) => (before ? `${now >= before ? "+" : ""}${Math.round(((now - before) / before) * 100)} %` : "sin base");
 
@@ -61,6 +71,12 @@ function Goal({ label, p }: { label: string; p: Pace }) {
 export default function Results() {
   const { id, project } = useProject();
   const { data, mutate, isLoading } = useApi<Overview>(`/api/p/${id}/marketing`);
+  const { data: bl } = useApi<Backlinks>(`/api/p/${id}/backlinks`);
+  const [comp, setComp] = useState<string | null>(null);
+  const [saveComp, savingComp] = useAction(async () => {
+    await api(`/api/p/${id}/marketing/competitors`, "POST", { competitors: (comp ?? "").split(/[\s,;]+/).filter(Boolean) });
+    setComp(null);
+  });
   const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), title: "", scope: "", note: "" });
   const [goals, setGoals] = useState<{ clicks: string; nonBrandClicks: string } | null>(null);
   const [addNote, adding] = useAction(async () => {
@@ -200,6 +216,38 @@ export default function Results() {
           </section>
         )}
       </div>
+
+      <section className="card space-y-3 p-4">
+        <h2 className="text-base font-semibold">Backlinks</h2>
+        {bl?.snapshot ? (
+          <>
+            <p className="text-xs text-ink-500">Foto del {bl.snapshot.at.slice(0, 10)} (se actualiza al ejecutar el análisis completo, una vez por semana). Dominios de referencia = sitios distintos que te enlazan.</p>
+            <table className="w-full text-sm">
+              <thead><tr className="text-left text-xs text-ink-500"><th>Sitio</th><th className="text-right">Dominios de ref.</th><th className="text-right">Backlinks</th><th className="text-right">Rank</th></tr></thead>
+              <tbody>
+                {[bl.snapshot.summary, ...bl.snapshot.competitorSummaries].map((s) => (
+                  <tr key={s.target} className={cx("border-t border-ink-100 dark:border-ink-800", s.target === bl.snapshot!.target && "font-semibold")}>
+                    <td className="py-1.5">{s.target}{s.target === bl.snapshot!.target ? " (tú)" : ""}</td>
+                    <td className="text-right tabular-nums">{fmt(s.referringDomains)}{s.target === bl.snapshot!.target && bl.snapshot!.previous ? <> <Delta from={bl.snapshot!.previous.referringDomains} to={s.referringDomains} /></> : null}</td>
+                    <td className="text-right tabular-nums">{fmt(s.backlinks)}</td>
+                    <td className="text-right tabular-nums">{fmt(s.rank)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="grid gap-4 text-sm md:grid-cols-3">
+              <div><div className="lbl">Nuevos (30 días)</div>{bl.snapshot.newDomains.length ? bl.snapshot.newDomains.slice(0, 8).map((d) => <div key={d.domain}>{d.domain} <span className="text-ink-400">{d.rank}</span></div>) : <div className="text-ink-400">—</div>}</div>
+              <div><div className="lbl">Perdidos</div>{bl.snapshot.lost.length ? bl.snapshot.lost.slice(0, 8).map((d) => <div key={d.domain}>{d.domain} <span className="text-ink-400">{d.rank}</span></div>) : <div className="text-ink-400">—</div>}</div>
+              <div><div className="lbl inline-flex items-center gap-1">Enlazan a la competencia y no a ti<Hint text="Dominios que enlazan a todos los competidores de la tabla y no a tu sitio: los más fáciles de conseguir." /></div>{bl.snapshot.gap.length ? bl.snapshot.gap.slice(0, 8).map((d) => <div key={d.domain}>{d.domain} <span className="text-ink-400">{d.rank}</span></div>) : <div className="text-ink-400">—</div>}</div>
+            </div>
+            {bl.snapshot.broken.length > 0 && <p className="text-sm text-rose-600">{bl.snapshot.broken.length} backlink(s) llegan a páginas con error: redirígelas con 301 (detalle en el informe).</p>}
+          </>
+        ) : <Empty compact icon="globe" title={bl?.configured === false ? "Backlinks no disponible en este servidor" : "Sin datos de backlinks"}>{bl?.configured === false ? "" : "Se obtienen al ejecutar el análisis completo en Informe."}</Empty>}
+        <form className="flex flex-wrap items-center gap-2 text-sm" onSubmit={(e) => { e.preventDefault(); saveComp(); }}>
+          <input className="input flex-1" placeholder={`Competidores (opcional): ${bl?.snapshot?.competitors.join(", ") || "se eligen solos desde Google"}`} value={comp ?? ""} onChange={(e) => setComp(e.target.value)} />
+          <button className="btn" disabled={savingComp || comp == null}>Guardar</button>
+        </form>
+      </section>
 
       <section className="card p-4">
         <h2 className="text-base font-semibold">Competidores y visibilidad</h2>
