@@ -6,6 +6,7 @@ import { gscPeriod, isoDay, periodLabel, SOURCE_NOTE } from "./gsc-period";
 import { marketingOverview } from "./marketing";
 import { backlinksOverview } from "./backlinks";
 import { FIELD_LABEL, latestCrawlChanges } from "./watch";
+import { aiLocalOverview } from "./ai-local";
 import { hostOf, urlKey } from "./util";
 import { coverage, emptyText, STATE_LABEL } from "./coverage";
 import { buildFindings, KIND_LABEL, kindOf, urlSection, type Pattern } from "./audit/insights";
@@ -706,6 +707,56 @@ export async function buildReport(projectId: string): Promise<string> {
     }
   }
 
+  // ---------- Visibilidad en IA y SEO local ----------
+  const aiOut: string[] = [];
+  const al = await aiLocalOverview(projectId);
+  if (al.ai) {
+    aiOut.push(
+      `_Serpent AI Ranking del ${al.ai.at.slice(0, 10)}: si cada IA cita el sitio al responder las keywords monitoreadas._\n`,
+      table(["IA", "Te cita", "Keywords"], al.ai.engines.map((e) => [e.engine, `${e.found} (${pctS(e.share)})`, e.total])),
+      "",
+      `**Más citados por las IA:** ${al.ai.topCited.slice(0, 8).map((c) => `${c.domain} (${c.count})`).join(" · ") || "–"}`
+    );
+    const missing = al.ai.keywords.filter((k) => k.engines.every((e) => !e.found));
+    if (missing.length)
+      tasks.push(
+        makeTask({
+          title: `Aparecer en las respuestas de IA para ${pl(missing.length, "keyword")}`,
+          fix: `Ninguna IA cita el sitio para ${missing.slice(0, 4).map((k) => `«${k.keyword}»`).join(", ")}. Las IA citan páginas que responden la pregunta de forma directa y verificable: una sección con la respuesta corta arriba, datos concretos propios (precios, medidas, comparaciones), FAQ y datos estructurados. Revisar qué dominios citan en su lugar.`,
+          traffic: missing.length * 10,
+          trafficLabel: `${missing.length} keywords sin cita`,
+          sev: 1.5,
+          sevLabel: "oportunidad",
+          ease: 0.5,
+          confidence: "media",
+          evidence: `Serpent AI Ranking del ${al.ai.at.slice(0, 10)} (ChatGPT, Claude, Gemini, Perplexity)`,
+          verify: "En la siguiente revisión semanal, al menos una IA cita el sitio para esas keywords.",
+        })
+      );
+  }
+  if (al.localRanks) {
+    aiOut.push(
+      "",
+      `**Google Maps** (${al.localRanks.at.slice(0, 10)}, ${al.localRanks.rows[0]?.location ?? ""})\n`,
+      table(["Keyword", "Posición", "Antes", "Rating", "Top 3"], al.localRanks.rows.map((r) => [r.keyword, r.position ?? "no aparece", r.previous ?? "–", r.rating ?? "–", r.top.map((t) => `${t.name}${t.rating ? ` (${t.rating})` : ""}`).join(" · ")]))
+    );
+    const out3 = al.localRanks.rows.filter((r) => r.position == null || r.position > 3);
+    if (out3.length)
+      tasks.push(
+        makeTask({
+          title: `Entrar al top 3 de Google Maps en ${pl(out3.length, "búsqueda")} local${out3.length === 1 ? "" : "es"}`,
+          fix: "Completar la ficha de Google Business Profile (categoría principal exacta, horarios, fotos, productos/servicios), pedir reseñas a clientes y responderlas, y mantener nombre, dirección y teléfono idénticos en el sitio y en directorios.",
+          traffic: out3.length * 20,
+          trafficLabel: `${out3.length} búsquedas locales fuera del top 3`,
+          sev: 2,
+          sevLabel: "oportunidad",
+          ease: 0.6,
+          confidence: "media",
+          evidence: `Serpent Google Maps del ${al.localRanks.at.slice(0, 10)}`,
+        })
+      );
+  }
+
   // ---------- Armado ----------
   tasks.sort(byPriority);
   const top = tasks.slice(0, MAX_TASKS);
@@ -800,6 +851,7 @@ export async function buildReport(projectId: string): Promise<string> {
     );
   if (intentional.length) out.push("## Revisado, parece intencional", "", "_Comportamiento esperado del sitio: no se generan tareas y no hay que «corregirlo». Confirmar solo si no corresponde a lo que el sitio quiere._", "", ...intentional, "");
   out.push("## Search Console", "", ...gscOut, "");
+  if (aiOut.length) out.push("## Visibilidad en IA y SEO local", "", ...aiOut, "");
   out.push("## Backlinks", "", ...(blOut.length ? blOut : [emptyText(mod("backlinks"))]), "");
   out.push(
     "## Velocidad (PageSpeed)",

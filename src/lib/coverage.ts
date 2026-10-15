@@ -90,6 +90,17 @@ export async function coverage(projectId: string): Promise<Module[]> {
   else if (ga4Last) out.push({ key: "ga4", label: "Google Analytics", state: "ok", detail: `Datos hasta ${day(ga4Last.date)}` });
   else out.push({ key: "ga4", label: "Google Analytics", state: "never", detail: "Propiedad elegida, falta sincronizar" });
 
+  // Visibilidad en IA y SEO local (Serpent del servidor)
+  const aiLast = await db.aiCheck.findFirst({ where: { projectId }, orderBy: { checkedAt: "desc" }, select: { checkedAt: true } });
+  const localLast = await db.localRank.findFirst({ where: { projectId }, orderBy: { checkedAt: "desc" }, select: { checkedAt: true } });
+  const localCfg = ((p.settings ?? {}) as any).local ?? {};
+  if (!env.serpentKey) out.push({ key: "ai", label: "Visibilidad en IA", state: "missing", detail: "No disponible en este servidor" });
+  else if (aiLast) out.push({ key: "ai", label: "Visibilidad en IA", state: "ok", detail: `Revisada el ${day(aiLast.checkedAt)}` });
+  else out.push({ key: "ai", label: "Visibilidad en IA", state: "never", detail: tracked ? "Se revisa al ejecutar el análisis completo" : "Requiere keywords en Rankings" });
+  if (!env.serpentKey) out.push({ key: "local", label: "SEO local", state: "missing", detail: "No disponible en este servidor" });
+  else if (localLast) out.push({ key: "local", label: "SEO local", state: "ok", detail: `Revisado el ${day(localLast.checkedAt)}` });
+  else out.push({ key: "local", label: "SEO local", state: "never", detail: localCfg.location && localCfg.keywords?.length ? "Se revisa al ejecutar el análisis completo" : "Falta configurar ciudad y keywords (Resultados)" });
+
   // Backlinks (cuenta DataForSEO del servidor: el cliente no configura nada)
   const bl = await db.backlinkSnapshot.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { createdAt: true, errors: true } });
   if (!env.dfsLogin || !env.dfsPassword) out.push({ key: "backlinks", label: "Backlinks", state: "missing", detail: "No disponible en este servidor" });
@@ -111,6 +122,8 @@ export function shortLabel(m: Module): string {
     inspect: { ok: "Indexación revisada", failed: "Indexación falló", missing: "Indexación no configurada", never: "Indexación sin revisar" },
     keywords: { ok: "Keywords al día", failed: "Keywords falló", never: "Keywords sin investigar" },
     rank: { ok: "Rankings activos", failed: "Rankings falló", missing: "Rankings no configurado", never: "Rankings sin keywords" },
+    ai: { ok: "IA revisada", missing: "IA no disponible", never: "IA pendiente" },
+    local: { ok: "Local revisado", missing: "Local no disponible", never: "Local pendiente" },
     ga4: { ok: "Analytics conectado", failed: "Analytics con error", missing: "Analytics no conectado", never: "Analytics sin sincronizar" },
     backlinks: { ok: "Backlinks con datos", partial: "Backlinks parcial", missing: "Backlinks no disponible", never: "Backlinks pendiente" },
   };

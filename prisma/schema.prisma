@@ -151,6 +151,8 @@ model Project {
   annotations Annotation[]
   backlinks   BacklinkSnapshot[]
   ga4Rows     Ga4Row[]
+  aiChecks    AiCheck[]
+  localRanks  LocalRank[]
 }
 
 /// Conexión OAuth de Google Search Console del proyecto (la cuenta de Google del cliente). Token cifrado.
@@ -876,4 +878,37 @@ model Ga4Row {
   revenue   Float
 
   @@id([projectId, date, landing])
+}
+
+/// ¿Las IA (ChatGPT, Claude, Gemini, Perplexity) citan el sitio al responder una keyword? (Serpent AI Ranking)
+model AiCheck {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  keyword   String
+  engine    String
+  found     Boolean
+  position  Int?
+  /// dominios citados (los primeros 10)
+  cited     String[]
+  checkedAt DateTime @default(now())
+
+  @@index([projectId, checkedAt])
+}
+
+/// Posición en Google Maps para una keyword local (Serpent Maps)
+model LocalRank {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  keyword     String
+  location    String
+  position    Int?
+  rating      Float?
+  name        String?
+  /// los 3 primeros: [{ name, rating, website }]
+  top         Json     @default("[]")
+  checkedAt   DateTime @default(now())
+
+  @@index([projectId, checkedAt])
 }

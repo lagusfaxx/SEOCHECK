@@ -9,6 +9,7 @@ import { projectActions } from "./tasks";
 import { mailTemplate, sendMail } from "./mail";
 import { appBaseUrl } from "./util";
 import { backlinksOverview } from "./backlinks";
+import { aiLocalOverview } from "./ai-local";
 
 type Overview = Awaited<ReturnType<typeof marketingOverview>>;
 const n = (v: number | null | undefined) => (v == null ? "–" : Math.round(v).toLocaleString("es-CL"));
@@ -41,10 +42,14 @@ export async function sendDigest(projectId: string) {
   const allowed = new Set(members.map((m) => m.user.email.toLowerCase()));
   const to = schedule.recipients.filter((e) => allowed.has(e.toLowerCase()));
   if (!to.length) return { sent: 0 };
-  const [mk, acts, bl] = await Promise.all([marketingOverview(projectId), projectActions(projectId), backlinksOverview(projectId)]);
+  const [mk, acts, bl, al] = await Promise.all([marketingOverview(projectId), projectActions(projectId), backlinksOverview(projectId), aiLocalOverview(projectId)]);
   const { text, html } = mailTemplate(
     `Resultados SEO · ${p.name}`,
-    digestParagraphs(mk, acts.actions, bl.snapshot),
+    [
+      ...digestParagraphs(mk, acts.actions, bl.snapshot),
+      ...(al.ai ? [`IA: ${al.ai.engines.map((e) => `${e.engine} te cita en ${e.found}/${e.total}`).join(", ")}.`] : []),
+      ...(al.localRanks ? [`Google Maps: ${al.localRanks.rows.map((r) => `«${r.keyword}» ${r.position ?? "no aparece"}`).join(", ")}.`] : []),
+    ],
     appBaseUrl() ? { label: "Ver resultados", url: `${appBaseUrl()}/p/${projectId}/results` } : undefined,
     "Recibes este correo porque está activado en Informe → Programación. Puedes quitarte ahí."
   );

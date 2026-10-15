@@ -4,6 +4,7 @@ import { useProject } from "@/components/Shell";
 import { GscConnect } from "@/components/GscConnect";
 import { Ga4Card, type Ga4Data } from "@/components/Ga4Card";
 import { WatchCard } from "@/components/WatchCard";
+import { AiLocalCard } from "@/components/AiLocalCard";
 import { api, Bar, cx, DataTable, Delta, Empty, fmt, Hint, pct, Spinner, Stat, useAction, useApi, type Col } from "@/components/ui";
 
 type Pace = { mtd: number; projected: number | null; target: number | null; status: string | null; needPerDay: number | null; daysWithData: number; daysInMonth: number };
@@ -255,6 +256,8 @@ export default function Results() {
           <button className="btn" disabled={savingComp || comp == null}>Guardar</button>
         </form>
       </section>
+
+      <AiLocalCard />
 
       <section className="card p-4">
         <h2 className="text-base font-semibold">Competidores y visibilidad</h2>

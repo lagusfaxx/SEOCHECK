@@ -40,6 +40,7 @@ import { marketingOverview } from "./marketing";
 import { backlinksOverview, bareDomain } from "./backlinks";
 import { ga4Properties, ga4Status, setGa4Property, syncGa4 } from "./ga4";
 import { alertRecipients, FIELD_LABEL, latestCrawlChanges } from "./watch";
+import { aiLocalOverview, MAX_LOCAL_KEYWORDS } from "./ai-local";
 
 /** Fecha YYYY-MM-DD (no futura) para anotaciones. */
 function dayParam(v: unknown) {
@@ -172,6 +173,7 @@ export const PRODUCT_GETS: Record<string, Handler> = {
   marketing: async ({ id }) => marketingOverview(id),
   backlinks: async ({ id }) => backlinksOverview(id),
   "ga4/status": async ({ id }) => ga4Status(id),
+  "ai-local": async ({ id }) => aiLocalOverview(id),
   /** Avisos inmediatos de los últimos 30 días, cambios entre crawls y a quién llegan */
   watch: async ({ id }) => {
     const [alerts, c, p, recipients] = await Promise.all([
@@ -625,6 +627,15 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
     const settings = (p.settings ?? {}) as Record<string, any>;
     await db.project.update({ where: { id }, data: { settings: { ...settings, alerts: { ...(settings.alerts ?? {}), emails, immediate: body.immediate !== false } } } });
     return { emails, immediate: body.immediate !== false };
+  },
+  /** SEO local: ciudad o comuna, nombre del negocio (para encontrarlo en Maps) y keywords */
+  "marketing/local": async ({ id, body }) => {
+    const location = typeof body.location === "string" ? body.location.trim().slice(0, 100) : "";
+    const businessName = typeof body.businessName === "string" ? body.businessName.trim().slice(0, 100) : "";
+    const keywords = Array.isArray(body.keywords) ? ([...new Set(body.keywords.map((k: unknown) => normTerm(String(k))).filter(Boolean))] as string[]).slice(0, MAX_LOCAL_KEYWORDS) : [];
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });
+    await db.project.update({ where: { id }, data: { settings: { ...((p.settings ?? {}) as Record<string, any>), local: { location, businessName, keywords } } } });
+    return { location, businessName, keywords };
   },
   "marketing/goals": async ({ id, body }) => {
     const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });

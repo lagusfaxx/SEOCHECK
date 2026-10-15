@@ -194,7 +194,7 @@ test("correr todo: sigue aunque un paso falle y salta lo que no tiene credencial
   const { runFull } = await import("./fullrun");
   const steps = await runFull(projectId, { maxPages: 5 });
   const by = Object.fromEntries(steps.map((s) => [s.step, s]));
-  assert.deepEqual(Object.keys(by), ["crawl", "gsc", "ga4", "inspect", "psi", "keywords", "rank", "backlinks", "alerts"]);
+  assert.deepEqual(Object.keys(by), ["crawl", "gsc", "ga4", "inspect", "psi", "keywords", "rank", "backlinks", "ai", "local", "alerts"]);
   // localhost no es accesible: el crawl queda fallido con motivo, sin puntaje, y el resto sigue
   assert.equal(by.crawl.status, "error");
   assert.match(by.crawl.detail ?? "", /No se pudo acceder al sitio: bloqueado por seguridad: host bloqueado: localhost/);

@@ -14,6 +14,7 @@ import { assertBudget, BudgetError, est } from "./budget";
 import { normTerm } from "./util";
 import { backlinksConfigured, runBacklinks } from "./backlinks";
 import { ga4Of, syncGa4 } from "./ga4";
+import { runAiVisibility, runLocal } from "./ai-local";
 
 export type FullRunOpts = {
   maxPages?: number;
@@ -27,6 +28,9 @@ export type FullRunOpts = {
   rank?: boolean;
   /** Backlinks con la cuenta DataForSEO del servidor (una foto por semana) */
   backlinks?: boolean;
+  /** Visibilidad en IA y SEO local (Serpent, una vez por semana) */
+  ai?: boolean;
+  local?: boolean;
 };
 
 export type StepResult = { step: string; status: "ok" | "skipped" | "error"; detail?: string };
@@ -38,7 +42,7 @@ export type StepResult = { step: string; status: "ok" | "skipped" | "error"; det
 export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: string): Promise<StepResult[]> {
   const p = await db.project.findUniqueOrThrow({ where: { id: projectId } });
   const results: StepResult[] = [];
-  const steps = 9;
+  const steps = 11;
   let n = 0;
   const step = async (name: string, label: string, fn: () => Promise<string | void | null>) => {
     await jobProgress(jobRunId, (n / steps) * 100, label);
@@ -149,6 +153,22 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
     if ("reused" in r) return "se usa la foto de esta semana";
     if ("skipped" in r) return skip("backlinks", r.skipped!);
     return `${r.competitors?.length ?? 0} competidores${r.errors?.length ? ` · ${r.errors.length} parte(s) sin datos` : ""}`;
+  });
+
+  const weekly = (name: string, r: { skipped?: string; reused?: boolean; errors?: string[] } & Record<string, unknown>, ok: string) => {
+    if (r.skipped) return skip(name, r.skipped);
+    if (r.reused) return "se usa la revisión de esta semana";
+    return `${ok}${r.errors?.length ? ` · ${r.errors.length} con error` : ""}`;
+  };
+  await step("ai", "visibilidad en IA", async () => {
+    if (opts.ai === false) return skip("ai", "desactivado");
+    const r = await runAiVisibility(projectId);
+    return weekly("ai", r, `${(r as any).keywords ?? 0} keywords en 4 IA`);
+  });
+  await step("local", "SEO local", async () => {
+    if (opts.local === false) return skip("local", "desactivado");
+    const r = await runLocal(projectId);
+    return weekly("local", r, `${(r as any).keywords ?? 0} keywords en Google Maps`);
   });
 
   await step("alerts", "alertas", async () => {
