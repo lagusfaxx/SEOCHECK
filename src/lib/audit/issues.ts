@@ -27,6 +27,8 @@ export const ISSUE_LABELS: Record<string, string> = {
   canonical_other: "Canonical a otra URL",
   canonical_bad_target: "Canonical hacia una URL que no es válida",
   jsonld_invalid: "JSON-LD inválido",
+  jsonld_mismatch: "Datos estructurados que no coinciden con lo visible",
+  js_dependent: "Contenido o links que dependen de JavaScript",
   thin_content: "Poco texto visible",
   dup_content: "Contenido duplicado",
   img_no_alt: "Imágenes sin alt",
@@ -138,6 +140,10 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
       else add(p.url, "canonical_other", "info", p.canonical ?? "");
     }
     if (p.jsonldErrors) add(p.url, "jsonld_invalid", "warning", `${p.jsonldErrors}`);
+    if (p.schemaIssues?.length) add(p.url, "jsonld_mismatch", "warning", p.schemaIssues.join("; "));
+    // solo se sabe con render JS: el HTML inicial no trae links o la mitad del texto
+    const jsWords = p.rawWordCount != null && p.wordCount >= 100 && p.rawWordCount < p.wordCount * 0.5;
+    if (p.jsLinks > 0 || jsWords) add(p.url, "js_dependent", "info", [p.jsLinks ? `${p.jsLinks} links solo aparecen al ejecutar JavaScript` : "", jsWords ? `${p.rawWordCount} de ${p.wordCount} palabras en el HTML inicial` : ""].filter(Boolean).join(" · "));
     // poco texto no es baja calidad por sí solo (fichas, listados): solo se anota casi sin texto, como hipótesis
     if (p.wordCount < THIN_WORDS && !p.noindex) add(p.url, "thin_content", "info", `${p.wordCount} palabras visibles`);
     if (p.imgNoAlt) add(p.url, "img_no_alt", "info", `${p.imgNoAlt}`);

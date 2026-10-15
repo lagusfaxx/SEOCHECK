@@ -127,3 +127,32 @@ test("brief: descarta links a rutas inexistentes, filtros ya presentes y avisa a
   assert.match(w, /rendimiento óptimo/);
   assert.match(w, /infantil/);
 });
+
+import { checkStructuredData, visibleNumbers } from "./audit/structured";
+import { parseHtml } from "./audit/crawler";
+
+test("datos estructurados: precio, moneda, stock y reseñas contra lo visible", () => {
+  assert.ok(visibleNumbers("Precio $59.990 antes 69,990").has(59990));
+  assert.ok(visibleNumbers("Total 19,99 €").has(19.99));
+  const prod = (offers: any, extra: any = {}) => [{ "@type": "Product", name: "Traje", offers, ...extra }];
+  assert.deepEqual(checkStructuredData(prod({ price: "59990", priceCurrency: "CLP", availability: "https://schema.org/InStock" }), "Traje $59.990 Agregar al carro"), []);
+  assert.match(checkStructuredData(prod({ price: "64990", priceCurrency: "CLP" }), "Traje $59.990").join(), /64990.*no aparece/);
+  assert.match(checkStructuredData(prod({ price: "59990" }), "$59.990").join(), /priceCurrency/);
+  assert.match(checkStructuredData(prod({ price: "59990", priceCurrency: "CLP", availability: "InStock" }), "$59.990 Agotado").join(), /agotado/);
+  assert.match(checkStructuredData(prod({ price: "59990", priceCurrency: "CLP" }, { aggregateRating: { ratingValue: 4.8 } }), "$59.990").join(), /reseñas visibles/);
+  assert.match(checkStructuredData([{ "@type": "Product", name: "x" }], "").join(), /sin offers/);
+  // variantes de un ProductGroup: basta con que se vea uno de los precios
+  const group = [{ "@type": "ProductGroup", hasVariant: [{ offers: { price: 59990, priceCurrency: "CLP" } }, { offers: { price: 64990, priceCurrency: "CLP" } }] }];
+  assert.deepEqual(checkStructuredData(group, "Desde $59.990"), []);
+  // el JSON-LD no cuenta como texto visible
+  const h = parseHtml(`<html><body><script type="application/ld+json">{"@type":"Product","offers":{"price":"70000","priceCurrency":"CLP"}}</script><main>Traje $59.990</main></body></html>`, "https://x.cl/p");
+  assert.match(h.schemaIssues.join(), /70000/);
+});
+
+test("contenido que depende de JavaScript (solo con render)", () => {
+  const p = page({ url: `${S}/catalogo`, jsLinks: 12, rawWordCount: 40, wordCount: 400 } as any);
+  const i = computeIssues([p], ctx).find((x) => x.code === "js_dependent")!;
+  assert.match(i.detail!, /12 links/);
+  assert.match(i.detail!, /40 de 400 palabras/);
+  assert.ok(!computeIssues([page({ url: `${S}/a`, rawWordCount: null } as any)], ctx).some((x) => x.code === "js_dependent"));
+});

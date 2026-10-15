@@ -135,7 +135,7 @@ export const DISCREPANCY_HINT =
 export const SEV_WEIGHT: Record<string, number> = { critical: 3, warning: 2, info: 1 };
 export const EASE: Record<string, number> = {
   title_missing: 1, title_long: 1, title_short: 1, title_dup: 0.9, meta_missing: 1, meta_long: 1, meta_short: 1, meta_dup: 0.9,
-  h1_missing: 1, h1_multiple: 1, canonical_missing: 1, canonical_other: 0.9, canonical_bad_target: 0.9, jsonld_invalid: 0.9, img_no_alt: 0.9, hreflang_no_self: 0.9,
+  h1_missing: 1, h1_multiple: 1, canonical_missing: 1, canonical_other: 0.9, canonical_bad_target: 0.9, jsonld_mismatch: 0.8, js_dependent: 0.5, jsonld_invalid: 0.9, img_no_alt: 0.9, hreflang_no_self: 0.9,
   robots_missing: 1, sitemap_missing: 1, noindex_in_sitemap: 1, blocked_robots: 0.9, noindex: 0.9, nofollow: 0.9, redirect: 0.9,
   broken_link: 0.8, redirect_chain: 0.8, http_4xx: 0.7, http_5xx: 0.6, fetch_failed: 0.6, blocked_by_waf: 0.7,
   orphan: 0.6, no_inlinks: 0.6, deep_page: 0.5, slow: 0.5, thin_content: 0.4, dup_content: 0.4,

@@ -184,6 +184,8 @@ test("informe: priorización por impacto, falsos positivos, tendencias, GSC agru
   assert.match(md, /_Errores HTTP: 1 \(1 con 4xx, 0 con 5xx, 0 sin respuesta\)/);
   assert.match(tasks, /Error 4xx · `\/viejo`[^\n]*\n   - Evidencia: https:\/\/mi-sitio\.cl\/viejo — 404/);
   assert.match(tasks, /Cómo se prioriza/);
+  assert.match(md, /## Resultados[\s\S]*\*\*Clics sin marca:\*\*/);
+  assert.match(md, /### Enlazado interno de páginas clave[\s\S]*\| https:\/\/mi-sitio\.cl\/perfil\/ana \|/);
 });
 
 test("correr todo: sigue aunque un paso falle y salta lo que no tiene credenciales", { skip: !hasDb }, async () => {

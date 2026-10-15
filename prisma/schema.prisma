@@ -356,6 +356,12 @@ model Page {
   blocked       Boolean  @default(false)
   /// blocked_by_waf | ssrf_blocked | fetch_failed (la página no es válida)
   error         String?
+  /// solo con render JS: links que aparecen al ejecutar JavaScript y no están en el HTML inicial
+  jsLinks       Int      @default(0)
+  /// solo con render JS: palabras en el HTML inicial (antes de ejecutar JavaScript)
+  rawWordCount  Int?
+  /// diferencias entre los datos estructurados (Product/Offer/Rating) y lo visible en la página
+  schemaIssues  String[]
 
   @@unique([crawlId, url])
 }

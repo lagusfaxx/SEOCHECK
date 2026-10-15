@@ -3,6 +3,7 @@ import { env } from "./env";
 import { ISSUE_LABELS } from "./audit/issues";
 import { DEFAULT_VERIFY, ISSUE_VERIFY } from "./audit/fixes";
 import { gscPeriod, isoDay, periodLabel, SOURCE_NOTE } from "./gsc-period";
+import { marketingOverview } from "./marketing";
 import { hostOf, urlKey } from "./util";
 import { coverage, emptyText, STATE_LABEL } from "./coverage";
 import { buildFindings, KIND_LABEL, kindOf, urlSection, type Pattern } from "./audit/insights";
@@ -564,6 +565,61 @@ export async function buildReport(projectId: string): Promise<string> {
     }
   }
 
+  // ---------- Enlazado interno de las páginas que importan ----------
+  const linkOut: string[] = [];
+  if (crawl) {
+    const withLinks = await db.page.findMany({ where: { crawlId: crawl.id }, select: { url: true, links: true } });
+    const from = new Map<string, string[]>();
+    for (const x of withLinks) for (const l of new Set(x.links)) if (l !== x.url) from.set(urlKey(l), [...(from.get(urlKey(l)) ?? []), x.url]);
+    const key = pages
+      .filter((x) => x.status === 200 && !x.noindex && x.depth !== 0)
+      .map((x) => ({ x, impr: imprByUrl.get(urlKey(x.url)) ?? 0 }))
+      .sort((a, b) => b.impr - a.impr || b.x.inlinks - a.x.inlinks)
+      .slice(0, 15);
+    if (key.length)
+      linkOut.push(
+        `_Las ${key.length} páginas con más impresiones${imprByUrl.size ? "" : " (sin Search Console: las más enlazadas)"}: a qué profundidad están y desde dónde se enlazan en el HTML rastreado. Una página importante a 3+ clics o con pocos links entrantes merece links desde la home, el menú o categorías._\n`,
+        table(
+          ["Página", "Impr.", "Profundidad", "Links entrantes", "Enlazada desde"],
+          key.map(({ x, impr }) => {
+            const src = from.get(urlKey(x.url)) ?? [];
+            return [x.url, imprByUrl.size ? f0(impr) : "–", x.depth < 0 ? "solo sitemap" : x.depth, x.inlinks, src.length ? `${src.slice(0, 3).map((u) => { try { return new URL(u).pathname; } catch { return u; } }).join(", ")}${src.length > 3 ? ` (+${src.length - 3})` : ""}` : "ninguna en el HTML"];
+          })
+        )
+      );
+  }
+
+  // ---------- Resultados: ¿los cambios movieron las métricas? ----------
+  const resultsOut: string[] = [];
+  const mk = await marketingOverview(projectId).catch(() => null);
+  if (mk?.connected && mk.kpis) {
+    const k = mk.kpis;
+    resultsOut.push(
+      `_${k.period.label}._\n`,
+      `- **Clics sin marca:** ${f0(k.nonBrand.now)} (${pctChange(k.nonBrand.now, k.nonBrand.before)}) · **de marca:** ${f0(k.brand.now)} (${pctChange(k.brand.now, k.brand.before)}). Lo que trae el SEO se mide en los clics sin marca.`
+    );
+    for (const [label, g] of [["Clics", mk.goalProgress!.clicks], ["Clics sin marca", mk.goalProgress!.nonBrandClicks]] as const)
+      if (g.target != null) resultsOut.push(`- **Objetivo ${label.toLowerCase()} ${mk.goalProgress!.month}:** ${f0(g.mtd)} de ${f0(g.target)} con ${g.daysWithData}/${g.daysInMonth} días; proyección ${f0(g.projected)} (${g.status}).`);
+    if (mk.annotations.length)
+      resultsOut.push(
+        "",
+        "**Efecto de los cambios** (clics por día en el alcance del cambio, ventanas iguales antes y después)\n",
+        table(
+          ["Fecha", "Cambio", "Alcance", "Antes", "Después", "Variación", "Lectura"],
+          mk.annotations.slice(0, 15).map((a) => [a.date, a.title, a.scope ?? "todo el sitio", a.impact ? f1(a.impact.beforePerDay) : "–", a.impact ? f1(a.impact.afterPerDay) : "–", a.impact?.change != null ? `${a.impact.change >= 0 ? "+" : ""}${Math.round(a.impact.change * 100)} %` : "–", a.impact ? `${a.impact.conclusive ? "" : "no concluyente: "}${a.impact.note}` : "–"])
+        )
+      );
+    else resultsOut.push("- Sin cambios anotados: anotar cada cambio publicado (Resultados → Cambios) para medir su efecto. Las tareas resueltas se miden solas.");
+    if (mk.decay?.length) resultsOut.push("", `**Contenido en caída sostenida** (3 períodos de 28 días bajando): ${mk.decay.slice(0, 8).map((d) => `${d.page} (${d.clicks.join(" → ")})`).join(" · ")}`);
+  }
+  if (mk?.competitors) {
+    const c = mk.competitors;
+    resultsOut.push(
+      "",
+      `**Competencia** (${c.keywords} keywords, ${c.basis}): tu cuota de visibilidad ${pctS(c.ownShare)}. Primeros: ${c.top.slice(0, 5).map((x) => `${x.domain}${x.own ? " (tú)" : ""} ${pctS(x.share)}`).join(" · ")}. AI Overview en ${c.aiOverview.keywords} keywords; te cita en ${c.aiOverview.cited}.`
+    );
+  }
+
   // ---------- Armado ----------
   tasks.sort(byPriority);
   const top = tasks.slice(0, MAX_TASKS);
@@ -588,6 +644,7 @@ export async function buildReport(projectId: string): Promise<string> {
   const missing = cov.filter((m) => m.state !== "ok").map((m) => m.label);
   if (missing.length) out.push(`> **Diagnóstico parcial.** Este informe no evalúa con datos completos: ${missing.join(", ")}. Lo que dependa de esos módulos no está medido, no es que esté bien.`, "");
   if (trends.length) out.push("## Tendencias", "", ...trends, "");
+  if (resultsOut.length) out.push("## Resultados", "", ...resultsOut, "");
   // URLs: descubiertas → rastreadas → con impresiones → inspeccionadas
   if (crawl || imprByUrl.size || inspLatest.size) {
     const ok200 = pages.filter((x) => x.status === 200 && !x.error && !(x.redirects as unknown[]).length);
@@ -673,6 +730,7 @@ export async function buildReport(projectId: string): Promise<string> {
   );
   out.push("## Auditoría técnica", "", ...auditOut, "");
   if (httpOut.length) out.push("### Errores HTTP con evidencia", "", ...httpOut, "");
+  if (linkOut.length) out.push("### Enlazado interno de páginas clave", "", ...linkOut, "");
   out.push(
     "## Indexación (URL Inspection)",
     "",

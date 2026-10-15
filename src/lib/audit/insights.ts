@@ -34,7 +34,7 @@ export const ISSUE_KIND: Record<string, Kind> = {
   blocked_robots: "possible", noindex: "possible", deep_page: "possible", slow: "possible", hreflang_no_self: "possible", redirect: "possible",
   thin_content: "possible", nofollow: "possible", sitemap_missing: "possible", ssrf_blocked: "possible", h1_missing: "possible",
   title_long: "opportunity", title_short: "opportunity", meta_missing: "opportunity", meta_long: "opportunity", meta_short: "opportunity",
-  h1_multiple: "opportunity", img_no_alt: "opportunity", canonical_missing: "opportunity", robots_missing: "opportunity",
+  h1_multiple: "opportunity", jsonld_mismatch: "possible", js_dependent: "possible", img_no_alt: "opportunity", canonical_missing: "opportunity", robots_missing: "opportunity",
 };
 export const kindOf = (code: string): Kind => ISSUE_KIND[code] ?? "possible";
 

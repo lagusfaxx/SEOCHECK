@@ -11,6 +11,7 @@ import { DEFAULT_IGNORE_PARAMS, detectWaf, PatternLimiter, stripParams } from ".
 import { hostOf, normUrl } from "../util";
 import { computeIssues } from "./issues";
 import { detectCms, type Cms } from "./cms";
+import { checkStructuredData } from "./structured";
 import { fetchSitemapUrls, parseRobots, robotsAllows, type Robots } from "./robots";
 
 export type CrawlOptions = {
@@ -59,6 +60,12 @@ export type PageData = {
   error?: PageError;
   /** CMS / framework detectado en el HTML */
   cms?: Cms | null;
+  /** con render JS: links que solo aparecen al ejecutar JavaScript */
+  jsLinks?: number;
+  /** con render JS: palabras del HTML inicial */
+  rawWordCount?: number | null;
+  /** datos estructurados que no coinciden con lo visible */
+  schemaIssues?: string[];
 };
 
 export type TextBlock = {
@@ -428,6 +435,7 @@ export function parseHtml(html: string, url: string) {
   const canonical = canonicalRaw ? normUrl(canonicalRaw, url) : null;
   const robotsMeta = $('meta[name="robots" i], meta[name="googlebot" i]').map((_, el) => $(el).attr("content") ?? "").get().join(" ");
   const jsonldTypes: string[] = [];
+  const jsonldNodes: any[] = [];
   let jsonldErrors = 0;
   $('script[type="application/ld+json"]').each((_, el) => {
     try {
@@ -436,7 +444,10 @@ export function parseHtml(html: string, url: string) {
       const walk = (n: any) => {
         if (!n || typeof n !== "object") return;
         if (Array.isArray(n)) return n.forEach(walk);
-        if (n["@type"]) jsonldTypes.push(...[].concat(n["@type"]));
+        if (n["@type"]) {
+          jsonldTypes.push(...[].concat(n["@type"]));
+          jsonldNodes.push(n);
+        }
         if (n["@graph"]) walk(n["@graph"]);
       };
       walk(data);
@@ -490,14 +501,25 @@ export function parseHtml(html: string, url: string) {
     blocks,
     signals,
     hash: text ? createHash("sha1").update(text.toLowerCase()).digest("hex") : null,
+    // el precio puede estar fuera de <main> (barra de compra): se compara con todo el body
+    schemaIssues: checkStructuredData(jsonldNodes, $("body").text().replace(/\s+/g, " ")),
   };
 }
 
 export async function fetchPage(url: string, render = false, o: FetchOpts = {}): Promise<PageData> {
   const r = await fetchFollow(url, o);
   let html = r.html;
-  if (render && r.status === 200 && html) html = (await renderHtml(r.finalUrl, o)) ?? html;
+  let raw: ReturnType<typeof parseHtml> | null = null;
+  if (render && r.status === 200 && html) {
+    const rendered = await renderHtml(r.finalUrl, o);
+    // se guarda el HTML inicial para saber qué depende de JavaScript (Google renderiza, pero con demora y no siempre)
+    if (rendered) {
+      raw = parseHtml(html, r.finalUrl);
+      html = rendered;
+    }
+  }
   const parsed = html ? parseHtml(html, r.finalUrl) : null;
+  const rawLinks = raw ? new Set(raw.links) : null;
   return {
     url,
     finalUrl: r.finalUrl,
@@ -525,6 +547,9 @@ export async function fetchPage(url: string, render = false, o: FetchOpts = {}):
     signals: parsed?.signals ?? { linkGroup: 0, article: false, time: false, cart: false, price: false },
     error: r.waf ? "blocked_by_waf" : undefined,
     cms: html ? detectCms(html) : null,
+    jsLinks: rawLinks && parsed ? parsed.links.filter((l) => !rawLinks.has(l)).length : 0,
+    rawWordCount: raw ? raw.wordCount : null,
+    schemaIssues: parsed?.schemaIssues ?? [],
   };
 }
 
@@ -690,6 +715,9 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     orphan: orphanSet.has(p.url),
     blocked: p.status === 0 && !p.error && blocked(p.url),
     error: p.error ?? null,
+    jsLinks: p.jsLinks ?? 0,
+    rawWordCount: p.rawWordCount ?? null,
+    schemaIssues: p.schemaIssues ?? [],
   }));
   for (let i = 0; i < rows.length; i += 200) await db.page.createMany({ data: rows.slice(i, i + 200), skipDuplicates: true });
 
