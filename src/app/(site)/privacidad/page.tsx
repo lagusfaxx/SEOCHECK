@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   description: "Cómo FSV trata los datos personales en FSV Search, incluida la integración con Instagram.",
 };
 
-const UPDATED = "13 de octubre de 2026";
+const UPDATED = "15 de octubre de 2026";
 
 const SECTIONS: { title: string; body: React.ReactNode }[] = [
   {
@@ -26,7 +26,8 @@ const SECTIONS: { title: string; body: React.ReactNode }[] = [
       <ul>
         <li><b>Cuenta:</b> nombre, correo y contraseña (guardada como hash) de quienes usan la plataforma. Si entras con Google, recibimos tu nombre, correo y un identificador de tu cuenta de Google; nunca tu contraseña.</li>
         <li><b>Proyectos:</b> dominios, keywords, auditorías, rankings y contenidos que cargas o generas.</li>
-        <li><b>Google Search Console</b> (si lo conectas): métricas de búsqueda de tus propiedades, con el acceso que autorizas por OAuth.</li>
+        <li><b>Google Search Console</b> (si lo conectas): métricas de búsqueda de tus propiedades (consultas, páginas, clics, impresiones, CTR y posición) y el estado de indexación de URLs, con acceso de solo lectura que autorizas por OAuth.</li>
+        <li><b>Google Analytics</b> (si lo conectas): la lista de propiedades a las que tu cuenta tiene acceso y, de la propiedad que eliges, datos agregados del tráfico orgánico por página de entrada y día (sesiones, eventos clave e ingresos). Acceso de solo lectura; no leemos datos de visitantes individuales.</li>
         <li>
           <b>Instagram</b> (si conectas una cuenta profesional mediante Instagram Login): ID y nombre de usuario de la cuenta, el token de acceso (cifrado), la lista de tus publicaciones (texto,
           tipo, enlace y fecha) y sus estadísticas (alcance, me gusta, comentarios, guardados, compartidos e interacciones). No leemos mensajes directos ni datos de otras personas.
@@ -41,10 +42,30 @@ const SECTIONS: { title: string; body: React.ReactNode }[] = [
     body: (
       <ul>
         <li>Prestar el servicio: análisis SEO, reportes y recomendaciones para tus proyectos.</li>
+        <li>Con los datos de Search Console y Google Analytics: mostrarte resultados, oportunidades, avisos y reportes de tu propio sitio dentro de FSV Search.</li>
         <li>Publicar en tu cuenta de Instagram las publicaciones que tú creas, inmediatamente o en la fecha que programes. Nunca publicamos sin una acción tuya.</li>
         <li>Mostrarte el rendimiento de tus publicaciones y sugerirte textos, hashtags y horarios a partir de lo que mejor funcionó en tu propia cuenta.</li>
         <li>Seguridad, soporte y cumplimiento legal.</li>
       </ul>
+    ),
+  },
+  {
+    title: "Datos de Google (uso limitado)",
+    body: (
+      <>
+        <p>
+          El uso que FSV Search hace de la información recibida de las API de Google, y su transferencia a cualquier otra app, se ajusta a la{" "}
+          <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer">Política de datos de usuario de los servicios de API de Google</a>, incluidos
+          los requisitos de Uso limitado.
+        </p>
+        <ul>
+          <li>Solo usamos los datos de Google para mostrarte y analizar el rendimiento de tus propios proyectos.</li>
+          <li>No los vendemos, no los usamos para publicidad y no los usamos para entrenar modelos de inteligencia artificial.</li>
+          <li>No los transferimos a terceros, salvo lo necesario para prestar las funciones que usas, por seguridad o por obligación legal.</li>
+          <li>Ninguna persona lee esos datos, salvo con tu permiso para soporte, por seguridad o por obligación legal.</li>
+          <li>Puedes quitar el acceso cuando quieras desde FSV Search (Desconectar) o en tu cuenta de Google (Seguridad → Apps de terceros). Al desconectar, borramos el token.</li>
+        </ul>
+      </>
     ),
   },
   {
