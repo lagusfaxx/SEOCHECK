@@ -151,9 +151,35 @@ export function ReportTools() {
             </span>
           )}
         </label>
+        {schedule?.enabled && (
+          <form
+            className="mt-2 flex flex-wrap items-center gap-2 text-sm"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const value = new FormData(e.currentTarget).get("recipients");
+              run(async () => {
+                await api(`/api/p/${id}/report/schedule`, "PATCH", {
+                  frequency: schedule.frequency,
+                  enabled: true,
+                  recipients: String(value ?? "").split(/[\s,;]+/).filter(Boolean),
+                });
+                await reloadSchedule();
+              });
+            }}
+          >
+            <input
+              name="recipients"
+              className="input flex-1"
+              placeholder="Correos del equipo que reciben el resumen (separados por coma)"
+              defaultValue={(schedule.recipients ?? []).join(", ")}
+            />
+            <button className="btn">Guardar</button>
+          </form>
+        )}
         <p className="text-xs text-ink-500">
-          El worker guarda una versión de los últimos datos disponibles. La
-          programación no ejecuta una auditoría nueva ni envía correos.
+          El worker guarda una versión de los últimos datos disponibles y, si
+          hay destinatarios, envía un resumen de resultados por correo (solo a
+          miembros del equipo). No ejecuta una auditoría nueva.
         </p>
       </details>
       {!!history?.length && (

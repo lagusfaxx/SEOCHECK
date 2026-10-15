@@ -1,5 +1,6 @@
 import { groupTasks, taskGroupKey } from "./task-groups";
 import { db } from "./db";
+import { gscPeriod } from "./gsc-period";
 import { ISSUE_LABELS } from "./audit/issues";
 import { ISSUE_WHY, ISSUE_FIX } from "./audit/fixes";
 import {
@@ -14,17 +15,17 @@ import {
 export async function syncCrawlTasks(crawlId: string) {
   const crawl = await db.crawl.findUniqueOrThrow({ where: { id: crawlId } });
   if (!["completed", "partial"].includes(crawl.status)) return;
+  const period = await gscPeriod(crawl.projectId);
   const [issues, pages, traffic] = await Promise.all([
     db.issue.findMany({ where: { crawlId } }),
     db.page.findMany({ where: { crawlId } }),
-    db.gscRow.groupBy({
-      by: ["page"],
-      where: {
-        projectId: crawl.projectId,
-        date: { gte: new Date(Date.now() - 30 * 864e5) },
-      },
-      _sum: { impressions: true },
-    }),
+    period
+      ? db.gscRow.groupBy({
+          by: ["page"],
+          where: { projectId: crawl.projectId, date: { gte: period.start, lt: period.endExclusive } },
+          _sum: { impressions: true },
+        })
+      : [],
   ]);
   const pageMap = new Map(pages.map((p) => [p.url, p]));
   const impressions = new Map(
@@ -66,7 +67,7 @@ export async function syncCrawlTasks(crawlId: string) {
           url: i.url,
           severity: i.severity,
           category: i.severity === "critical" ? "fix" : "improvement",
-          reason: `${ISSUE_WHY[i.code] ?? i.detail ?? "Incidencia detectada en la auditoría."} ${ISSUE_FIX[i.code] ?? ""} Prioridad: ${impr ? `${impr} impresiones GSC` : `${inlinks} enlaces internos (sin datos GSC)`} × severidad ${i.severity}.`,
+          reason: `${ISSUE_WHY[i.code] ?? "Incidencia detectada en la auditoría."}${i.detail ? ` Evidencia (${crawl.startedAt.toISOString().slice(0, 10)}): ${i.detail}.` : ""} ${ISSUE_FIX[i.code] ?? ""} Prioridad: ${impr ? `${impr} impresiones GSC` : `${inlinks} enlaces internos (sin datos GSC)`} × severidad ${i.severity}.`,
           priority: priorityFor(i.severity, impr, inlinks),
           status,
           lastCrawlId: crawlId,
@@ -151,7 +152,8 @@ export async function projectActions(projectId: string) {
   });
   const tracked = await db.trackedKeyword.findMany({ where: { projectId, active: true }, select: { checks: { orderBy: { date: "desc" }, take: 1, select: { url: true, position: true } } } });
   const rankedUrls = new Set(tracked.flatMap(t => t.checks.filter(c => c.url && c.position != null).map(c => c.url!)));
-  const traffic = await db.gscRow.groupBy({ by: ["page"], where: { projectId, date: { gte: new Date(Date.now()-28*864e5) } }, _sum: { impressions: true } });
+  const period = await gscPeriod(projectId);
+  const traffic = period ? await db.gscRow.groupBy({ by: ["page"], where: { projectId, date: { gte: period.start, lt: period.endExclusive } }, _sum: { impressions: true } }) : [];
   const groups = groupTasks(rows, rankedUrls, new Map(traffic.map(t=>[t.page,t._sum.impressions ?? 0])));
   return {
     tasks: rows,
@@ -218,4 +220,32 @@ export async function signalTask(
         data: { reason, priority, lastSeenAt: new Date() },
       });
   });
+}
+
+/**
+ * Responsable y fecha límite. El responsable tiene que ser miembro del workspace; con `group` se aplica a todas
+ * las URLs del mismo problema y plantilla (como el estado). Avisa por correo al nuevo responsable.
+ */
+export async function setTaskAssignment(projectId: string, taskId: string, a: { assignee: string | null; dueAt: Date | null }, group: boolean, actor: string) {
+  const p = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { workspaceId: true, name: true } });
+  const assignee = a.assignee?.trim().toLowerCase() || null;
+  if (assignee) {
+    const member = await db.membership.findFirst({ where: { workspaceId: p.workspaceId, user: { email: assignee } } });
+    if (!member) throw new Error("El responsable tiene que ser miembro del equipo");
+  }
+  const task = await db.projectTask.findFirstOrThrow({ where: { id: taskId, projectId } });
+  const siblings = group && task.source === "crawl" ? (await db.projectTask.findMany({ where: { projectId, source: "crawl", code: task.code } })).filter((t) => taskGroupKey(t) === taskGroupKey(task)) : [task];
+  await db.projectTask.updateMany({ where: { id: { in: siblings.map((t) => t.id) } }, data: { assignee, dueAt: a.dueAt } });
+  if (assignee && assignee !== task.assignee && assignee !== actor.toLowerCase()) {
+    const { mailTemplate, sendMail } = await import("./mail");
+    const { appBaseUrl } = await import("./util");
+    const { text, html } = mailTemplate(
+      `Te asignaron una tarea SEO · ${p.name}`,
+      [`${task.title}${siblings.length > 1 ? ` (${siblings.length} URLs)` : ""}.`, a.dueAt ? `Fecha límite: ${a.dueAt.toISOString().slice(0, 10)}.` : "Sin fecha límite.", `Asignada por ${actor}.`],
+      appBaseUrl() ? { label: "Ver tarea", url: `${appBaseUrl()}/p/${projectId}/tasks?task=${encodeURIComponent(task.id)}` } : undefined,
+      "Recibes este correo porque te asignaron una tarea en FSV Search."
+    );
+    await sendMail(assignee, `Tarea asignada: ${task.title}`, text, undefined, html).catch(() => "logged");
+  }
+  return { updated: siblings.length };
 }

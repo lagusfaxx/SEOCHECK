@@ -142,7 +142,7 @@ export default function AuditPage() {
               {st.health == null && st.healthNote && <span className="max-w-[140px] text-center text-[11px] leading-tight text-ink-500">{st.healthNote}</span>}
             </div>
             <Stat label="URLs" value={fmt(st.pages)} hint="Páginas revisadas: las que el crawler encontró siguiendo links, más las del sitemap que no alcanzó por links." />
-            <Stat label="Errores HTTP" value={fmt(st.errors)} tone={st.errors ? "bad" : undefined} hint="Páginas que respondieron con error (404, 500) o no respondieron." />
+            <Stat label="Errores HTTP" value={fmt(st.errors)} tone={st.errors ? "bad" : undefined} hint={st.http4xx != null ? `${fmt(st.http4xx)} con 4xx · ${fmt(st.http5xx)} con 5xx · ${fmt(st.noResponse)} sin respuesta. No incluye las bloqueadas por robots.txt (${fmt(st.robotsBlocked)}), que no se pidieron.` : "Páginas que respondieron con error (404, 500) o no respondieron."} />
             <Stat label="Redirecciones" value={fmt(st.redirects)} hint="URLs que redirigen a otra. Normal en pocas; los links internos deberían apuntar directo a la URL final." />
             <Stat label="Huérfanas" value={fmt(st.orphans)} hint="Están en el sitemap pero ninguna página revisada las enlaza. Si el crawl llegó al máximo, muchas pueden ser falsas: sube el máximo." />
             <Stat label="Sitemap" value={fmt(st.sitemap)} hint="URLs listadas en tu sitemap.xml." />

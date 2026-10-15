@@ -93,3 +93,32 @@ export class SerpentProvider implements SerpProvider {
     return parseSerpent(q, json);
   }
 }
+
+
+/**
+ * GET genérico a Serpent con la clave del servidor (AI Ranking, Google Maps). Sin reintentos de pago: un 4xx se
+ * informa tal cual. El host de Maps puede ser api.apiserpent.com: si el principal da 404 se prueba ese.
+ */
+export async function serpentGet(path: string, params: Record<string, string>): Promise<any> {
+  if (!env.serpentKey) throw new ProviderError("Serpent", "not_configured", "Falta SERPENT_API_KEY");
+  const qs = new URLSearchParams(params).toString();
+  const hosts = [env.serpentBase, ...(env.serpentBase === "https://apiserpent.com" ? ["https://api.apiserpent.com"] : [])];
+  let lastErr: unknown;
+  for (const host of hosts) {
+    const res = await fetchT(`${host}${path}?${qs}`, { headers: { "X-API-Key": env.serpentKey }, timeoutMs: 120000 }).catch((e) => {
+      throw netFail("Serpent", e);
+    });
+    const text = await res.text();
+    if (res.status === 404 && host !== hosts[hosts.length - 1]) {
+      lastErr = httpFail("Serpent", res.status, text);
+      continue;
+    }
+    if (!res.ok) throw httpFail("Serpent", res.status, text);
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new ProviderError("Serpent", "down", "Serpent devolvió una respuesta inválida");
+    }
+  }
+  throw lastErr;
+}

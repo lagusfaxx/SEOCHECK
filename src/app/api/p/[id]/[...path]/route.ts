@@ -425,6 +425,10 @@ const POSTS: Record<string, H> = {
       inspect: body.inspect !== false,
       psi: body.psi !== false,
       rank: body.rank !== false,
+      backlinks: body.backlinks !== false,
+      ai: body.ai !== false,
+      local: body.local !== false,
+      gap: body.gap !== false,
     };
     // con semillas el informe corre una investigación de keywords: cuenta como tal (se descuenta al encolar)
     if (opts.seeds.length) return withProjectQuota(id, "research", 1, async () => null).then(() => enqueue(id, QUEUES.full, { opts }));

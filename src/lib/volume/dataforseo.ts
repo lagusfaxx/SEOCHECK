@@ -17,9 +17,13 @@ import { DFS_USD_PER_TASK, fitsBudget } from "../budget";
  */
 const PATH = "/v3/keywords_data/google_ads/search_volume";
 export const dfsBase = () => env.dfsBaseOverride || (env.dfsEnv === "live" ? "https://api.dataforseo.com" : "https://sandbox.dataforseo.com");
-const auth = () => `Basic ${Buffer.from(`${env.dfsLogin}:${env.dfsPassword}`).toString("base64")}`;
+export const dfsAuth = () => `Basic ${Buffer.from(`${env.dfsLogin}:${env.dfsPassword}`).toString("base64")}`;
 
-type Row = { keyword: string; search_volume: number | null; cpc: number | null; competition_index: number | null };
+type Row = { keyword: string; search_volume: number | null; cpc: number | null; competition_index: number | null; monthly_searches?: { year: number; month: number; search_volume: number | null }[] | null };
+
+/** Búsquedas por mes de DataForSEO → [{ year, month, volume }] ordenado del más antiguo al más reciente. */
+export const monthlyOf = (m: Row["monthly_searches"]) =>
+  m?.length ? m.filter((x) => x.search_volume != null).map((x) => ({ year: x.year, month: x.month, volume: Number(x.search_volume) })).sort((a, b) => a.year - b.year || a.month - b.month) : null;
 
 function toData(r: Row, originals: string[]): VolumeData[] {
   return originals.map((k) => ({
@@ -27,6 +31,7 @@ function toData(r: Row, originals: string[]): VolumeData[] {
     volume: r.search_volume ?? null,
     cpc: r.cpc ?? null,
     competition: r.competition_index != null ? r.competition_index / 100 : null,
+    monthly: monthlyOf(r.monthly_searches),
   }));
 }
 
@@ -40,7 +45,7 @@ export function dfsAccountError(httpStatus: number, json: any): NoBalanceError |
 }
 
 async function post(path: string, body: unknown) {
-  const res = await fetchT(`${dfsBase()}${PATH}${path}`, { method: "POST", headers: { Authorization: auth(), "Content-Type": "application/json" }, body: JSON.stringify(body), timeoutMs: 120000 });
+  const res = await fetchT(`${dfsBase()}${PATH}${path}`, { method: "POST", headers: { Authorization: dfsAuth(), "Content-Type": "application/json" }, body: JSON.stringify(body), timeoutMs: 120000 });
   const json: any = await res.json().catch(() => null);
   const acct = dfsAccountError(res.status, json);
   if (acct) throw acct;
@@ -145,7 +150,7 @@ export async function collectDfsQueue(writeCache: (rows: VolumeData[], country: 
   let done = 0, waiting = 0;
   const touched: { country: string; language: string; keywords: string[] }[] = [];
   for (const [taskId, rows] of byTask) {
-    const res = await fetchT(`${dfsBase()}${PATH}/task_get/${taskId}`, { headers: { Authorization: auth() }, timeoutMs: 60000 });
+    const res = await fetchT(`${dfsBase()}${PATH}/task_get/${taskId}`, { headers: { Authorization: dfsAuth() }, timeoutMs: 60000 });
     if (!res.ok) { waiting++; continue; }
     const task = ((await res.json()) as any).tasks?.[0];
     // 40601 Task Handed / 40602 Task in Queue → aún no

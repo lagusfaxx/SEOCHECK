@@ -12,6 +12,10 @@ import { computeAlerts } from "./rank/alerts";
 import { runKeywordPipeline } from "./keywords/pipeline";
 import { assertBudget, BudgetError, est } from "./budget";
 import { normTerm } from "./util";
+import { backlinksConfigured, runBacklinks } from "./backlinks";
+import { ga4Of, syncGa4 } from "./ga4";
+import { runAiVisibility, runLocal } from "./ai-local";
+import { runKeywordGap } from "./keyword-gap";
 
 export type FullRunOpts = {
   maxPages?: number;
@@ -23,6 +27,13 @@ export type FullRunOpts = {
   /** Semillas para el research de keywords; vacío = no corre keywords */
   seeds?: string[];
   rank?: boolean;
+  /** Backlinks con la cuenta DataForSEO del servidor (una foto por semana) */
+  backlinks?: boolean;
+  /** Visibilidad en IA y SEO local (Serpent, una vez por semana) */
+  ai?: boolean;
+  local?: boolean;
+  /** Keywords de la competencia que el sitio no tiene (DataForSEO Labs, una vez al mes) */
+  gap?: boolean;
 };
 
 export type StepResult = { step: string; status: "ok" | "skipped" | "error"; detail?: string };
@@ -34,7 +45,7 @@ export type StepResult = { step: string; status: "ok" | "skipped" | "error"; det
 export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: string): Promise<StepResult[]> {
   const p = await db.project.findUniqueOrThrow({ where: { id: projectId } });
   const results: StepResult[] = [];
-  const steps = 7;
+  const steps = 12;
   let n = 0;
   const step = async (name: string, label: string, fn: () => Promise<string | void | null>) => {
     await jobProgress(jobRunId, (n / steps) * 100, label);
@@ -74,6 +85,12 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
     if (opts.gsc === false) return skip("gsc", "desactivado");
     if (!gscReady) return skip("gsc", p.gscProperty ? "Search Console no está conectado" : "sin propiedad GSC en el proyecto");
     await syncGsc(projectId, 90);
+  });
+
+  await step("ga4", "Google Analytics", async () => {
+    if (opts.gsc === false) return skip("ga4", "desactivado");
+    if (!ga4Of(p.settings).property) return skip("ga4", "sin propiedad de Google Analytics");
+    return `${await syncGa4(projectId)} filas`;
   });
 
   // URLs más enlazadas del crawl: las más importantes del sitio
@@ -132,9 +149,42 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
     return `${tracked.length - fails}/${tracked.length} keywords`;
   });
 
+  await step("backlinks", "backlinks", async () => {
+    if (opts.backlinks === false) return skip("backlinks", "desactivado");
+    if (!backlinksConfigured()) return skip("backlinks", "no disponible en este servidor");
+    const r = await runBacklinks(projectId);
+    if ("reused" in r) return "se usa la foto de esta semana";
+    if ("skipped" in r) return skip("backlinks", r.skipped!);
+    return `${r.competitors?.length ?? 0} competidores${r.errors?.length ? ` · ${r.errors.length} parte(s) sin datos` : ""}`;
+  });
+
+  const weekly = (name: string, r: { skipped?: string; reused?: boolean; errors?: string[] } & Record<string, unknown>, ok: string) => {
+    if (r.skipped) return skip(name, r.skipped);
+    if (r.reused) return "se usa la revisión de esta semana";
+    return `${ok}${r.errors?.length ? ` · ${r.errors.length} con error` : ""}`;
+  };
+  await step("ai", "visibilidad en IA", async () => {
+    if (opts.ai === false) return skip("ai", "desactivado");
+    const r = await runAiVisibility(projectId);
+    return weekly("ai", r, `${(r as any).keywords ?? 0} keywords en 4 IA`);
+  });
+  await step("local", "SEO local", async () => {
+    if (opts.local === false) return skip("local", "desactivado");
+    const r = await runLocal(projectId);
+    return weekly("local", r, `${(r as any).keywords ?? 0} keywords en Google Maps`);
+  });
+
+  await step("gap", "keyword gap", async () => {
+    if (opts.gap === false || opts.backlinks === false) return skip("gap", "desactivado");
+    const r = await runKeywordGap(projectId);
+    if ((r as any).reused) return "se usa la foto de este mes";
+    return weekly("gap", r as any, `${(r as any).keywords ?? 0} keywords de ${(r as any).competitors?.length ?? 0} competidores`);
+  });
+
   await step("alerts", "alertas", async () => {
     const a = await computeAlerts(projectId);
-    return `${a} alertas`;
+    const w = await import("./watch").then((m) => m.runWatch(projectId));
+    return `${a} alertas${w.length ? ` · ${w.length} aviso(s) enviado(s)` : ""}`;
   });
 
   await jobLog("info", "informe completo", results);

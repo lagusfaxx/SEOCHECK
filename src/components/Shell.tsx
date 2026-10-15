@@ -26,6 +26,11 @@ const NAV: { group: string; items: NavItem[] }[] = [
         intro: "Vista general: keywords, salud técnica, rankings y Search Console. Arrastra los bloques para ordenarlos; el botón 1/3 de cada bloque cambia su ancho.",
       },
       {
+        href: "/results", icon: "trend", label: "Resultados", desc: "¿El SEO mueve las métricas?",
+        intro: "Lo que hay que mirar cada semana: clics con y sin marca, objetivo del mes con su proyección, el efecto de cada cambio publicado, dónde está el crecimiento (posiciones 4–20), contenido que viene cayendo y cómo vas contra la competencia.",
+        steps: ["Define el objetivo de clics del mes.", "Cada vez que publiques un cambio, anótalo con su fecha y alcance: a las 2–4 semanas ves si movió los clics.", "Trabaja primero las consultas con más clics extra estimados y refresca las páginas en caída."],
+      },
+      {
         href: "/report", icon: "doc", label: "Informe", desc: "Todo de una + informe", jobs: ["report.full"],
         intro: "Corre todos los módulos de una vez y arma un informe con las tareas ordenadas por prioridad. Está escrito para que tu equipo o tu asistente de programación aplique las correcciones en el sitio.",
         steps: ["Elige qué módulos correr. Keywords viene apagado porque es el módulo que más cuota consume.", "Aprieta Correr todo. Tarda unos minutos; abajo del botón ves cada paso en verde, gris (saltado) o rojo.", "Copia el informe o descárgalo en .md y entrégaselo a tu equipo o a tu asistente de programación."],

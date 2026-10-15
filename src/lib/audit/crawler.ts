@@ -11,6 +11,7 @@ import { DEFAULT_IGNORE_PARAMS, detectWaf, PatternLimiter, stripParams } from ".
 import { hostOf, normUrl } from "../util";
 import { computeIssues } from "./issues";
 import { detectCms, type Cms } from "./cms";
+import { checkStructuredData } from "./structured";
 import { fetchSitemapUrls, parseRobots, robotsAllows, type Robots } from "./robots";
 
 export type CrawlOptions = {
@@ -59,6 +60,12 @@ export type PageData = {
   error?: PageError;
   /** CMS / framework detectado en el HTML */
   cms?: Cms | null;
+  /** con render JS: links que solo aparecen al ejecutar JavaScript */
+  jsLinks?: number;
+  /** con render JS: palabras del HTML inicial */
+  rawWordCount?: number | null;
+  /** datos estructurados que no coinciden con lo visible */
+  schemaIssues?: string[];
 };
 
 export type TextBlock = {
@@ -428,6 +435,7 @@ export function parseHtml(html: string, url: string) {
   const canonical = canonicalRaw ? normUrl(canonicalRaw, url) : null;
   const robotsMeta = $('meta[name="robots" i], meta[name="googlebot" i]').map((_, el) => $(el).attr("content") ?? "").get().join(" ");
   const jsonldTypes: string[] = [];
+  const jsonldNodes: any[] = [];
   let jsonldErrors = 0;
   $('script[type="application/ld+json"]').each((_, el) => {
     try {
@@ -436,7 +444,10 @@ export function parseHtml(html: string, url: string) {
       const walk = (n: any) => {
         if (!n || typeof n !== "object") return;
         if (Array.isArray(n)) return n.forEach(walk);
-        if (n["@type"]) jsonldTypes.push(...[].concat(n["@type"]));
+        if (n["@type"]) {
+          jsonldTypes.push(...[].concat(n["@type"]));
+          jsonldNodes.push(n);
+        }
         if (n["@graph"]) walk(n["@graph"]);
       };
       walk(data);
@@ -490,14 +501,25 @@ export function parseHtml(html: string, url: string) {
     blocks,
     signals,
     hash: text ? createHash("sha1").update(text.toLowerCase()).digest("hex") : null,
+    // el precio puede estar fuera de <main> (barra de compra): se compara con todo el body
+    schemaIssues: checkStructuredData(jsonldNodes, $("body").text().replace(/\s+/g, " ")),
   };
 }
 
 export async function fetchPage(url: string, render = false, o: FetchOpts = {}): Promise<PageData> {
   const r = await fetchFollow(url, o);
   let html = r.html;
-  if (render && r.status === 200 && html) html = (await renderHtml(r.finalUrl, o)) ?? html;
+  let raw: ReturnType<typeof parseHtml> | null = null;
+  if (render && r.status === 200 && html) {
+    const rendered = await renderHtml(r.finalUrl, o);
+    // se guarda el HTML inicial para saber qué depende de JavaScript (Google renderiza, pero con demora y no siempre)
+    if (rendered) {
+      raw = parseHtml(html, r.finalUrl);
+      html = rendered;
+    }
+  }
   const parsed = html ? parseHtml(html, r.finalUrl) : null;
+  const rawLinks = raw ? new Set(raw.links) : null;
   return {
     url,
     finalUrl: r.finalUrl,
@@ -525,6 +547,9 @@ export async function fetchPage(url: string, render = false, o: FetchOpts = {}):
     signals: parsed?.signals ?? { linkGroup: 0, article: false, time: false, cart: false, price: false },
     error: r.waf ? "blocked_by_waf" : undefined,
     cms: html ? detectCms(html) : null,
+    jsLinks: rawLinks && parsed ? parsed.links.filter((l) => !rawLinks.has(l)).length : 0,
+    rawWordCount: raw ? raw.wordCount : null,
+    schemaIssues: parsed?.schemaIssues ?? [],
   };
 }
 
@@ -690,6 +715,9 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     orphan: orphanSet.has(p.url),
     blocked: p.status === 0 && !p.error && blocked(p.url),
     error: p.error ?? null,
+    jsLinks: p.jsLinks ?? 0,
+    rawWordCount: p.rawWordCount ?? null,
+    schemaIssues: p.schemaIssues ?? [],
   }));
   for (let i = 0; i < rows.length; i += 200) await db.page.createMany({ data: rows.slice(i, i + 200), skipDuplicates: true });
 
@@ -704,7 +732,12 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     pages: saved.length,
     ok: saved.filter((p) => p.status === 200).length,
     redirects: saved.filter((p) => p.redirects && (p.redirects as unknown[]).length).length,
-    errors: saved.filter((p) => p.status >= 400 || p.status === 0).length,
+    // errores HTTP = 4xx + 5xx + sin respuesta; lo bloqueado por robots.txt no se pidió y no es un error
+    errors: saved.filter((p) => !p.blocked && !p.error && (p.status >= 400 || p.status === 0)).length,
+    http4xx: saved.filter((p) => !p.error && p.status >= 400 && p.status < 500).length,
+    http5xx: saved.filter((p) => !p.error && p.status >= 500).length,
+    noResponse: saved.filter((p) => !p.blocked && !p.error && p.status === 0).length,
+    robotsBlocked: saved.filter((p) => p.blocked).length,
     blockedByWaf: saved.filter((p) => p.error === "blocked_by_waf").length,
     wafAborted: wafAbort,
     trapSkipped: [...patterns.skipped.values()].reduce((a, b) => a + b, 0),
@@ -736,6 +769,8 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   if (await cancelled()) throw new NoRetryError("Crawl cancelado");
   await db.crawl.update({ where: { id: crawlId }, data: { status: outcome.status, reason: outcome.reason, stats, finishedAt: new Date() } });
   await syncCrawlTasks(crawlId);
+  // avisos inmediatos (home caída, noindex o errores nuevos en páginas con tráfico, cambios masivos): no deben tirar el crawl
+  await import("../watch").then((w) => w.runWatch(crawl.projectId)).catch(() => {});
   if (outcome.status === "failed") throw new NoRetryError(outcome.reason ?? "Crawl fallido");
   return { ...stats, status: outcome.status };
 }

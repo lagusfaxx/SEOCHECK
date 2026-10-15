@@ -6,8 +6,10 @@ import { projectActions } from "./tasks";
 import { withProjectQuota, projectPlan } from "./plans";
 import { issueIdentity } from "./task-rules";
 import { ISSUE_LABELS } from "./audit/issues";
-import { ISSUE_FIX, ISSUE_WHY } from "./audit/fixes";
+import { DEFAULT_VERIFY, ISSUE_FIX, ISSUE_VERIFY, ISSUE_WHY } from "./audit/fixes";
 import { coverage } from "./coverage";
+import { gscPeriod, isoDay, periodLabel, SOURCE_NOTE } from "./gsc-period";
+import { KIND_LABEL, kindOf, splitIntentional } from "./audit/insights";
 
 export async function auditComparison(projectId: string) {
   const crawls = await db.crawl.findMany({
@@ -57,27 +59,34 @@ export async function auditComparison(projectId: string) {
   };
 }
 export async function executiveReport(projectId: string) {
-  const [p, comparison, actions, plan, gsc] = await Promise.all([
+  // mismo período que el informe técnico: 28 días hasta el último día con datos de Search Console
+  const period = await gscPeriod(projectId);
+  const inPeriod = period ? { gte: period.start, lt: period.endExclusive } : undefined;
+  const [p, comparison, actions, plan, gscDays, gscRows] = await Promise.all([
     db.project.findUniqueOrThrow({ where: { id: projectId } }),
     auditComparison(projectId),
     projectActions(projectId),
     projectPlan(projectId),
-    db.gscDay.aggregate({
-      where: { projectId, date: { gte: new Date(Date.now() - 28 * 864e5) } },
-      _sum: { clicks: true, impressions: true },
-    }),
+    period ? db.gscDay.aggregate({ where: { projectId, date: inPeriod }, _sum: { clicks: true, impressions: true }, _count: true }) : null,
+    period ? db.gscRow.aggregate({ where: { projectId, date: inPeriod }, _sum: { clicks: true, impressions: true } }) : null,
   ]);
+  // totales del sitio si están; si no, la suma de filas (que excluye consultas anonimizadas), y se dice cuál es
+  const totals = Boolean(gscDays?._count);
+  const gsc = totals ? gscDays! : gscRows;
   const branding = plan.limits.whiteLabel
     ? (plan.workspace.branding as Record<string, any>)
     : {};
-  const [issues, sources, queries, speed] = await Promise.all([
+  const [allIssues, crawlPages, sources, queries, speed] = await Promise.all([
     comparison
       ? db.issue.findMany({ where: { crawlId: comparison.currentId } })
+      : [],
+    comparison
+      ? db.page.findMany({ where: { crawlId: comparison.currentId }, select: { url: true, status: true, depth: true, error: true, canonical: true } })
       : [],
     coverage(projectId),
     db.gscRow.groupBy({
       by: ["query"],
-      where: { projectId, date: { gte: new Date(Date.now() - 28 * 864e5) } },
+      where: { projectId, date: inPeriod ?? { gte: new Date() } },
       _sum: { clicks: true, impressions: true },
       _avg: { position: true },
       orderBy: { _sum: { impressions: "desc" } },
@@ -89,6 +98,10 @@ export async function executiveReport(projectId: string) {
       take: 20,
     }),
   ]);
+  // lo intencional (variantes por color, filtros con noindex, cuenta/carrito) no se presenta como problema
+  const crawlStats = comparison ? ((await db.crawl.findUnique({ where: { id: comparison.currentId }, select: { stats: true } }))?.stats as Record<string, any>) : {};
+  const split = splitIntentional(allIssues, crawlPages, { hitLimit: Boolean(crawlStats?.limitReached) });
+  const issues = allIssues.filter((i) => split.real.includes(i));
   const grouped = new Map<
     string,
     {
@@ -96,8 +109,10 @@ export async function executiveReport(projectId: string) {
       title: string;
       severity: string;
       count: number;
+      kind: string;
       why: string;
       fix: string;
+      verify: string;
       urls: string[];
       evidence: string[];
     }
@@ -108,6 +123,8 @@ export async function executiveReport(projectId: string) {
       title: ISSUE_LABELS[i.code] ?? i.code,
       severity: i.severity,
       count: 0,
+      kind: KIND_LABEL[kindOf(i.code)],
+      verify: ISSUE_VERIFY[i.code] ?? DEFAULT_VERIFY,
       why:
         ISSUE_WHY[i.code] ??
         "Revisar el efecto sobre rastreo, indexación y presentación en Google.",
@@ -118,9 +135,11 @@ export async function executiveReport(projectId: string) {
       evidence: [],
     };
     g.count++;
-    if (g.urls.length < 5 && !g.urls.includes(i.url)) g.urls.push(i.url);
-    if (g.evidence.length < 2 && i.detail && !g.evidence.includes(i.detail))
-      g.evidence.push(i.detail);
+    // evidencia = URL + valor observado, juntos: un "4xx" sin su URL no se puede corregir
+    if (g.urls.length < 5 && !g.urls.includes(i.url)) {
+      g.urls.push(i.url);
+      g.evidence.push(i.detail ? `${i.url} — ${i.detail}` : i.url);
+    }
     grouped.set(i.code, g);
   }
   const weight: Record<string, number> = { critical: 3, warning: 2, info: 1 };
@@ -141,13 +160,20 @@ export async function executiveReport(projectId: string) {
       status: t.status,
     })),
     improved: actions.improved.length,
-    traffic: { clicks: gsc._sum.clicks, impressions: gsc._sum.impressions },
+    traffic: {
+      clicks: gsc?._sum.clicks ?? null,
+      impressions: gsc?._sum.impressions ?? null,
+      period: period ? { start: isoDay(period.start), end: isoDay(period.end), label: periodLabel(period, totals ? "totals" : "rows") } : null,
+      source: totals ? "totals" : "rows",
+    },
+    intentional: split.intentional.map((x) => ({ text: x.text, examples: x.examples })),
     branding,
     findings: [...grouped.values()].sort(
       (a, b) =>
         (weight[b.severity] ?? 0) - (weight[a.severity] ?? 0) ||
         b.count - a.count,
     ),
+    crawledAt: comparison?.currentAt?.toISOString() ?? null,
     sources,
     queries: queries.map((q) => ({
       query: q.query,
@@ -164,6 +190,7 @@ export async function executiveReport(projectId: string) {
       strategy: s.strategy,
       score: s.score,
       lab: s.lab,
+      field: s.field,
       date: s.createdAt.toISOString(),
     })),
   };
@@ -259,8 +286,8 @@ export function executivePdf(
         `${c.new ?? "—"} incidencias nuevas. ${c.resolved ?? "No confirmado"} solucionadas.${c.partial ? " Auditoría parcial: no se confirma la desaparición de problemas." : ""}`,
       );
     doc.text(
-      r.traffic.impressions != null
-        ? `Google (últimos 28 días): ${r.traffic.clicks ?? 0} clics · ${r.traffic.impressions} impresiones.`
+      r.traffic.impressions != null && r.traffic.period
+        ? `Google: ${r.traffic.clicks ?? 0} clics · ${r.traffic.impressions} impresiones. Período ${r.traffic.period.label}.`
         : "Sin datos de Search Console. No se estima tráfico ni retorno económico.",
     );
     doc.moveDown();
@@ -308,28 +335,33 @@ export function executivePdf(
         .moveDown()
         .font("ReportBold")
         .fontSize(12)
-        .text(`${index + 1}. ${f.title} · ${f.count} incidencias`);
+        .text(`${index + 1}. ${f.title} · ${f.count} ${f.count === 1 ? "URL" : "URLs"}`);
       doc
         .font("ReportRegular")
         .fontSize(10)
+        .text(`Estado: ${f.kind ?? "por verificar"}`)
         .text(`Impacto: ${f.why}`)
         .text(`Corrección: ${f.fix}`);
-      if (f.urls.length)
+      const ev = f.evidence?.length ? f.evidence : f.urls;
+      if (ev.length)
         doc
           .fillColor("#666666")
           .fontSize(9)
-          .text(`Ejemplos: ${f.urls.slice(0, 3).join("\n")}`)
+          .text(`Evidencia${r.crawledAt ? ` (crawl del ${r.crawledAt.slice(0, 10)})` : ""}:\n${ev.slice(0, 3).join("\n")}`)
           .fillColor("#222222");
       doc
         .fontSize(10)
-        .text(
-          "Verificación: repetir la auditoría; la incidencia debe desaparecer en las URLs revisadas correctamente.",
-        );
+        .text(`Verificación: ${f.verify ?? "repetir la auditoría y revisar la URL."}`);
+    }
+    if (r.intentional?.length) {
+      heading("Revisado: comportamiento intencional");
+      doc.text("No son errores y no hay que corregirlos; confirmar solo si no corresponde a lo que el sitio quiere.");
+      for (const x of r.intentional) doc.moveDown(0.3).text(`• ${x.text}.`).fillColor("#666666").fontSize(9).text(x.examples.slice(0, 2).join("\n")).fillColor("#222222").fontSize(10);
     }
     if (r.queries?.length) {
-      heading("Visibilidad en Google · últimos 28 días");
+      heading("Visibilidad en Google");
       doc.text(
-        "Consultas principales por impresiones (posición media de las filas disponibles):",
+        `Consultas principales por impresiones. Período ${r.traffic.period?.start ?? ""} a ${r.traffic.period?.end ?? ""}, filas por consulta de Search Console. ${SOURCE_NOTE}`,
       );
       for (const q of r.queries)
         doc.text(
@@ -343,8 +375,14 @@ export function executivePdf(
         doc
           .text(`${s.url} (${s.strategy}, ${s.date.slice(0, 10)})`)
           .text(
-            `PageSpeed ${s.score ?? "sin puntuación"}/100 · LCP ${lab.lcp != null ? (lab.lcp / 1000).toFixed(2) + " s" : "sin datos"} · CLS ${lab.cls ?? "sin datos"}. Medición de laboratorio.`,
+            `PageSpeed ${s.score ?? "sin puntuación"}/100 · LCP ${lab.lcp != null ? (lab.lcp / 1000).toFixed(2) + " s" : "sin datos"} · CLS ${lab.cls ?? "sin datos"}. Medición de laboratorio (una carga simulada).`,
           );
+        const fld = s.field as Record<string, any> | null;
+        doc.text(
+          fld?.source
+            ? `Usuarios reales (CrUX, ${fld.source === "origin" ? "todo el origen" : "esta URL"}): LCP ${fld.lcp?.p75 ?? "–"} ms · INP ${fld.inp?.p75 ?? "–"} ms · CLS ${fld.cls?.p75 ?? "–"}.`
+            : "Sin datos de usuarios reales (Core Web Vitals de campo) para esta URL.",
+        );
       }
     }
     heading("Alcance y datos pendientes");

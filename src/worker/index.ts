@@ -1,4 +1,5 @@
 import { nextReportAt, saveReport } from "../lib/reporting";
+import { sendDigest } from "../lib/digest";
 import type PgBoss from "pg-boss";
 import { db } from "../lib/db";
 import { env } from "../lib/env";
@@ -8,6 +9,9 @@ import { runCrawl } from "../lib/audit/crawler";
 import { runInspection, runPsi } from "../lib/audit/extras";
 import { checkRank, dueTracked } from "../lib/rank/rank";
 import { syncGsc } from "../lib/rank/gsc";
+import { ga4Of, syncGa4 } from "../lib/ga4";
+import { jobLog } from "../lib/jobctx";
+import { runWatch } from "../lib/watch";
 import { computeAlerts } from "../lib/rank/alerts";
 import { analyzeContent } from "../lib/content/analyze";
 import { runWithJob } from "../lib/jobctx";
@@ -49,6 +53,7 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
         await jobProgress(d.jobRunId, ((i + 1) / ids.length) * 95, `${i + 1}/${ids.length}`);
       }
       await computeAlerts(d.projectId);
+      await runWatch(d.projectId).catch((e) => jobLog("warn", `Avisos: ${e instanceof Error ? e.message : String(e)}`));
       return;
     }
     case QUEUES.rankDaily: {
@@ -61,7 +66,11 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
     }
     case QUEUES.gscSync:
       await syncGsc(d.projectId, d.backfillDays ?? 90, (pct) => jobProgress(d.jobRunId, pct * 0.9));
+      // GA4 va con la misma sincronización diaria; si falla, no tira el sync de Search Console
+      if (ga4Of((await db.project.findUnique({ where: { id: d.projectId }, select: { settings: true } }))?.settings).property)
+        await syncGa4(d.projectId).catch((e) => jobLog("warn", `Google Analytics: ${e instanceof Error ? e.message : String(e)}`));
       await computeAlerts(d.projectId);
+      await runWatch(d.projectId).catch((e) => jobLog("warn", `Avisos: ${e instanceof Error ? e.message : String(e)}`));
       return;
     case QUEUES.gscDaily: {
       const projects = await db.project.findMany({ where: { gscProperty: { not: null } } });
@@ -100,8 +109,12 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
       }
       return;
     }
-    case QUEUES.reportSnapshot:
-      return saveReport(d.projectId);
+    case QUEUES.reportSnapshot: {
+      const snap = await saveReport(d.projectId);
+      // el correo no debe hacer fallar (ni reintentar) el guardado del informe
+      const mail = await sendDigest(d.projectId).catch((e) => ({ sent: 0, error: e instanceof Error ? e.message : String(e) }));
+      return { snapshot: snap.id, mail };
+    }
     case QUEUES.socialDue:
       return publishDue();
     case QUEUES.socialInsights: {

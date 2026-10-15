@@ -13,7 +13,7 @@ import { gscAvailable } from "./providers/google";
 import { TYPE_LABEL } from "./graph-types";
 import { db } from "./db";
 import { requireWorkspace } from "./auth";
-import { projectActions, setTaskStatus, setTaskGroupStatus } from "./tasks";
+import { projectActions, setTaskAssignment, setTaskStatus, setTaskGroupStatus } from "./tasks";
 import { TASK_STATUSES, type TaskStatus } from "./task-rules";
 import {
   auditComparison,
@@ -36,6 +36,28 @@ import {
 } from "./content/brief-tools";
 import type { Brief, ContentResult } from "./content/analyze";
 import { assertBudget, est, releaseBudget } from "./budget";
+import { marketingOverview } from "./marketing";
+import { backlinksOverview, bareDomain } from "./backlinks";
+import { ga4Properties, ga4Status, setGa4Property, syncGa4 } from "./ga4";
+import { alertRecipients, FIELD_LABEL, latestCrawlChanges } from "./watch";
+import { aiLocalOverview, MAX_LOCAL_KEYWORDS } from "./ai-local";
+import { gapOverview } from "./keyword-gap";
+import { FEEDS, revokeFeedToken, rotateFeedToken } from "./feed";
+import { appBaseUrl } from "./util";
+
+/** Fecha YYYY-MM-DD (no futura) para anotaciones. */
+function dayParam(v: unknown) {
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw invalid("Fecha inválida (AAAA-MM-DD)");
+  const d = new Date(`${v}T00:00:00Z`);
+  if (Number.isNaN(d.getTime()) || d.getTime() > Date.now() + 864e5) throw invalid("Fecha inválida");
+  return d;
+}
+function goalParam(v: unknown) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 0 || n > 1e9) throw invalid("Objetivo inválido");
+  return n;
+}
 
 type Ctx = {
   id: string;
@@ -151,6 +173,34 @@ export const PRODUCT_GETS: Record<string, Handler> = {
   "keywords/insights": async ({ id, url }) =>
     clusterInsights(id, url.searchParams.get("run") ?? undefined),
   "rank/opportunities": async ({ id }) => rankOpportunities(id),
+  marketing: async ({ id }) => marketingOverview(id),
+  backlinks: async ({ id }) => backlinksOverview(id),
+  "ga4/status": async ({ id }) => ga4Status(id),
+  /** Miembros del equipo del proyecto (para asignar tareas y elegir destinatarios) */
+  members: async ({ id }) => {
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { workspaceId: true } });
+    return (await db.membership.findMany({ where: { workspaceId: p.workspaceId }, select: { role: true, user: { select: { email: true, name: true } } } })).map((m) => ({ email: m.user.email, name: m.user.name, role: m.role }));
+  },
+  "ai-local": async ({ id }) => aiLocalOverview(id),
+  "keyword-gap": async ({ id }) => gapOverview(id),
+  /** Avisos inmediatos de los últimos 30 días, cambios entre crawls y a quién llegan */
+  watch: async ({ id }) => {
+    const [alerts, c, p, recipients] = await Promise.all([
+      db.alert.findMany({ where: { projectId: id, type: "watch", createdAt: { gte: new Date(Date.now() - 30 * 864e5) } }, orderBy: { createdAt: "desc" }, take: 30 }),
+      latestCrawlChanges(id),
+      db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } }),
+      alertRecipients(id),
+    ]);
+    const byField: Record<string, number> = {};
+    for (const ch of c?.changes ?? []) byField[FIELD_LABEL[ch.field]] = (byField[FIELD_LABEL[ch.field]] ?? 0) + 1;
+    return {
+      alerts: alerts.map((a) => ({ id: a.id, at: a.createdAt, ...(a.data as object) })),
+      changes: c ? { from: c.previous.startedAt, to: c.current.startedAt, total: c.changes.length, byField, sample: c.changes.slice(0, 50) } : null,
+      immediate: (((p.settings ?? {}) as any).alerts?.immediate ?? true) !== false,
+      recipients,
+    };
+  },
+  "ga4/properties": async ({ id }) => ga4Properties(id),
   explorations: async ({ id }) =>
     db.exploration.findMany({
       where: { projectId: id },
@@ -533,6 +583,17 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
     });
   },
   tasks: async ({ id, body, user }) => {
+    // responsable y fecha límite (sin tocar el estado)
+    if (body.status === undefined && ("assignee" in body || "dueAt" in body)) {
+      const due = body.dueAt ? new Date(`${String(body.dueAt).slice(0, 10)}T23:59:59Z`) : null;
+      if (due && Number.isNaN(due.getTime())) throw invalid("Fecha inválida");
+      try {
+        return await setTaskAssignment(id, boundedText(body.taskId), { assignee: typeof body.assignee === "string" ? body.assignee : null, dueAt: due }, body.group === true, user.email);
+      } catch (e) {
+        if (e instanceof Error && /miembro/.test(e.message)) throw invalid(e.message);
+        throw e;
+      }
+    }
     if (!TASK_STATUSES.includes(body.status)) throw invalid("Estado inválido");
     if (body.status === "resolved") {
       const task = await db.projectTask.findFirstOrThrow({ where: { projectId: id, id: boundedText(body.taskId) } });
@@ -552,10 +613,83 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
           user.id,
         );
   },
+  "marketing/annotations": async ({ id, body, user }) => {
+    const scope = typeof body.scope === "string" && body.scope.trim() ? body.scope.trim().slice(0, 500) : null;
+    if (scope && !/^(https?:\/\/|\/)/.test(scope)) throw invalid("Alcance: una URL completa, una ruta (/blog/*) o vacío para todo el sitio");
+    return db.annotation.create({
+      data: { projectId: id, date: dayParam(body.date), title: boundedText(body.title, 200), scope, note: typeof body.note === "string" ? body.note.slice(0, 1000) : null, createdBy: user.email },
+    });
+  },
+  /** Dominios de la competencia (no son credenciales): se usan para backlinks; vacío = automáticos desde las SERPs */
+  "marketing/competitors": async ({ id, body }) => {
+    if (!Array.isArray(body.competitors) || body.competitors.length > 5) throw invalid("Hasta 5 competidores");
+    const competitors = [...new Set(body.competitors.map((d: unknown) => bareDomain(String(d))).filter((d: string) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)))] as string[];
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });
+    await db.project.update({ where: { id }, data: { settings: { ...((p.settings ?? {}) as Record<string, any>), competitors } } });
+    return { competitors };
+  },
+  "ga4/property": async ({ id, body, user }) => {
+    await admin(id, user.id);
+    const r = await setGa4Property(id, boundedText(body.property, 50));
+    // primera carga al tiro: 90 días de datos
+    await runInlineJob(id, "ga4.sync", () => syncGa4(id));
+    return r;
+  },
+  "ga4/sync": async ({ id }) => runInlineJob(id, "ga4.sync", () => syncGa4(id)),
+  "marketing/alerts": async ({ id, body, user }) => {
+    await admin(id, user.id);
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true, workspaceId: true } });
+    const members = await db.membership.findMany({ where: { workspaceId: p.workspaceId }, select: { user: { select: { email: true } } } });
+    const allowed = new Set(members.map((m) => m.user.email.toLowerCase()));
+    const emails = Array.isArray(body.emails) ? ([...new Set(body.emails.map((e: unknown) => String(e).trim().toLowerCase()).filter(Boolean))] as string[]) : [];
+    const outside = emails.filter((e) => !allowed.has(e));
+    if (outside.length) throw invalid(`Solo miembros del equipo pueden recibir avisos: ${outside.join(", ")}`);
+    const settings = (p.settings ?? {}) as Record<string, any>;
+    await db.project.update({ where: { id }, data: { settings: { ...settings, alerts: { ...(settings.alerts ?? {}), emails, immediate: body.immediate !== false } } } });
+    return { emails, immediate: body.immediate !== false };
+  },
+  /** SEO local: ciudad o comuna, nombre del negocio (para encontrarlo en Maps) y keywords */
+  "marketing/local": async ({ id, body }) => {
+    const location = typeof body.location === "string" ? body.location.trim().slice(0, 100) : "";
+    const businessName = typeof body.businessName === "string" ? body.businessName.trim().slice(0, 100) : "";
+    const keywords = Array.isArray(body.keywords) ? ([...new Set(body.keywords.map((k: unknown) => normTerm(String(k))).filter(Boolean))] as string[]).slice(0, MAX_LOCAL_KEYWORDS) : [];
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });
+    await db.project.update({ where: { id }, data: { settings: { ...((p.settings ?? {}) as Record<string, any>), local: { location, businessName, keywords } } } });
+    return { location, businessName, keywords };
+  },
+  /** Enlaces CSV para Sheets/Looker: el token se muestra una sola vez; generar otro revoca el anterior */
+  "marketing/feed": async ({ id, body, user, url }) => {
+    await admin(id, user.id);
+    if (body.revoke === true) {
+      await revokeFeedToken(id);
+      return { revoked: true };
+    }
+    const token = await rotateFeedToken(id);
+    const base = appBaseUrl(url.origin);
+    return { urls: Object.fromEntries(FEEDS.map((f) => [f, `${base}/api/feed/${token}/${f}.csv`])) };
+  },
+  "marketing/goals": async ({ id, body }) => {
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });
+    const settings = (p.settings ?? {}) as Record<string, any>;
+    const goals = { clicks: goalParam(body.clicks), nonBrandClicks: goalParam(body.nonBrandClicks) };
+    await db.project.update({ where: { id }, data: { settings: { ...settings, marketing: { ...(settings.marketing ?? {}), goals } } } });
+    return goals;
+  },
   "report/schedule": async ({ id, body, user }) => {
     await admin(id, user.id);
     if (!["weekly", "monthly"].includes(body.frequency))
       throw invalid("Frecuencia inválida");
+    // el resumen solo va a miembros del workspace: la app no envía correo a terceros
+    let recipients: string[] | undefined;
+    if (body.recipients !== undefined) {
+      if (!Array.isArray(body.recipients) || body.recipients.length > 20) throw invalid("Destinatarios inválidos");
+      const p = await db.project.findUniqueOrThrow({ where: { id }, select: { workspaceId: true } });
+      const members = await db.membership.findMany({ where: { workspaceId: p.workspaceId }, select: { user: { select: { email: true } } } });
+      const allowed = new Set(members.map((m) => m.user.email.toLowerCase()));
+      recipients = [...new Set(body.recipients.map((e: unknown) => String(e).trim().toLowerCase()).filter(Boolean))] as string[];
+      const outside = recipients.filter((e) => !allowed.has(e));
+      if (outside.length) throw invalid(`Solo miembros del equipo pueden recibir el resumen: ${outside.join(", ")}`);
+    }
     return db.reportSchedule.upsert({
       where: { projectId: id },
       create: {
@@ -563,11 +697,13 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
         frequency: body.frequency,
         nextAt: nextReportAt(body.frequency),
         enabled: body.enabled !== false,
+        recipients: recipients ?? [],
       },
       update: {
         frequency: body.frequency,
         nextAt: nextReportAt(body.frequency),
         enabled: body.enabled !== false,
+        ...(recipients ? { recipients } : {}),
       },
     });
   },
@@ -594,6 +730,8 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
   },
 };
 export const PRODUCT_DELETES: Record<string, Handler> = {
+  "marketing/annotations": async ({ id, body }) =>
+    db.annotation.deleteMany({ where: { projectId: id, id: boundedText(body.annotationId) } }),
   explorations: async ({ id, body }) =>
     db.exploration.deleteMany({
       where: { projectId: id, id: boundedText(body.eid) },

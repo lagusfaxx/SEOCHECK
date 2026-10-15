@@ -3,7 +3,7 @@ import { db } from "../db";
 import { fetchPage } from "../audit/crawler";
 import { llmProvider } from "../providers";
 import { contentText } from "./clean";
-import { fallbackBrief, type Brief, type ContentResult } from "./analyze";
+import { fallbackBrief, ownEvidence, type Brief, type ContentResult } from "./analyze";
 
 export const BRIEF_SECTIONS = [
   "titles",
@@ -16,7 +16,7 @@ export const BRIEF_SECTIONS = [
   "notes",
 ] as const;
 export type BriefSection = (typeof BRIEF_SECTIONS)[number];
-import { validateBusinessClaims, validateBrief } from "./claims";
+import { validateBusinessClaims, validateBrief, verifyBrief } from "./claims";
 export { validateBrief } from "./claims";
 export async function storeBrief(
   contentId: string,
@@ -94,7 +94,7 @@ export async function regenerateSection(
     ))
       if (!value.some((v: any) => v.id === h.id)) value.push(h);
   }
-  const next = { ...current, [section]: value };
+  const next = verifyBrief({ ...current, [section]: value }, { ownText: ownEvidence(result), knownUrls: result.knownUrls ?? [], base: result.url });
   validateBrief(next);
   const unsupported = validateBusinessClaims(next, result.mine.text ?? "");
   if (unsupported.length)
@@ -126,10 +126,12 @@ export function implementationMarkdown(a: {
     ),
     "",
     b.intro ?? "",
+    ...(b.warnings?.length ? ["## Avisos de verificación", ...b.warnings.map((w) => `- ${w}`), ""] : []),
     "## Validación",
     "- Compara title, meta y encabezados con el brief aprobado.",
     "- Incluye encabezados obligatorios y retira los marcados como eliminados.",
-    "- Comprueba enlaces internos, datos estructurados y contenido real del negocio.",
+    "- Comprueba que cada enlace interno apunte a una ruta que existe en el repositorio y que los filtros propuestos no estén ya implementados.",
+    "- Comprueba datos estructurados (precio, stock, variantes, reseñas) contra lo visible y no publiques afirmaciones comerciales sin respaldo.",
     "- Ejecuta las pruebas del sitio y entrega los cambios para revisión.",
     "",
     "## Brief aprobado (incluye FAQ, enlaces y notas)",

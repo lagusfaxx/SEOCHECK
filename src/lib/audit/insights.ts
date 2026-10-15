@@ -19,22 +19,22 @@ import { urlKey } from "../util";
 export type Kind = "confirmed" | "possible" | "opportunity";
 export type Priority = "alta" | "media" | "baja";
 
-export const KIND_LABEL: Record<Kind, string> = { confirmed: "Problema confirmado", possible: "Posible problema", opportunity: "Oportunidad" };
+export const KIND_LABEL: Record<Kind, string> = { confirmed: "Error confirmado", possible: "Hipótesis por verificar", opportunity: "Mejora opcional" };
 export const KIND_HINT: Record<Kind, string> = {
   confirmed: "Error técnico verificable: algo no funciona como debería.",
-  possible: "Puede ser un problema según lo que quieras para esas páginas: revísalo antes de cambiar.",
-  opportunity: "Mejora recomendada, no un error: suma, pero el sitio funciona sin ella.",
+  possible: "Puede ser un problema o un comportamiento intencional del sitio: verifícalo en el código antes de cambiar.",
+  opportunity: "Mejora opcional, no un error: el sitio funciona sin ella.",
 };
 
 /** Qué tan objetivo es cada issue. Las recomendaciones subjetivas no se presentan como errores. */
 export const ISSUE_KIND: Record<string, Kind> = {
   http_4xx: "confirmed", http_5xx: "confirmed", fetch_failed: "confirmed", blocked_by_waf: "confirmed", broken_link: "confirmed",
-  redirect_chain: "confirmed", noindex_in_sitemap: "confirmed", title_missing: "confirmed", jsonld_invalid: "confirmed",
+  redirect_chain: "confirmed", noindex_in_sitemap: "confirmed", canonical_bad_target: "confirmed", title_missing: "confirmed", jsonld_invalid: "confirmed",
   orphan: "possible", no_inlinks: "possible", dup_content: "possible", title_dup: "possible", meta_dup: "possible", canonical_other: "possible",
   blocked_robots: "possible", noindex: "possible", deep_page: "possible", slow: "possible", hreflang_no_self: "possible", redirect: "possible",
   thin_content: "possible", nofollow: "possible", sitemap_missing: "possible", ssrf_blocked: "possible", h1_missing: "possible",
   title_long: "opportunity", title_short: "opportunity", meta_missing: "opportunity", meta_long: "opportunity", meta_short: "opportunity",
-  h1_multiple: "opportunity", img_no_alt: "opportunity", canonical_missing: "opportunity", robots_missing: "opportunity",
+  h1_multiple: "opportunity", jsonld_mismatch: "possible", js_dependent: "possible", img_no_alt: "opportunity", canonical_missing: "opportunity", robots_missing: "opportunity",
 };
 export const kindOf = (code: string): Kind => ISSUE_KIND[code] ?? "possible";
 
@@ -143,14 +143,26 @@ const pathOf = (u: string) => {
 /** Separa lo que parece intencional (no es tarea) de lo real. */
 export function splitIntentional(issues: IssueIn[], pages: PageIn[], s: Signals = {}) {
   const canonOf = new Map(pages.map((p) => [urlKey(p.url), p.canonical ?? null]));
+  const pageAt = new Map(pages.map((p) => [urlKey(p.url), p]));
   const paramCanon = issues.filter((i) => i.code === "canonical_other" && isParamCanonical(i.url, i.detail || canonOf.get(urlKey(i.url))));
+  // canonical hacia una URL rastreada que responde 200 y es autocanónica: consolidación de variantes (modelo, color…)
+  const variantCanon = issues.filter((i) => {
+    if (i.code !== "canonical_other" || paramCanon.includes(i)) return false;
+    const target = i.detail || canonOf.get(urlKey(i.url));
+    const t = target ? pageAt.get(urlKey(target)) : undefined;
+    return Boolean(t && t.status === 200 && !t.error && (!t.canonical || urlKey(t.canonical) === urlKey(t.url)));
+  });
+  // noindex en URLs con parámetros (filtros, orden, búsqueda): es la forma esperada de no indexarlas
+  const filterNoindex = issues.filter((i) => i.code === "noindex" && /\?./.test(i.url));
   const privateBlocked = issues.filter((i) => i.code === "blocked_robots" && PRIVATE_PATH.test(pathOf(i.url)));
   const unverifiedOrphans = s.hitLimit ? issues.filter((i) => i.code === "orphan") : [];
   // carrito, login, cuenta, checkout: no compiten en Google, su title/H1/meta/canonical no importan
   const privateOnpage = issues.filter((i) => (ONPAGE.has(i.code) || i.code === "canonical_missing" || i.code === "img_no_alt") && PRIVATE_PATH.test(pathOf(i.url)));
-  const skip = new Set([...paramCanon, ...privateBlocked, ...unverifiedOrphans, ...privateOnpage]);
+  const skip = new Set([...paramCanon, ...variantCanon, ...filterNoindex, ...privateBlocked, ...unverifiedOrphans, ...privateOnpage]);
   const intentional: Intentional[] = [];
   if (paramCanon.length) intentional.push({ code: "canonical_other", count: paramCanon.length, text: `Canonical a otra URL en ${plural(paramCanon.length, "URL")} con parámetros que apuntan a su versión sin parámetros (correcto)`, examples: paramCanon.slice(0, 3).map((i) => i.url) });
+  if (variantCanon.length) intentional.push({ code: "canonical_variant", count: variantCanon.length, text: `Canonical en ${plural(variantCanon.length, "URL")} hacia otra URL válida (responde 200 y es autocanónica): consolida variantes como modelo o color. Se conserva salvo que esa URL deba posicionar sola`, examples: variantCanon.slice(0, 3).map((i) => `${i.url} → ${i.detail}`) });
+  if (filterNoindex.length) intentional.push({ code: "noindex_filter", count: filterNoindex.length, text: `noindex en ${plural(filterNoindex.length, "URL")} de filtro u orden (con parámetros). Correcto si no deben indexarse; conviene que sea "noindex, follow" para que sus links se sigan usando`, examples: filterNoindex.slice(0, 3).map((i) => i.url) });
   if (privateBlocked.length) intentional.push({ code: "blocked_robots", count: privateBlocked.length, text: `Bloqueadas por robots ${plural(privateBlocked.length, "URL")} de login/cuenta/carrito/checkout (correcto)`, examples: privateBlocked.slice(0, 3).map((i) => i.url) });
   if (privateOnpage.length) {
     const urls = [...new Set(privateOnpage.map((i) => i.url))];

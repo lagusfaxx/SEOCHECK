@@ -50,6 +50,17 @@ export function NextActions({ all = false }: { all?: boolean }) {
       setError((e as Error).message);
     }
   };
+  const { data: members } = useApi<{ email: string; name: string | null }[]>(all ? `/api/p/${id}/members` : null);
+  const assign = async (taskId: string, assignee: string | null, dueAt: string | null) => {
+    try {
+      await api(`/api/p/${id}/tasks`, "PATCH", { taskId, assignee, dueAt, group: !raw });
+      await mutate();
+      setError("");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const overdue = (t: any) => t.dueAt && !["resolved", "ignored"].includes(t.status) && new Date(t.dueAt).getTime() < Date.now();
   const change = async (taskId: string, status: string) => {
     try {
       await api(`/api/p/${id}/tasks`, "PATCH", { taskId, status, group: !raw });
@@ -155,6 +166,7 @@ export function NextActions({ all = false }: { all?: boolean }) {
                     <Metric label="Prioridad" />
                   </th>
                   {all && <th className="px-4 py-2 font-normal">Estado</th>}
+                  {all && <th className="hidden px-4 py-2 font-normal md:table-cell">Responsable</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100 dark:divide-ink-800">
@@ -210,6 +222,12 @@ export function NextActions({ all = false }: { all?: boolean }) {
                     {all && (
                       <td className="px-4 py-3 text-xs text-ink-500">
                         {STATUS_LABEL[t.status]}
+                      </td>
+                    )}
+                    {all && (
+                      <td className={`hidden px-4 py-3 text-xs md:table-cell ${overdue(t) ? "text-rose-600" : "text-ink-500"}`}>
+                        {t.assignee ? t.assignee.split("@")[0] : "—"}
+                        {t.dueAt ? ` · ${String(t.dueAt).slice(0, 10)}${overdue(t) ? " (vencida)" : ""}` : ""}
                       </td>
                     )}
                   </tr>
@@ -292,6 +310,31 @@ export function NextActions({ all = false }: { all?: boolean }) {
                         : "Iniciar tarea"}
                   </button>
                 ))}
+            </div>
+            <div className="flex flex-wrap items-end gap-2 text-sm">
+              <label className="text-xs text-ink-500">
+                Responsable
+                <select
+                  className="input mt-1 block"
+                  value={selected.assignee ?? ""}
+                  onChange={(e) => assign(selected.id, e.target.value || null, selected.dueAt ? String(selected.dueAt).slice(0, 10) : null)}
+                >
+                  <option value="">Sin asignar</option>
+                  {(members ?? []).map((m) => (
+                    <option key={m.email} value={m.email}>{m.name || m.email}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs text-ink-500">
+                Fecha límite
+                <input
+                  type="date"
+                  className="input mt-1 block"
+                  value={selected.dueAt ? String(selected.dueAt).slice(0, 10) : ""}
+                  onChange={(e) => assign(selected.id, selected.assignee ?? null, e.target.value || null)}
+                />
+              </label>
+              {overdue(selected) && <span className="text-xs text-rose-600">Vencida</span>}
             </div>
             {selected.fix && <p className="text-sm">{selected.fix}</p>}
             {selected.probableCause && (

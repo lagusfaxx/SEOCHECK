@@ -20,7 +20,7 @@ async function lastJob(projectId: string, kind: string) {
 }
 
 export async function coverage(projectId: string): Promise<Module[]> {
-  const p = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { gscProperty: true } });
+  const p = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { gscProperty: true, settings: true } });
   const out: Module[] = [];
 
   // Auditoría
@@ -81,6 +81,38 @@ export async function coverage(projectId: string): Promise<Module[]> {
   else if (lastCheck) out.push({ key: "rank", label: "Rankings", state: "ok", detail: `${tracked} keywords, revisadas el ${day(lastCheck.date)}` });
   else out.push({ key: "rank", label: "Rankings", state: "never", detail: `${tracked} keywords sin revisar aún` });
 
+  // Google Analytics (misma conexión de Google)
+  const ga4 = ((p.settings ?? {}) as any).ga4?.property as string | undefined;
+  const ga4Last = await db.ga4Row.findFirst({ where: { projectId }, orderBy: { date: "desc" }, select: { date: true } });
+  const ga4Job = await db.jobRun.findFirst({ where: { projectId, kind: "ga4.sync" }, orderBy: { createdAt: "desc" }, select: { status: true, message: true } });
+  if (!ga4) out.push({ key: "ga4", label: "Google Analytics", state: "missing", detail: "Falta conectar y elegir la propiedad (Resultados)" });
+  else if (ga4Job?.status === "error") out.push({ key: "ga4", label: "Google Analytics", state: "failed", detail: `La última sincronización falló: ${ga4Job.message ?? "sin detalle"}` });
+  else if (ga4Last) out.push({ key: "ga4", label: "Google Analytics", state: "ok", detail: `Datos hasta ${day(ga4Last.date)}` });
+  else out.push({ key: "ga4", label: "Google Analytics", state: "never", detail: "Propiedad elegida, falta sincronizar" });
+
+  // Visibilidad en IA y SEO local (Serpent del servidor)
+  const aiLast = await db.aiCheck.findFirst({ where: { projectId }, orderBy: { checkedAt: "desc" }, select: { checkedAt: true } });
+  const localLast = await db.localRank.findFirst({ where: { projectId }, orderBy: { checkedAt: "desc" }, select: { checkedAt: true } });
+  const localCfg = ((p.settings ?? {}) as any).local ?? {};
+  if (!env.serpentKey) out.push({ key: "ai", label: "Visibilidad en IA", state: "missing", detail: "No disponible en este servidor" });
+  else if (aiLast) out.push({ key: "ai", label: "Visibilidad en IA", state: "ok", detail: `Revisada el ${day(aiLast.checkedAt)}` });
+  else out.push({ key: "ai", label: "Visibilidad en IA", state: "never", detail: tracked ? "Se revisa al ejecutar el análisis completo" : "Requiere keywords en Rankings" });
+  if (!env.serpentKey) out.push({ key: "local", label: "SEO local", state: "missing", detail: "No disponible en este servidor" });
+  else if (localLast) out.push({ key: "local", label: "SEO local", state: "ok", detail: `Revisado el ${day(localLast.checkedAt)}` });
+  else out.push({ key: "local", label: "SEO local", state: "never", detail: localCfg.location && localCfg.keywords?.length ? "Se revisa al ejecutar el análisis completo" : "Falta configurar ciudad y keywords (Resultados)" });
+
+  // Keyword gap (DataForSEO Labs, mensual)
+  const gapLast = await db.keywordGap.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { createdAt: true, errors: true } });
+  if (!env.dfsLogin || !env.dfsPassword) out.push({ key: "gap", label: "Keyword gap", state: "missing", detail: "No disponible en este servidor" });
+  else if (gapLast) out.push({ key: "gap", label: "Keyword gap", state: gapLast.errors.length ? "partial" : "ok", detail: `Calculado el ${day(gapLast.createdAt)}` });
+  else out.push({ key: "gap", label: "Keyword gap", state: "never", detail: "Se calcula al ejecutar el análisis completo" });
+
+  // Backlinks (cuenta DataForSEO del servidor: el cliente no configura nada)
+  const bl = await db.backlinkSnapshot.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { createdAt: true, errors: true } });
+  if (!env.dfsLogin || !env.dfsPassword) out.push({ key: "backlinks", label: "Backlinks", state: "missing", detail: "No disponible en este servidor" });
+  else if (!bl) out.push({ key: "backlinks", label: "Backlinks", state: "never", detail: "Se obtienen al ejecutar el análisis completo" });
+  else out.push({ key: "backlinks", label: "Backlinks", state: bl.errors.length ? "partial" : "ok", detail: `Foto del ${day(bl.createdAt)}${bl.errors.length ? ` (${bl.errors.length} parte(s) sin datos)` : ""}` });
+
   return out;
 }
 
@@ -96,6 +128,11 @@ export function shortLabel(m: Module): string {
     inspect: { ok: "Indexación revisada", failed: "Indexación falló", missing: "Indexación no configurada", never: "Indexación sin revisar" },
     keywords: { ok: "Keywords al día", failed: "Keywords falló", never: "Keywords sin investigar" },
     rank: { ok: "Rankings activos", failed: "Rankings falló", missing: "Rankings no configurado", never: "Rankings sin keywords" },
+    ai: { ok: "IA revisada", missing: "IA no disponible", never: "IA pendiente" },
+    local: { ok: "Local revisado", missing: "Local no disponible", never: "Local pendiente" },
+    ga4: { ok: "Analytics conectado", failed: "Analytics con error", missing: "Analytics no conectado", never: "Analytics sin sincronizar" },
+    gap: { ok: "Gap calculado", partial: "Gap parcial", missing: "Gap no disponible", never: "Gap pendiente" },
+    backlinks: { ok: "Backlinks con datos", partial: "Backlinks parcial", missing: "Backlinks no disponible", never: "Backlinks pendiente" },
   };
   return S[m.key]?.[m.state] ?? `${m.label}: ${STATE_LABEL[m.state]}`;
 }
