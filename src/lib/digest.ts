@@ -16,7 +16,7 @@ const n = (v: number | null | undefined) => (v == null ? "–" : Math.round(v).t
 const delta = (now: number, before: number) => (before ? ` (${now >= before ? "+" : ""}${Math.round(((now - before) / before) * 100)} % vs 28 días anteriores)` : "");
 
 /** Párrafos del resumen. Puro: se testea sin base ni correo. */
-export function digestParagraphs(mk: Overview, actions: { title: string }[], bl?: { summary: { referringDomains: number }; previous: { referringDomains: number } | null; newDomains: unknown[]; lost: unknown[]; broken: unknown[] } | null): string[] {
+export function digestParagraphs(mk: Overview, actions: { title: string; status?: string; dueAt?: Date | string | null; assignee?: string | null }[], bl?: { summary: { referringDomains: number }; previous: { referringDomains: number } | null; newDomains: unknown[]; lost: unknown[]; broken: unknown[] } | null): string[] {
   const out: string[] = [];
   if (mk.connected && mk.kpis) {
     const k = mk.kpis;
@@ -30,6 +30,8 @@ export function digestParagraphs(mk: Overview, actions: { title: string }[], bl?
     if (mk.decay?.length) out.push(`${mk.decay.length} página(s) vienen cayendo hace 3 meses: conviene refrescarlas.`);
   } else out.push("Search Console no está conectado: sin datos de clics ni impresiones.");
   if (bl) out.push(`Backlinks: ${n(bl.summary.referringDomains)} dominios de referencia${bl.previous ? ` (${bl.summary.referringDomains - bl.previous.referringDomains >= 0 ? "+" : ""}${bl.summary.referringDomains - bl.previous.referringDomains} desde la foto anterior)` : ""}, ${bl.newDomains.length} nuevos y ${bl.lost.length} perdidos.${bl.broken.length ? ` ${bl.broken.length} llegan a páginas con error: recuperarlos con 301.` : ""}`);
+  const late = actions.filter((a) => a.dueAt && !["resolved", "ignored"].includes(a.status ?? "") && new Date(a.dueAt).getTime() < Date.now());
+  if (late.length) out.push(`${late.length} tarea(s) vencida(s): ${late.slice(0, 3).map((a) => `${a.title}${a.assignee ? ` (${a.assignee})` : ""}`).join("; ")}.`);
   if (actions.length) out.push(`Qué hacer ahora: ${actions.slice(0, 3).map((a, i) => `${i + 1}) ${a.title}`).join(" ")}`);
   return out;
 }
@@ -46,7 +48,7 @@ export async function sendDigest(projectId: string) {
   const { text, html } = mailTemplate(
     `Resultados SEO · ${p.name}`,
     [
-      ...digestParagraphs(mk, acts.actions, bl.snapshot),
+      ...digestParagraphs(mk, acts.groups.filter((g) => !["resolved", "ignored"].includes(g.status)), bl.snapshot),
       ...(al.ai ? [`IA: ${al.ai.engines.map((e) => `${e.engine} te cita en ${e.found}/${e.total}`).join(", ")}.`] : []),
       ...(al.localRanks ? [`Google Maps: ${al.localRanks.rows.map((r) => `«${r.keyword}» ${r.position ?? "no aparece"}`).join(", ")}.`] : []),
     ],

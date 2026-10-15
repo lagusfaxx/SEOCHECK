@@ -221,3 +221,31 @@ export async function signalTask(
       });
   });
 }
+
+/**
+ * Responsable y fecha límite. El responsable tiene que ser miembro del workspace; con `group` se aplica a todas
+ * las URLs del mismo problema y plantilla (como el estado). Avisa por correo al nuevo responsable.
+ */
+export async function setTaskAssignment(projectId: string, taskId: string, a: { assignee: string | null; dueAt: Date | null }, group: boolean, actor: string) {
+  const p = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { workspaceId: true, name: true } });
+  const assignee = a.assignee?.trim().toLowerCase() || null;
+  if (assignee) {
+    const member = await db.membership.findFirst({ where: { workspaceId: p.workspaceId, user: { email: assignee } } });
+    if (!member) throw new Error("El responsable tiene que ser miembro del equipo");
+  }
+  const task = await db.projectTask.findFirstOrThrow({ where: { id: taskId, projectId } });
+  const siblings = group && task.source === "crawl" ? (await db.projectTask.findMany({ where: { projectId, source: "crawl", code: task.code } })).filter((t) => taskGroupKey(t) === taskGroupKey(task)) : [task];
+  await db.projectTask.updateMany({ where: { id: { in: siblings.map((t) => t.id) } }, data: { assignee, dueAt: a.dueAt } });
+  if (assignee && assignee !== task.assignee && assignee !== actor.toLowerCase()) {
+    const { mailTemplate, sendMail } = await import("./mail");
+    const { appBaseUrl } = await import("./util");
+    const { text, html } = mailTemplate(
+      `Te asignaron una tarea SEO · ${p.name}`,
+      [`${task.title}${siblings.length > 1 ? ` (${siblings.length} URLs)` : ""}.`, a.dueAt ? `Fecha límite: ${a.dueAt.toISOString().slice(0, 10)}.` : "Sin fecha límite.", `Asignada por ${actor}.`],
+      appBaseUrl() ? { label: "Ver tarea", url: `${appBaseUrl()}/p/${projectId}/tasks?task=${encodeURIComponent(task.id)}` } : undefined,
+      "Recibes este correo porque te asignaron una tarea en FSV Search."
+    );
+    await sendMail(assignee, `Tarea asignada: ${task.title}`, text, undefined, html).catch(() => "logged");
+  }
+  return { updated: siblings.length };
+}

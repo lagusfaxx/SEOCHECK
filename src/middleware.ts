@@ -18,6 +18,8 @@ export function middleware(req: NextRequest) {
   if (pathname === "/api/health") return NextResponse.next();
   // Instagram descarga las imágenes de los posts desde acá: sin BASIC_AUTH ni sesión
   if (req.method === "GET" && /^\/api\/social\/image\/[a-z0-9]+$/.test(pathname)) return NextResponse.next();
+  // CSV para Google Sheets / Looker Studio: no pueden iniciar sesión; el token secreto de la URL es la credencial
+  if (req.method === "GET" && /^\/api\/feed\/[A-Za-z0-9_-]{30,80}\/[a-z]+\.csv$/.test(pathname)) return NextResponse.next();
   // Meta firma estas notificaciones con el app secret (signed_request); no traen cookie ni BASIC_AUTH
   if (req.method === "POST" && /^\/api\/oauth\/meta\/(deauthorize|data-deletion)$/.test(pathname)) return NextResponse.next();
   // el sitio público (landing, productos y sus imágenes) nunca va detrás de BASIC_AUTH ni de la sesión

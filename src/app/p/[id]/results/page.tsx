@@ -6,6 +6,7 @@ import { Ga4Card, type Ga4Data } from "@/components/Ga4Card";
 import { WatchCard } from "@/components/WatchCard";
 import { AiLocalCard } from "@/components/AiLocalCard";
 import { GapCard } from "@/components/GapCard";
+import { FeedCard } from "@/components/FeedCard";
 import { api, Bar, cx, DataTable, Delta, Empty, fmt, Hint, pct, Spinner, Stat, useAction, useApi, type Col } from "@/components/ui";
 
 type Pace = { mtd: number; projected: number | null; target: number | null; status: string | null; needPerDay: number | null; daysWithData: number; daysInMonth: number };
@@ -288,6 +289,7 @@ export default function Results() {
           </>
         ) : <Empty compact icon="rank" title="Sin SERPs guardadas">Agrega keywords en Rankings o corre Keywords para ver competidores y AI Overviews.</Empty>}
       </section>
+      <FeedCard />
     </div>
   );
 }

@@ -616,6 +616,10 @@ model ProjectTask {
   lastSeenAt  DateTime    @default(now())
   lastCrawlId String?
   resolvedAt  DateTime?
+  /// email del miembro responsable
+  assignee    String?
+  /// fecha límite
+  dueAt       DateTime?
   updatedAt   DateTime    @updatedAt
   events      TaskEvent[]
 

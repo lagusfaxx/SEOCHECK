@@ -26,3 +26,15 @@ test("sin sesión: páginas redirigen a /login y la API responde 401", () => {
   assert.equal(middleware(req("/api/projects")).status, 401);
   assert.equal(middleware(req("/p/abc", { cookie: "sc_session=x" })).status, 200);
 });
+
+test("CSV para Sheets/Looker: GET con token sin sesión ni BASIC_AUTH; el resto de la API sigue cerrada", () => {
+  process.env.BASIC_AUTH = "admin:clave";
+  try {
+    const t = "a".repeat(43);
+    assert.equal(middleware(req(`/api/feed/${t}/diario.csv`)).status, 200);
+    assert.equal(middleware(req(`/api/feed/corto/diario.csv`)).status, 401);
+    assert.equal(middleware(req(`/api/feed/${t}/../p/x`)).status, 401);
+  } finally {
+    delete process.env.BASIC_AUTH;
+  }
+});

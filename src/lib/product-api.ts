@@ -13,7 +13,7 @@ import { gscAvailable } from "./providers/google";
 import { TYPE_LABEL } from "./graph-types";
 import { db } from "./db";
 import { requireWorkspace } from "./auth";
-import { projectActions, setTaskStatus, setTaskGroupStatus } from "./tasks";
+import { projectActions, setTaskAssignment, setTaskStatus, setTaskGroupStatus } from "./tasks";
 import { TASK_STATUSES, type TaskStatus } from "./task-rules";
 import {
   auditComparison,
@@ -42,6 +42,8 @@ import { ga4Properties, ga4Status, setGa4Property, syncGa4 } from "./ga4";
 import { alertRecipients, FIELD_LABEL, latestCrawlChanges } from "./watch";
 import { aiLocalOverview, MAX_LOCAL_KEYWORDS } from "./ai-local";
 import { gapOverview } from "./keyword-gap";
+import { FEEDS, revokeFeedToken, rotateFeedToken } from "./feed";
+import { appBaseUrl } from "./util";
 
 /** Fecha YYYY-MM-DD (no futura) para anotaciones. */
 function dayParam(v: unknown) {
@@ -174,6 +176,11 @@ export const PRODUCT_GETS: Record<string, Handler> = {
   marketing: async ({ id }) => marketingOverview(id),
   backlinks: async ({ id }) => backlinksOverview(id),
   "ga4/status": async ({ id }) => ga4Status(id),
+  /** Miembros del equipo del proyecto (para asignar tareas y elegir destinatarios) */
+  members: async ({ id }) => {
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { workspaceId: true } });
+    return (await db.membership.findMany({ where: { workspaceId: p.workspaceId }, select: { role: true, user: { select: { email: true, name: true } } } })).map((m) => ({ email: m.user.email, name: m.user.name, role: m.role }));
+  },
   "ai-local": async ({ id }) => aiLocalOverview(id),
   "keyword-gap": async ({ id }) => gapOverview(id),
   /** Avisos inmediatos de los últimos 30 días, cambios entre crawls y a quién llegan */
@@ -576,6 +583,17 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
     });
   },
   tasks: async ({ id, body, user }) => {
+    // responsable y fecha límite (sin tocar el estado)
+    if (body.status === undefined && ("assignee" in body || "dueAt" in body)) {
+      const due = body.dueAt ? new Date(`${String(body.dueAt).slice(0, 10)}T23:59:59Z`) : null;
+      if (due && Number.isNaN(due.getTime())) throw invalid("Fecha inválida");
+      try {
+        return await setTaskAssignment(id, boundedText(body.taskId), { assignee: typeof body.assignee === "string" ? body.assignee : null, dueAt: due }, body.group === true, user.email);
+      } catch (e) {
+        if (e instanceof Error && /miembro/.test(e.message)) throw invalid(e.message);
+        throw e;
+      }
+    }
     if (!TASK_STATUSES.includes(body.status)) throw invalid("Estado inválido");
     if (body.status === "resolved") {
       const task = await db.projectTask.findFirstOrThrow({ where: { projectId: id, id: boundedText(body.taskId) } });
@@ -638,6 +656,17 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
     const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });
     await db.project.update({ where: { id }, data: { settings: { ...((p.settings ?? {}) as Record<string, any>), local: { location, businessName, keywords } } } });
     return { location, businessName, keywords };
+  },
+  /** Enlaces CSV para Sheets/Looker: el token se muestra una sola vez; generar otro revoca el anterior */
+  "marketing/feed": async ({ id, body, user, url }) => {
+    await admin(id, user.id);
+    if (body.revoke === true) {
+      await revokeFeedToken(id);
+      return { revoked: true };
+    }
+    const token = await rotateFeedToken(id);
+    const base = appBaseUrl(url.origin);
+    return { urls: Object.fromEntries(FEEDS.map((f) => [f, `${base}/api/feed/${token}/${f}.csv`])) };
   },
   "marketing/goals": async ({ id, body }) => {
     const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });
