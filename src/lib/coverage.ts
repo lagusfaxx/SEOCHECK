@@ -101,6 +101,12 @@ export async function coverage(projectId: string): Promise<Module[]> {
   else if (localLast) out.push({ key: "local", label: "SEO local", state: "ok", detail: `Revisado el ${day(localLast.checkedAt)}` });
   else out.push({ key: "local", label: "SEO local", state: "never", detail: localCfg.location && localCfg.keywords?.length ? "Se revisa al ejecutar el análisis completo" : "Falta configurar ciudad y keywords (Resultados)" });
 
+  // Keyword gap (DataForSEO Labs, mensual)
+  const gapLast = await db.keywordGap.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { createdAt: true, errors: true } });
+  if (!env.dfsLogin || !env.dfsPassword) out.push({ key: "gap", label: "Keyword gap", state: "missing", detail: "No disponible en este servidor" });
+  else if (gapLast) out.push({ key: "gap", label: "Keyword gap", state: gapLast.errors.length ? "partial" : "ok", detail: `Calculado el ${day(gapLast.createdAt)}` });
+  else out.push({ key: "gap", label: "Keyword gap", state: "never", detail: "Se calcula al ejecutar el análisis completo" });
+
   // Backlinks (cuenta DataForSEO del servidor: el cliente no configura nada)
   const bl = await db.backlinkSnapshot.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { createdAt: true, errors: true } });
   if (!env.dfsLogin || !env.dfsPassword) out.push({ key: "backlinks", label: "Backlinks", state: "missing", detail: "No disponible en este servidor" });
@@ -125,6 +131,7 @@ export function shortLabel(m: Module): string {
     ai: { ok: "IA revisada", missing: "IA no disponible", never: "IA pendiente" },
     local: { ok: "Local revisado", missing: "Local no disponible", never: "Local pendiente" },
     ga4: { ok: "Analytics conectado", failed: "Analytics con error", missing: "Analytics no conectado", never: "Analytics sin sincronizar" },
+    gap: { ok: "Gap calculado", partial: "Gap parcial", missing: "Gap no disponible", never: "Gap pendiente" },
     backlinks: { ok: "Backlinks con datos", partial: "Backlinks parcial", missing: "Backlinks no disponible", never: "Backlinks pendiente" },
   };
   return S[m.key]?.[m.state] ?? `${m.label}: ${STATE_LABEL[m.state]}`;

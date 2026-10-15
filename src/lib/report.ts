@@ -7,6 +7,7 @@ import { marketingOverview } from "./marketing";
 import { backlinksOverview } from "./backlinks";
 import { FIELD_LABEL, latestCrawlChanges } from "./watch";
 import { aiLocalOverview } from "./ai-local";
+import { gapOverview } from "./keyword-gap";
 import { hostOf, urlKey } from "./util";
 import { coverage, emptyText, STATE_LABEL } from "./coverage";
 import { buildFindings, KIND_LABEL, kindOf, urlSection, type Pattern } from "./audit/insights";
@@ -757,6 +758,34 @@ export async function buildReport(projectId: string): Promise<string> {
       );
   }
 
+  // ---------- Keyword gap y estacionalidad ----------
+  const gapOut: string[] = [];
+  const kg = await gapOverview(projectId);
+  if (kg.gap?.items.length) {
+    const g = kg.gap;
+    gapOut.push(
+      `_DataForSEO Labs, ${g.at.slice(0, 10)}: keywords donde ${g.competitors.join(", ")} está en el top 20 y el sitio no aparece. Confirmar que el negocio ofrece eso antes de crear contenido._\n`,
+      table(["Keyword", "Búsquedas/mes", "Competidor (pos.)", "Meses pico"], g.items.slice(0, 20).map((i) => [i.keyword, f0(i.volume), i.competitors.map((c) => `${c.domain} (${c.position})`).join(", "), i.peaks.length ? i.peaks.map((m) => ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"][m - 1]).join(", ") : "pareja"]))
+    );
+    const vol = g.items.slice(0, 20).reduce((s, i) => s + i.volume, 0);
+    tasks.push(
+      makeTask({
+        title: `Cubrir ${pl(Math.min(g.items.length, 20), "keyword")} que traen tráfico a la competencia`,
+        fix: `Revisar las primeras (${g.items.slice(0, 5).map((i) => `«${i.keyword}»`).join(", ")}): si el negocio lo ofrece, optimizar la página que corresponde o crear una; usar la página del competidor como referencia de intención, no para copiar.`,
+        traffic: vol,
+        trafficLabel: `${f0(vol)} búsquedas/mes`,
+        sev: 1.5,
+        sevLabel: "oportunidad",
+        ease: 0.4,
+        confidence: "media",
+        evidence: `DataForSEO Labs del ${g.at.slice(0, 10)}; volumen estimado`,
+        verify: "La URL propia aparece en Search Console con impresiones para esas keywords.",
+      })
+    );
+  }
+  if (kg.upcoming.length)
+    gapOut.push("", `**Se viene la temporada** (pico en los próximos 2 meses: publicar o actualizar ahora): ${kg.upcoming.slice(0, 10).map((u) => `«${u.keyword}» (${u.peaks})`).join(" · ")}`);
+
   // ---------- Armado ----------
   tasks.sort(byPriority);
   const top = tasks.slice(0, MAX_TASKS);
@@ -852,6 +881,7 @@ export async function buildReport(projectId: string): Promise<string> {
   if (intentional.length) out.push("## Revisado, parece intencional", "", "_Comportamiento esperado del sitio: no se generan tareas y no hay que «corregirlo». Confirmar solo si no corresponde a lo que el sitio quiere._", "", ...intentional, "");
   out.push("## Search Console", "", ...gscOut, "");
   if (aiOut.length) out.push("## Visibilidad en IA y SEO local", "", ...aiOut, "");
+  if (gapOut.length) out.push("## Keywords de la competencia y estacionalidad", "", ...gapOut, "");
   out.push("## Backlinks", "", ...(blOut.length ? blOut : [emptyText(mod("backlinks"))]), "");
   out.push(
     "## Velocidad (PageSpeed)",

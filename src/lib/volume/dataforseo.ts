@@ -19,7 +19,11 @@ const PATH = "/v3/keywords_data/google_ads/search_volume";
 export const dfsBase = () => env.dfsBaseOverride || (env.dfsEnv === "live" ? "https://api.dataforseo.com" : "https://sandbox.dataforseo.com");
 export const dfsAuth = () => `Basic ${Buffer.from(`${env.dfsLogin}:${env.dfsPassword}`).toString("base64")}`;
 
-type Row = { keyword: string; search_volume: number | null; cpc: number | null; competition_index: number | null };
+type Row = { keyword: string; search_volume: number | null; cpc: number | null; competition_index: number | null; monthly_searches?: { year: number; month: number; search_volume: number | null }[] | null };
+
+/** Búsquedas por mes de DataForSEO → [{ year, month, volume }] ordenado del más antiguo al más reciente. */
+export const monthlyOf = (m: Row["monthly_searches"]) =>
+  m?.length ? m.filter((x) => x.search_volume != null).map((x) => ({ year: x.year, month: x.month, volume: Number(x.search_volume) })).sort((a, b) => a.year - b.year || a.month - b.month) : null;
 
 function toData(r: Row, originals: string[]): VolumeData[] {
   return originals.map((k) => ({
@@ -27,6 +31,7 @@ function toData(r: Row, originals: string[]): VolumeData[] {
     volume: r.search_volume ?? null,
     cpc: r.cpc ?? null,
     competition: r.competition_index != null ? r.competition_index / 100 : null,
+    monthly: monthlyOf(r.monthly_searches),
   }));
 }
 

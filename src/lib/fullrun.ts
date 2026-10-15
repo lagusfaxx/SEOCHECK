@@ -15,6 +15,7 @@ import { normTerm } from "./util";
 import { backlinksConfigured, runBacklinks } from "./backlinks";
 import { ga4Of, syncGa4 } from "./ga4";
 import { runAiVisibility, runLocal } from "./ai-local";
+import { runKeywordGap } from "./keyword-gap";
 
 export type FullRunOpts = {
   maxPages?: number;
@@ -31,6 +32,8 @@ export type FullRunOpts = {
   /** Visibilidad en IA y SEO local (Serpent, una vez por semana) */
   ai?: boolean;
   local?: boolean;
+  /** Keywords de la competencia que el sitio no tiene (DataForSEO Labs, una vez al mes) */
+  gap?: boolean;
 };
 
 export type StepResult = { step: string; status: "ok" | "skipped" | "error"; detail?: string };
@@ -42,7 +45,7 @@ export type StepResult = { step: string; status: "ok" | "skipped" | "error"; det
 export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: string): Promise<StepResult[]> {
   const p = await db.project.findUniqueOrThrow({ where: { id: projectId } });
   const results: StepResult[] = [];
-  const steps = 11;
+  const steps = 12;
   let n = 0;
   const step = async (name: string, label: string, fn: () => Promise<string | void | null>) => {
     await jobProgress(jobRunId, (n / steps) * 100, label);
@@ -169,6 +172,13 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
     if (opts.local === false) return skip("local", "desactivado");
     const r = await runLocal(projectId);
     return weekly("local", r, `${(r as any).keywords ?? 0} keywords en Google Maps`);
+  });
+
+  await step("gap", "keyword gap", async () => {
+    if (opts.gap === false || opts.backlinks === false) return skip("gap", "desactivado");
+    const r = await runKeywordGap(projectId);
+    if ((r as any).reused) return "se usa la foto de este mes";
+    return weekly("gap", r as any, `${(r as any).keywords ?? 0} keywords de ${(r as any).competitors?.length ?? 0} competidores`);
   });
 
   await step("alerts", "alertas", async () => {

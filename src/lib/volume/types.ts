@@ -8,6 +8,8 @@ export type VolumeData = {
   cpc: number | null;
   competition: number | null; // 0–1
   intent?: string | null;
+  /** búsquedas por mes (estacionalidad), si el proveedor las trae */
+  monthly?: { year: number; month: number; volume: number }[] | null;
 };
 
 export type VolumeCtx = {

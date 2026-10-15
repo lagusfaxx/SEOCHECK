@@ -26,6 +26,8 @@ before(async () => {
         return ok({ items: [{ url_from: "https://prensa.cl/nota", url_to: "https://mi-tienda.cl/producto-viejo", url_to_status_code: 404, domain_from_rank: 400, dofollow: true, anchor: "traje" }] });
       if (path === "/v3/backlinks/domain_intersection/live")
         return ok({ items: [{ domain_intersection: { "1": { target: "federacion.cl", rank: 500 } }, summary: { intersections_count: 1 } }] });
+      if (path === "/v3/dataforseo_labs/google/domain_intersection/live")
+        return ok({ items: [{ keyword_data: { keyword: "trajes de competicion", keyword_info: { search_volume: 880, monthly_searches: Array.from({ length: 12 }, (_, i) => ({ year: 2026, month: i + 1, search_volume: i === 0 ? 2000 : 500 })) } }, first_domain_serp_element: { rank_absolute: 3, url: "https://rival.cl/trajes" } }] });
       res.writeHead(404).end();
     });
   });
@@ -67,4 +69,16 @@ test("backlinks: foto con competidores, reuso semanal, informe con tareas de lin
   assert.match(md, /Conseguir links de 1 dominio que ya enlazan a la competencia/);
   const { db } = await import("./db");
   assert.ok((await db.providerUsage.count({ where: { projectId, provider: "dataforseo" } })) >= 6, "costo real registrado por llamada");
+
+  // keyword gap con la misma cuenta: keywords del competidor que el sitio no tiene, con meses pico
+  const { runKeywordGap, gapOverview } = await import("./keyword-gap");
+  const g: any = await runKeywordGap(projectId);
+  assert.equal(g.keywords, 1);
+  const lab = hits.find((h) => h.path.includes("dataforseo_labs"))!.body;
+  assert.equal(lab.target1, "rival.cl");
+  assert.equal(lab.target2, "mi-tienda.cl");
+  assert.equal(lab.intersections, false);
+  const ov = await gapOverview(projectId);
+  assert.deepEqual(ov.gap!.items[0].peaks, [1]);
+  assert.match(await buildReport(projectId), /Cubrir 1 keyword que traen tráfico a la competencia/);
 });

@@ -8,7 +8,7 @@ import { api, cx, Icon, useApi, fmtDate, Spinner, Skeleton } from "@/components/
 type Step = { step: string; status: "ok" | "skipped" | "error"; detail?: string };
 type Job = { id: string; status: string; progress: number; message: string | null; createdAt: string; updatedAt: string; log: { msg: string; data?: unknown }[] };
 
-const STEP: Record<string, string> = { crawl: "Crawl", gsc: "Search Console", inspect: "Indexación", psi: "PageSpeed", keywords: "Keywords", rank: "Rankings", backlinks: "Backlinks", ga4: "Google Analytics", ai: "Visibilidad en IA", local: "SEO local", alerts: "Alertas" };
+const STEP: Record<string, string> = { crawl: "Crawl", gsc: "Search Console", inspect: "Indexación", psi: "PageSpeed", keywords: "Keywords", rank: "Rankings", backlinks: "Backlinks", ga4: "Google Analytics", ai: "Visibilidad en IA", local: "SEO local", gap: "Keyword gap", alerts: "Alertas" };
 
 export default function ReportPage() {
   const { id, refreshJobs, project } = useProject();
@@ -23,7 +23,7 @@ export default function ReportPage() {
   const [maxPages, setMaxPages] = useState(1000);
   const [conc, setConc] = useState(3);
   const [seeds, setSeeds] = useState<string | null>(null);
-  const [opt, setOpt] = useState({ gsc: true, inspect: true, psi: true, rank: true, backlinks: true, ai: true, local: true, keywords: false });
+  const [opt, setOpt] = useState({ gsc: true, inspect: true, psi: true, rank: true, backlinks: true, ai: true, local: true, gap: true, keywords: false });
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(false);
   const seedText = seeds ?? kw?.runs?.[0]?.seeds?.join("\n") ?? "";
@@ -47,6 +47,7 @@ export default function ReportPage() {
         backlinks: opt.backlinks,
         ai: opt.ai,
         local: opt.local,
+        gap: opt.gap,
       });
       refreshJobs();
       refreshLast();
@@ -73,7 +74,7 @@ export default function ReportPage() {
           <span className="text-ink-500">https://{project?.domain}</span>
           <details><summary className="cursor-pointer">Opciones avanzadas</summary><div className="mt-3 flex flex-wrap gap-3">          <label className="flex items-center gap-1.5 text-ink-500">Máximo de URLs <input className="input w-24" type="number" value={maxPages} onChange={(e) => setMaxPages(Number(e.target.value))} /></label>
           <label className="flex items-center gap-1.5 text-ink-500">Concurrencia <input className="input w-16" type="number" value={conc} onChange={(e) => setConc(Number(e.target.value))} /></label>
-          {(["gsc", "inspect", "psi", "rank", "backlinks", "ai", "local", "keywords"] as const).map((k) => (
+          {(["gsc", "inspect", "psi", "rank", "backlinks", "ai", "local", "gap", "keywords"] as const).map((k) => (
             <label key={k} className="flex items-center gap-1.5">
               <input type="checkbox" checked={opt[k]} onChange={() => toggle(k)} />
               {STEP[k]}

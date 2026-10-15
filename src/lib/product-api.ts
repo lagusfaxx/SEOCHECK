@@ -41,6 +41,7 @@ import { backlinksOverview, bareDomain } from "./backlinks";
 import { ga4Properties, ga4Status, setGa4Property, syncGa4 } from "./ga4";
 import { alertRecipients, FIELD_LABEL, latestCrawlChanges } from "./watch";
 import { aiLocalOverview, MAX_LOCAL_KEYWORDS } from "./ai-local";
+import { gapOverview } from "./keyword-gap";
 
 /** Fecha YYYY-MM-DD (no futura) para anotaciones. */
 function dayParam(v: unknown) {
@@ -174,6 +175,7 @@ export const PRODUCT_GETS: Record<string, Handler> = {
   backlinks: async ({ id }) => backlinksOverview(id),
   "ga4/status": async ({ id }) => ga4Status(id),
   "ai-local": async ({ id }) => aiLocalOverview(id),
+  "keyword-gap": async ({ id }) => gapOverview(id),
   /** Avisos inmediatos de los últimos 30 días, cambios entre crawls y a quién llegan */
   watch: async ({ id }) => {
     const [alerts, c, p, recipients] = await Promise.all([

@@ -153,6 +153,7 @@ model Project {
   ga4Rows     Ga4Row[]
   aiChecks    AiCheck[]
   localRanks  LocalRank[]
+  keywordGaps KeywordGap[]
 }
 
 /// Conexión OAuth de Google Search Console del proyecto (la cuenta de Google del cliente). Token cifrado.
@@ -238,6 +239,8 @@ model Keyword {
   cpc         Float?
   competition Float?
   intent      String?
+  /// búsquedas por mes de los últimos 12 meses: [{ year, month, volume }] (estacionalidad)
+  monthly     Json?
   difficulty  Float?
   score       Float?
   excluded    Boolean   @default(false)
@@ -540,6 +543,8 @@ model VolumeCache {
   cpc         Float?
   competition Float?
   intent      String?
+  /// búsquedas por mes de los últimos 12 meses: [{ year, month, volume }] (estacionalidad)
+  monthly     Json?
   fetchedAt   DateTime @default(now())
 
   @@id([country, language, keyword, source])
@@ -911,4 +916,18 @@ model LocalRank {
   checkedAt   DateTime @default(now())
 
   @@index([projectId, checkedAt])
+}
+
+/// Keywords por las que rankean los competidores (top 20) y el sitio no (DataForSEO Labs, cuenta del servidor).
+model KeywordGap {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  competitors String[]
+  /// [{ keyword, volume, monthly, competitors: [{ domain, position, url }] }]
+  items       Json
+  errors      String[]
+  createdAt   DateTime @default(now())
+
+  @@index([projectId, createdAt])
 }

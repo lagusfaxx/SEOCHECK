@@ -26,7 +26,7 @@ export async function readCache(keywords: string[], ctx: Pick<VolumeCtx, "countr
   for (const r of rows) {
     const cur = out.get(r.keyword);
     if (cur && !(prefer && r.source === prefer && cur.source !== prefer)) continue;
-    out.set(r.keyword, { keyword: r.keyword, volume: r.volume, volumeMin: r.volumeMin, volumeMax: r.volumeMax, cpc: r.cpc, competition: r.competition, intent: r.intent, source: r.source as VolumeSource, at: r.fetchedAt });
+    out.set(r.keyword, { keyword: r.keyword, volume: r.volume, volumeMin: r.volumeMin, volumeMax: r.volumeMax, cpc: r.cpc, competition: r.competition, intent: r.intent, monthly: (r.monthly as VolumeData["monthly"]) ?? null, source: r.source as VolumeSource, at: r.fetchedAt });
   }
   return out;
 }
@@ -35,7 +35,7 @@ export async function writeCache(rows: VolumeData[], country: string, language: 
   const now = new Date();
   for (const r of rows) {
     const keyword = volKey(r.keyword);
-    const data = { volume: r.volume, volumeMin: r.volumeMin ?? null, volumeMax: r.volumeMax ?? null, cpc: r.cpc, competition: r.competition, intent: r.intent ?? null, fetchedAt: now };
+    const data = { volume: r.volume, volumeMin: r.volumeMin ?? null, volumeMax: r.volumeMax ?? null, cpc: r.cpc, competition: r.competition, intent: r.intent ?? null, monthly: (r.monthly ?? undefined) as any, fetchedAt: now };
     await db.volumeCache.upsert({ where: { country_language_keyword_source: { country, language, keyword, source } }, create: { country, language, keyword, source, ...data }, update: data });
   }
 }
@@ -174,6 +174,7 @@ async function applyVolumes(cache: Map<string, VolumeData & { source: VolumeSour
       data: {
         volume: v.volume, volumeMin: v.volumeMin ?? null, volumeMax: v.volumeMax ?? null, volumeSource: v.source, volumeAt: v.at,
         cpc: v.cpc ?? k.cpc, competition: v.competition ?? k.competition,
+        ...(v.monthly?.length ? { monthly: v.monthly as any } : {}),
         score: v.volume != null ? kwScore(v.volume, k.relevance ?? 0, k.difficulty ?? 50) : null,
       },
     });
