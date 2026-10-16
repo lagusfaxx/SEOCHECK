@@ -1,7 +1,7 @@
 import { db } from "../db";
 import { safeFetch } from "../net/ssrf";
 import { fetchPage } from "../audit/crawler";
-import { parseServerLogs } from "./logs";
+import { dnsResolver, parseServerLogs, verifyBots } from "./logs";
 import { pagesOf, project, admin, text, bounded } from "./data";
 import { json, type Analysis, type Row } from "./analysis";
 import { ProError, type ProModule } from "./types";
@@ -52,7 +52,12 @@ async function overview(id: string): Promise<Analysis> {
       validas: s.parsed,
       invalidas: s.invalid,
       desperdicioBot: s.wasted,
-      identidadBot: "Declarada; sin verificar",
+      identidadBot: s.verification
+        ? Object.entries(s.verification as Record<string, any>)
+            .filter(([, v]) => v.checked)
+            .map(([b, v]) => `${b}: ${v.verifiedRequests} peticiones verificadas, ${v.fakeRequests} de impostores`)
+            .join(" · ") || "Declarada; sin verificar"
+        : "Declarada; sin verificar",
       fecha: l.createdAt.toISOString(),
     });
     for (const u of s.topUrls ?? [])
@@ -175,7 +180,7 @@ async function overview(id: string): Promise<Analysis> {
     title: "Logs, competencia, migraciones y presencia local",
     source: "Datos importados y conexiones del proyecto",
     notes: [
-      "Los logs se resumen sin IP ni líneas crudas. El user-agent no demuestra que una petición provenga de Googlebot.",
+      "Los logs se resumen sin IP ni líneas crudas. Googlebot, Bingbot y Applebot se verifican por DNS inverso y directo al subir el archivo; el user-agent solo no demuestra quién hizo la petición.",
       "El monitor compara solo URLs configuradas; no cambia ni rastrea sitios completos de la competencia.",
       gbp
         ? "Google Business Profile: inventario de ubicaciones accesibles por OAuth."
@@ -240,9 +245,21 @@ export const module: ProModule = {
         const input = text(c.body.logs, 5000001);
         if (!input || input.length > 5000000)
           throw new ProError("Carga hasta 5 MB de logs Apache/Nginx combined");
-        const stats = parseServerLogs(input);
-        if (!stats.parsed)
+        const botIps = new Map<string, Map<string, number>>();
+        const parsed = parseServerLogs(input, botIps);
+        if (!parsed.parsed)
           throw new ProError("No se reconocieron líneas en formato combined");
+        // las IP de los bots solo viven en memoria para verificarlos; se guardan conteos
+        const verification = await verifyBots(botIps, dnsResolver());
+        const anyChecked = Object.values(verification).some((v) => v.checked > 0);
+        const stats = {
+          ...parsed,
+          verification,
+          verified: anyChecked,
+          identityNote: anyChecked
+            ? "Googlebot, Bingbot y Applebot verificados por DNS inverso y directo; los demás bots, solo declarados por user-agent"
+            : parsed.identityNote,
+        };
         return db.logUpload.create({
           data: {
             projectId: c.id,
@@ -386,6 +403,20 @@ export const module: ProModule = {
       },
     },
     PATCH: {
+      // páginas críticas del propio sitio: cualquier cambio de estado, canonical o noindex avisa al instante
+      critical: async (c) => {
+        await admin(c);
+        const p = await project(c.id),
+          settings = json(p.settings),
+          urls = c.body.criticalUrls;
+        if (!Array.isArray(urls) || urls.length > 50 || urls.some((u: unknown) => typeof u !== "string" || !normUrl(u) || !sameSite(u, p.domain)))
+          throw new ProError("Indica hasta 50 URLs del dominio del proyecto");
+        return db.project.update({
+          where: { id: c.id },
+          data: { settings: { ...settings, pro: { ...settings.pro, criticalUrls: urls.map((u: string) => normUrl(u)!) } } },
+          select: { id: true },
+        });
+      },
       settings: async (c) => {
         await admin(c);
         const p = await project(c.id),

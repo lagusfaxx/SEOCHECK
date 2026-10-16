@@ -349,7 +349,7 @@ export async function analyzeContent(id: string, jobRunId?: string) {
     schema,
   };
   // rutas reales del sitio para verificar los links que proponga el brief
-  const lastCrawl = await db.crawl.findFirst({ where: { projectId: p.id, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" }, select: { id: true } });
+  const lastCrawl = await db.crawl.findFirst({ where: { projectId: p.id, private: false, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" }, select: { id: true } });
   const crawled = lastCrawl ? await db.page.findMany({ where: { crawlId: lastCrawl.id, status: 200, error: null }, select: { url: true, finalUrl: true }, take: 2000 }) : [];
   // solo lo que el crawl comprobó que responde 200 sin redirigir: un link en la página no prueba que el destino exista
   result.knownUrls = [...new Set(crawled.filter((x) => !x.finalUrl || x.finalUrl === x.url).map((x) => x.url))].slice(0, 2000);

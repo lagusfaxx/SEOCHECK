@@ -144,6 +144,23 @@ const sharedAgent = () => (shared ??= makeSafeAgent());
 
 export type SafeResponse = { res: UResponse; finalUrl: string; redirects: { url: string; status: number }[] };
 
+/** Bucle de redirecciones: la cadena vuelve a una URL ya visitada. `chain` trae cada salto con su código. */
+export class RedirectLoopError extends Error {
+  constructor(public chain: { url: string; status: number }[], public to: string) {
+    super(`bucle de redirecciones: ${[...chain.map((r) => `${r.url} (${r.status})`), to].join(" → ")}`);
+    this.name = "RedirectLoopError";
+  }
+}
+
+const SENSITIVE = /^(authorization|cookie|proxy-authorization)$/i;
+/** Cabeceras sin credenciales: no se reenvían a otro host al seguir un redirect (como hacen los navegadores). */
+function withoutCredentials(h: URequestInit["headers"]): Record<string, string> {
+  const out: Record<string, string> = {};
+  const entries = h instanceof Headers ? [...h.entries()] : Array.isArray(h) ? (h as [string, string][]) : Object.entries((h ?? {}) as Record<string, string>);
+  for (const [k, v] of entries) if (!SENSITIVE.test(k)) out[k] = String(v);
+  return out;
+}
+
 /**
  * fetch con validación SSRF en cada salto. Devuelve la respuesta final y la cadena de redirects.
  * `fetchImpl`/`agent` se pueden inyectar en tests.
@@ -155,7 +172,11 @@ export async function safeFetch(
   const { timeoutMs = 25000, maxRedirects = 10, agent, fetchImpl = ufetch, ...rest } = init;
   const redirects: { url: string; status: number }[] = [];
   let cur = assertUrlAllowed(url).toString();
+  const firstHost = new URL(cur).host;
+  const visited = new Set<string>();
   for (let hop = 0; hop <= maxRedirects; hop++) {
+    visited.add(cur);
+    if (new URL(cur).host !== firstHost && rest.headers) rest.headers = withoutCredentials(rest.headers);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     let res: UResponse;
@@ -172,7 +193,9 @@ export async function safeFetch(
     if (res.status >= 300 && res.status < 400 && loc) {
       redirects.push({ url: cur, status: res.status });
       await res.body?.cancel().catch(() => {});
-      cur = assertUrlAllowed(new URL(loc, cur)).toString();
+      const nextUrl = assertUrlAllowed(new URL(loc, cur)).toString();
+      if (visited.has(nextUrl)) throw new RedirectLoopError(redirects, nextUrl);
+      cur = nextUrl;
       continue;
     }
     return { res, finalUrl: cur, redirects };

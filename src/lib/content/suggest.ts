@@ -115,7 +115,7 @@ export async function pageSuggestions(projectId: string, keyword: string, limit 
   const project = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { domain: true } });
   const brand = brandOf(project.domain);
   if (!kw.length) return { suggestions: [], known: false, discovered: null, scanned: 0 };
-  const crawl = await db.crawl.findFirst({ where: { projectId, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" }, select: { id: true } });
+  const crawl = await db.crawl.findFirst({ where: { projectId, private: false, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" }, select: { id: true } });
   const out = new Map<string, Suggestion>();
   let scanned = 0;
   if (crawl) {

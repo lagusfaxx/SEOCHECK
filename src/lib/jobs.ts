@@ -28,7 +28,7 @@ export async function recoverInterrupted() {
   const runs = await db.jobRun.updateMany({ where: { id: { in: dead } }, data: { status: "error", message: msg } });
   // sus reservas de presupuesto ya no corresponden
   await db.budgetReservation.deleteMany({ where: { holder: { in: dead } } });
-  await db.crawl.updateMany({ where: { status: { in: ["running", "crawling"] } }, data: { status: "failed", reason: "Interrumpido: el worker se reinició antes de terminar.", finishedAt: new Date() } });
+  await db.crawl.updateMany({ where: { status: { in: ["running", "crawling", "pausing"] } }, data: { status: "failed", reason: "Interrumpido: el worker se reinició antes de terminar.", finishedAt: new Date() } });
   const deadContent = (await db.contentAnalysis.findMany({ where: { status: { in: ["running", "brief"] } }, select: { id: true } })).map((a) => a.id);
   await db.contentAnalysis.updateMany({ where: { id: { in: deadContent } }, data: { status: "error", result: { error: "Interrumpido: el worker se reinició antes de terminar." } } });
   await refundBriefs(deadContent);

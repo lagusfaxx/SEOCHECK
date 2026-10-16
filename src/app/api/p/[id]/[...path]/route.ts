@@ -135,7 +135,7 @@ const GETS: Record<string, H> = {
     const [kw, clusters, crawl, tracked, alerts, gsc, content] = await Promise.all([
       db.keyword.aggregate({ where: { projectId: id, excluded: false }, _count: true, _sum: { volume: true } }),
       db.cluster.count({ where: { projectId: id } }),
-      db.crawl.findFirst({ where: { projectId: id, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" } }),
+      db.crawl.findFirst({ where: { projectId: id, private: false, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" } }),
       db.trackedKeyword.findMany({ where: { projectId: id, active: true }, include: { checks: { orderBy: { date: "desc" }, take: 2 } } }),
       db.alert.findMany({ where: { projectId: id, seen: false }, orderBy: { createdAt: "desc" }, take: 20 }),
       gscSeries(id, new Date(Date.now() - 90 * 864e5)),
@@ -171,7 +171,7 @@ const GETS: Record<string, H> = {
   },
 
   audit: async ({ id, url }) => {
-    const crawls = await db.crawl.findMany({ where: { projectId: id }, orderBy: { startedAt: "desc" }, take: 10, select: { id: true, status: true, reason: true, stats: true, startedAt: true, finishedAt: true, options: true, sitemapUrls: true } });
+    const crawls = await db.crawl.findMany({ where: { projectId: id, private: false }, orderBy: { startedAt: "desc" }, take: 10, select: { id: true, status: true, reason: true, stats: true, startedAt: true, finishedAt: true, options: true, sitemapUrls: true } });
     const asked = url.searchParams.get("crawl");
     const crawlId = asked ? await ownCrawl(id, asked) : crawls[0]?.id;
     if (!crawlId) return { crawls, crawlId: null };
@@ -388,7 +388,7 @@ const POSTS: Record<string, H> = {
   audit: async ({ id, body }) => {
     await assertIdle(id, QUEUES.crawl, "un crawl");
     if (body.verification === true) {
-      const previous = await db.crawl.findFirst({ where: { projectId: id, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" } });
+      const previous = await db.crawl.findFirst({ where: { projectId: id, private: false, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" } });
       body = { ...(previous?.options as object ?? {}), ...body };
     }
     const crawl = await db.crawl.create({

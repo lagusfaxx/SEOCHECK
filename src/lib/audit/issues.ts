@@ -43,6 +43,10 @@ export const ISSUE_LABELS: Record<string, string> = {
   hreflang_no_self: "hreflang sin auto-referencia",
   noindex: "noindex",
   nofollow: "nofollow en la única vía a otras URLs",
+  redirect_loop: "Bucle de redirecciones",
+  canonical_loop: "Canonicals en bucle",
+  robots_conflict: "Directivas de robots contradictorias",
+  render_mismatch: "El HTML y la página con JavaScript no coinciden",
   ...EXTRA_ISSUE_LABELS,
 };
 
@@ -70,6 +74,40 @@ export function canonicalTargetProblem(target: string | null, pageOf: Map<string
   if (t.noindex) return "el destino tiene noindex";
   if (t.canonicalType === "other" && t.canonical !== target) return `el destino declara otro canonical (${t.canonical})`;
   return null;
+}
+
+/** Si siguiendo los canonicals desde `url` se vuelve a una URL ya vista, la cadena del bucle (si no, null). */
+export function canonicalLoop(url: string, pageOf: Map<string, Pick<Page, "canonical" | "canonicalType">>): string[] | null {
+  const chain = [url];
+  let cur = pageOf.get(url);
+  for (let i = 0; i < 10 && cur?.canonicalType === "other" && cur.canonical; i++) {
+    if (chain.includes(cur.canonical)) return [...chain, cur.canonical];
+    chain.push(cur.canonical);
+    cur = pageOf.get(cur.canonical);
+  }
+  return null;
+}
+
+/**
+ * Directivas que se contradicen: meta robots vs cabecera X-Robots-Tag (Google aplica la más restrictiva, así que
+ * una de las dos sobra o está mal), y noindex junto a un canonical a otra URL (dos señales opuestas).
+ */
+export function robotsConflict(p: Pick<Page, "robotsMeta" | "xRobots" | "noindex" | "canonicalType" | "canonical">): string | null {
+  const has = (s: string | null | undefined, re: RegExp) => Boolean(s && re.test(s));
+  const xGoogle = (p.xRobots ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter((x) => !/^[a-z0-9_-]+\s*:/i.test(x) || /^googlebot\s*:/i.test(x))
+    .join(", ");
+  const out: string[] = [];
+  const metaNoindex = has(p.robotsMeta, /(^|[\s,])(noindex|none)([\s,]|$)/i), headNoindex = has(xGoogle, /(noindex|none)/i);
+  const metaIndex = has(p.robotsMeta, /(^|[\s,])index([\s,]|$)/i), headIndex = has(xGoogle, /(^|[\s,:])index([\s,]|$)/i);
+  if ((metaNoindex && headIndex) || (headNoindex && metaIndex)) out.push(`meta robots «${p.robotsMeta}» y X-Robots-Tag «${p.xRobots}» se contradicen (Google aplica noindex)`);
+  const metaNofollow = has(p.robotsMeta, /(^|[\s,])(nofollow|none)([\s,]|$)/i), headNofollow = has(xGoogle, /(nofollow|none)/i);
+  const metaFollow = has(p.robotsMeta, /(^|[\s,])follow([\s,]|$)/i), headFollow = has(xGoogle, /(^|[\s,:])follow([\s,]|$)/i);
+  if ((metaNofollow && headFollow) || (headNofollow && metaFollow)) out.push(`follow/nofollow distinto entre meta robots «${p.robotsMeta}» y X-Robots-Tag «${p.xRobots}»`);
+  if (p.noindex && p.canonicalType === "other") out.push(`noindex y canonical a otra URL (${p.canonical}) a la vez: señales opuestas`);
+  return out.length ? out.join(" · ") : null;
 }
 
 export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; sitemapCount: number; site: string }): IssueRow[] {
@@ -107,7 +145,8 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
     if (p.blocked) { add(p.url, "blocked_robots", p.inSitemap ? "warning" : "info"); continue; }
     if (p.error === "blocked_by_waf") { add(p.url, "blocked_by_waf", "critical", `HTTP ${p.status}`); continue; }
     if (p.error === "ssrf_blocked") { add(p.url, "ssrf_blocked", "warning"); continue; }
-    if (p.status === 0) { add(p.url, "fetch_failed", "critical"); continue; }
+    if (p.status === 0 && p.fetchError?.startsWith("bucle de redirecciones")) { add(p.url, "redirect_loop", "critical", p.fetchError.replace(/^bucle de redirecciones: /, "")); continue; }
+    if (p.status === 0) { add(p.url, "fetch_failed", "critical", p.fetchError ?? undefined); continue; }
     if (p.status >= 500) add(p.url, "http_5xx", "critical", httpEvidence(p, linkedFrom.get(p.url) ?? []));
     else if (p.status >= 400) add(p.url, "http_4xx", "critical", httpEvidence(p, linkedFrom.get(p.url) ?? []));
     if (redirects.length > 1) add(p.url, "redirect_chain", "warning", [...redirects.map((r) => `${r.status} ${r.url}`), p.finalUrl ?? ""].join(" → "));
@@ -118,6 +157,14 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
     if (p.status !== 200 || !(p.contentType ?? "").includes("html")) continue;
 
     if (p.noindex) add(p.url, p.inSitemap ? "noindex_in_sitemap" : "noindex", p.inSitemap ? "critical" : "info");
+    const conflict = robotsConflict(p);
+    if (conflict) add(p.url, "robots_conflict", "warning", conflict);
+    const diffs = (Array.isArray(p.renderDiff) ? p.renderDiff : []) as { field: string; html: string; rendered: string }[];
+    if (diffs.length) {
+      // robots o canonical distintos cambian qué indexa Google; título/H1/links/texto son señal de dependencia de JS
+      const grave = diffs.some((d) => d.field === "meta_robots" || d.field === "canonical");
+      add(p.url, "render_mismatch", grave ? "warning" : "info", diffs.map((d) => `${d.field}: HTML «${d.html}» → con JavaScript «${d.rendered}»`).join(" · "));
+    }
     // nofollow solo importa si la página es la única vía hacia otras URLs: si esas URLs se enlazan desde otras
     // páginas, Google las descubre igual y no hay una pérdida demostrable
     if (p.nofollow) {
@@ -137,8 +184,10 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
     // canonical de una URL con parámetros hacia su versión sin parámetros (filtros, ?variant=…): es lo correcto
     if (p.canonicalType === "other" && !isParamCanonical(p.url, p.canonical)) {
       // consolidar variantes (modelos, colores, parámetros) en una ficha es intencional; el error es apuntar a algo roto
+      const loop = canonicalLoop(p.url, pageOf);
       const bad = canonicalTargetProblem(p.canonical, pageOf);
-      if (bad) add(p.url, "canonical_bad_target", "warning", `${p.canonical} · ${bad}`);
+      if (loop) add(p.url, "canonical_loop", "warning", loop.join(" → "));
+      else if (bad) add(p.url, "canonical_bad_target", "warning", `${p.canonical} · ${bad}`);
       else add(p.url, "canonical_other", "info", p.canonical ?? "");
     }
     if (p.jsonldErrors) add(p.url, "jsonld_invalid", "warning", `${p.jsonldErrors} bloque${p.jsonldErrors === 1 ? "" : "s"} JSON-LD que no se pueden leer`);

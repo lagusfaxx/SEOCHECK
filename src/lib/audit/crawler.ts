@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { classifyTemplate, type TemplateRule } from "./parse/template";
 import { extractStructured } from "./parse/structured";
 import { commerceSignals } from "./parse/commerce";
@@ -14,7 +15,7 @@ import pLimit from "p-limit";
 import { db } from "../db";
 import { env } from "../env";
 import { jobProgress } from "../queue";
-import { assertUrlAllowed, safeFetch, SsrfError } from "../net/ssrf";
+import { assertUrlAllowed, RedirectLoopError, safeFetch, SsrfError } from "../net/ssrf";
 import { DEFAULT_IGNORE_PARAMS, detectWaf, PatternLimiter, stripParams,
 } from "./guards";
 import { hostOf, normUrl } from "../util";
@@ -36,6 +37,10 @@ export type CrawlOptions = {
   maxPerPattern?: number;
   /** Parámetros de query a ignorar al descubrir URLs (`*` = todos, `utm_*` = comodín) */
   ignoreParams?: string[];
+  /** con render: solo estas rutas se renderizan ("/productos/*"); vacío = todas */
+  renderPaths?: string[];
+  /** credenciales cifradas (encrypt de gsc-oauth) de una auditoría privada */
+  auth?: string;
   templates?: TemplateRule[];
   extract?: ExtractRule[];
 };
@@ -101,6 +106,10 @@ export type PageData = {
   rawWordCount?: number | null;
   /** datos estructurados que no coinciden con lo visible */
   schemaIssues?: string[];
+  /** con render JS: diferencias entre el HTML recibido y el DOM renderizado */
+  renderDiff?: RenderDiff[];
+  /** motivo de la falla de red (timeout, DNS, bucle de redirecciones…) */
+  fetchError?: string | null;
 };
 
 export type TextBlock = {
@@ -126,7 +135,61 @@ export type PageSignals = {
 export type FetchOpts = { userAgent?: string;
   templates?: TemplateRule[];
   extract?: ExtractRule[];
+  /** credenciales de staging: solo se envían al host indicado (nunca a terceros ni tras un redirect a otro host) */
+  auth?: { host: string; headers: Record<string, string> };
 };
+
+/** Cabeceras de autenticación para esta URL, si corresponde a su host. */
+const authFor = (url: string, o: FetchOpts) => (o.auth && hostOf(url) === o.auth.host ? o.auth.headers : {});
+
+/** Credenciales de una auditoría privada: usuario/clave (Basic), cookie o cabeceras extra. */
+export type CrawlAuth = { user?: string; pass?: string; cookie?: string; headers?: Record<string, string> };
+export function authHeaders(a: CrawlAuth): Record<string, string> {
+  const h: Record<string, string> = {};
+  for (const [k, v] of Object.entries(a.headers ?? {})) if (/^[a-z0-9-]{1,60}$/i.test(k) && !/[\r\n]/.test(v)) h[k] = String(v).slice(0, 2000);
+  if (a.user || a.pass) h.Authorization = `Basic ${Buffer.from(`${a.user ?? ""}:${a.pass ?? ""}`).toString("base64")}`;
+  if (a.cookie && !/[\r\n]/.test(a.cookie)) h.Cookie = a.cookie.slice(0, 4000);
+  return h;
+}
+
+/** ¿La URL calza con algún patrón de ruta? ("/productos/*", "/blog/", "*" = todo) */
+export function pathMatches(url: string, patterns: string[]): boolean {
+  let path: string;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    return false;
+  }
+  return patterns.some((p) => {
+    const pat = p.trim();
+    if (!pat) return false;
+    if (pat === "*") return true;
+    const re = new RegExp(`^${pat.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}${pat.endsWith("*") || pat.endsWith("/") ? "" : "(/.*)?$"}`, "i");
+    return re.test(path);
+  });
+}
+
+export type RenderDiff = { field: "title" | "meta_robots" | "canonical" | "h1" | "meta_description" | "links" | "text"; html: string; rendered: string };
+type Parsed = { title: string | null; metaDesc: string | null; h1: string[]; canonical: string | null; noindex: boolean; nofollow: boolean; links: string[]; wordCount: number };
+/**
+ * Diferencias entre el HTML que entrega el servidor y el DOM después de ejecutar JavaScript. Google indexa con
+ * render, pero las directivas (robots, canonical) del HTML inicial pueden aplicarse antes y el render puede tardar.
+ */
+export function renderDiff(raw: Parsed, rendered: Parsed): RenderDiff[] {
+  const out: RenderDiff[] = [];
+  const v = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
+  const robots = (p: Parsed) => [p.noindex ? "noindex" : "index", p.nofollow ? "nofollow" : "follow"].join(", ");
+  if (v(raw.title) !== v(rendered.title)) out.push({ field: "title", html: v(raw.title) || "(vacío)", rendered: v(rendered.title) || "(vacío)" });
+  if (robots(raw) !== robots(rendered)) out.push({ field: "meta_robots", html: robots(raw), rendered: robots(rendered) });
+  if ((raw.canonical ?? "") !== (rendered.canonical ?? "")) out.push({ field: "canonical", html: raw.canonical ?? "(sin canonical)", rendered: rendered.canonical ?? "(sin canonical)" });
+  if (v(raw.metaDesc) !== v(rendered.metaDesc)) out.push({ field: "meta_description", html: v(raw.metaDesc) || "(vacía)", rendered: v(rendered.metaDesc) || "(vacía)" });
+  if (raw.h1.map(v).join(" | ") !== rendered.h1.map(v).join(" | ")) out.push({ field: "h1", html: raw.h1.map(v).join(" | ") || "(sin H1)", rendered: rendered.h1.map(v).join(" | ") || "(sin H1)" });
+  const rawLinks = new Set(raw.links);
+  const onlyJs = rendered.links.filter((l) => !rawLinks.has(l));
+  if (onlyJs.length) out.push({ field: "links", html: `${raw.links.length} links`, rendered: `${rendered.links.length} links; ${onlyJs.length} solo con JavaScript (ej. ${onlyJs.slice(0, 3).join(" ")})` });
+  if (rendered.wordCount >= 100 && raw.wordCount < rendered.wordCount * 0.5) out.push({ field: "text", html: `${raw.wordCount} palabras`, rendered: `${rendered.wordCount} palabras` });
+  return out;
+}
 
 /** Error que no vale la pena reintentar (el sitio no responde, cancelado…): el worker no reintenta. */
 export class NoRetryError extends Error {
@@ -178,6 +241,7 @@ async function fetchFollow(url: string, o: FetchOpts = {}) {
       headers: {
         "User-Agent": o.userAgent || env.userAgent,
         Accept: "text/html,*/*",
+        ...authFor(url, o),
       },
       timeoutMs: 25000,
     });
@@ -280,7 +344,7 @@ async function renderHtml(url: string, o: FetchOpts = {}): Promise<string | null
         try {
           const { res } = await safeFetch(req.url(), {
             method: req.method(),
-            headers: { ...req.headers(), "user-agent": o.userAgent || env.userAgent },
+            headers: { ...req.headers(), "user-agent": o.userAgent || env.userAgent, ...authFor(req.url(), o) },
             body: req.postDataBuffer() ?? undefined,
             timeoutMs: 20000,
           });
@@ -720,8 +784,10 @@ export async function fetchPage(
   }
   const parsed = html ? parseHtml(html, r.finalUrl, o) : null;
   const rawLinks = raw ? new Set(raw.links) : null;
+  const rawDirectives = (p: ReturnType<typeof parseHtml>) => ({ ...p, noindex: p.noindex || xRobotsNoindex(r.xRobots), nofollow: p.nofollow || xRobotsNoindex(r.xRobots, robotsNofollow) });
   return {
     url,
+    renderDiff: raw && parsed ? renderDiff(rawDirectives(raw), rawDirectives(parsed)) : [],
     evidence: {
       robotsMeta: parsed?.robotsMeta ?? "",
       xRobots: r.xRobots,
@@ -773,6 +839,131 @@ export async function fetchPage(
   };
 }
 
+type RowCtx = { inlinks: number; depth: number; inSitemap: boolean; lastmod: string | Date | null; orphan: boolean; blocked: boolean; isInternal: (u: string) => boolean };
+/** Fila de Page para guardar una página leída (al terminar o al pausar el crawl). */
+function pageRow(crawlId: string, p: PageData, x: RowCtx) {
+  return {
+    crawlId,
+    url: p.url,
+    finalUrl: p.finalUrl,
+    status: p.status,
+    redirects: p.redirects,
+    contentType: p.contentType,
+    title: p.title,
+    titleLen: p.title?.length ?? 0,
+    metaDesc: p.metaDesc,
+    metaLen: p.metaDesc?.length ?? 0,
+    h1: p.h1,
+    canonical: p.canonical,
+    canonicalType: p.canonicalType,
+    noindex: p.noindex,
+    nofollow: p.nofollow ?? false,
+    hreflang: p.hreflang,
+    jsonldTypes: p.jsonldTypes,
+    jsonldErrors: p.jsonldErrors,
+    wordCount: p.wordCount,
+    imgNoAlt: p.imgNoAlt,
+    inlinks: x.inlinks,
+    outlinks: p.links.length,
+    links: p.links.filter(x.isInternal).slice(0, 500),
+    responseMs: p.responseMs,
+    depth: x.depth,
+    contentHash: p.contentHash,
+    inSitemap: x.inSitemap,
+    lastmod: x.lastmod ? new Date(x.lastmod) : null,
+    orphan: x.orphan,
+    blocked: x.blocked,
+    error: p.error ?? null,
+    jsLinks: p.jsLinks ?? 0,
+    rawWordCount: p.rawWordCount ?? null,
+    schemaIssues: p.schemaIssues ?? [],
+    robotsMeta: p.evidence?.robotsMeta ?? null,
+    xRobots: p.evidence?.xRobots ?? null,
+    headers: p.evidence?.headers ?? {},
+    htmlSnippet: p.evidence?.htmlSnippet ?? null,
+    responseHtml: p.evidence?.responseHtml ?? null,
+    responseTruncated: p.evidence?.responseTruncated ?? false,
+    template: p.parsedExtra?.template ?? null,
+    mainHash: p.parsedExtra?.mainHash ?? null,
+    simhash: p.parsedExtra?.simhash ?? null,
+    structured: JSON.parse(JSON.stringify(p.parsedExtra?.structured ?? {})),
+    images: p.parsedExtra?.images ?? [],
+    commerce: JSON.parse(JSON.stringify(p.parsedExtra?.commerce ?? {})),
+    // solo enlaces internos y con tope, como `links`: es lo que usan arquitectura y evidencia
+    linkDetails: (p.parsedExtra?.linkDetails ?? []).filter((l) => x.isInternal(l.to)).slice(0, 500),
+    extracted: p.parsedExtra?.extracted ?? {},
+    fetchError: p.fetchError ?? null,
+    renderDiff: JSON.parse(JSON.stringify(p.renderDiff ?? [])),
+  };
+}
+
+/** PageData desde una fila guardada: para reanudar un crawl en pausa sin volver a pedir esas URLs. */
+export function pageFromRow(r: import("@prisma/client").Page): PageData {
+  const j = (v: unknown): any => (v && typeof v === "object" ? v : {});
+  return {
+    url: r.url,
+    finalUrl: r.finalUrl ?? r.url,
+    status: r.status,
+    redirects: (r.redirects as { url: string; status: number }[]) ?? [],
+    contentType: r.contentType,
+    title: r.title,
+    metaDesc: r.metaDesc,
+    h1: r.h1,
+    canonical: r.canonical,
+    canonicalType: (r.canonicalType ?? "none") as PageData["canonicalType"],
+    noindex: r.noindex,
+    nofollow: r.nofollow,
+    hreflang: (r.hreflang as { lang: string; href: string }[]) ?? [],
+    jsonldTypes: r.jsonldTypes,
+    jsonldErrors: r.jsonldErrors,
+    wordCount: r.wordCount,
+    imgNoAlt: r.imgNoAlt,
+    links: r.links,
+    responseMs: r.responseMs,
+    contentHash: r.contentHash,
+    text: "",
+    headings: [],
+    blocks: [],
+    signals: { linkGroup: 0, article: false, time: false, cart: false, price: false },
+    error: (r.error as PageError | null) ?? undefined,
+    jsLinks: r.jsLinks,
+    rawWordCount: r.rawWordCount,
+    schemaIssues: r.schemaIssues,
+    renderDiff: (r.renderDiff as RenderDiff[]) ?? [],
+    fetchError: r.fetchError,
+    evidence: {
+      robotsMeta: r.robotsMeta ?? "",
+      xRobots: r.xRobots,
+      headers: j(r.headers),
+      htmlSnippet: r.htmlSnippet ?? "",
+      responseHtml: r.responseHtml ?? "",
+      responseTruncated: r.responseTruncated,
+    },
+    parsedExtra: {
+      template: r.template ?? "other",
+      mainHash: r.mainHash,
+      simhash: r.simhash,
+      structured: { jsonld: [], microdata: [], rdfa: [], ...j(r.structured) },
+      images: Array.isArray(r.images) ? (r.images as any) : [],
+      commerce: j(r.commerce),
+      linkDetails: Array.isArray(r.linkDetails) ? (r.linkDetails as any) : [],
+      extracted: j(r.extracted),
+    },
+  };
+}
+
+/** Guarda lo leído y la cola pendiente; el crawl queda «paused» hasta que se reanude. */
+async function pauseCrawl(crawlId: string, pages: PageData[], frontier: { queue: string[]; next: string[]; seen: [string, number][]; depth: number }, jobRunId?: string) {
+  const depthOf = new Map(frontier.seen);
+  const rows = pages.map((p) =>
+    pageRow(crawlId, p, { inlinks: 0, depth: depthOf.get(p.url) ?? -1, inSitemap: false, lastmod: null, orphan: false, blocked: false, isInternal: () => true }),
+  );
+  await db.page.deleteMany({ where: { crawlId } });
+  for (let i = 0; i < rows.length; i += 200) await db.page.createMany({ data: rows.slice(i, i + 200), skipDuplicates: true });
+  await db.crawl.update({ where: { id: crawlId }, data: { status: "paused", frontier, reason: `En pausa: ${pages.length} URLs leídas, ${frontier.queue.length + frontier.next.length} en cola` } });
+  await jobProgress(jobRunId, 100, "en pausa");
+}
+
 /** Crawl BFS con concurrencia limitada. */
 export async function runCrawl(crawlId: string, jobRunId?: string) {
   const crawl = await db.crawl.findUniqueOrThrow({
@@ -797,6 +988,13 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   o.maxDepth = Math.max(0, Math.min(50, num(o.maxDepth, 20)));
   o.maxPages = await crawlLimit(crawl.projectId, o.maxPages ?? 500);
   const ua = o.userAgent || env.userAgent;
+  // credenciales de staging: solo en crawls privados, descifradas en memoria y nunca copiadas a config
+  let authHdrs: Record<string, string> = {};
+  if (crawl.private && o.auth) {
+    const { decryptToken } = await import("../gsc-oauth");
+    authHdrs = authHeaders(JSON.parse(decryptToken(o.auth).plain) as CrawlAuth);
+  }
+  const renderFor = (u: string) => Boolean(o.render) && (!o.renderPaths?.length || pathMatches(u, o.renderPaths));
   const patterns = new PatternLimiter(o.maxPerPattern ?? 0);
   const clean = (u: string) => normUrl(stripParams(u, o.ignoreParams ?? []))!;
   let wafStreak = 0;
@@ -809,7 +1007,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   const origin = new URL(start).origin;
   if (crawl.status === "cancelled") throw new NoRetryError("Crawl cancelado antes de empezar");
   await db.crawl.update({ where: { id: crawlId }, data: { status: "running", reason: null,
-      config: JSON.parse(JSON.stringify(o)),
+      config: JSON.parse(JSON.stringify({ ...o, auth: o.auth ? "(credenciales guardadas)" : undefined })),
       rulesVersion: RULES_VERSION,
     },
   });
@@ -821,7 +1019,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   let robotsFailure: string | null = null;
   try {
     const { res: r } = await safeFetch(`${origin}/robots.txt`, {
-      headers: { "User-Agent": ua },
+      headers: { "User-Agent": ua, ...authHdrs },
     });
     if (r.status === 429 || r.status >= 500)
       robotsFailure = `robots.txt respondió HTTP ${r.status}; se suspende el crawl para respetar el control de acceso`;
@@ -870,6 +1068,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   let startError: string | null = null;
   // cancelación: el usuario puede cancelar el trabajo; se revisa entre tandas
   let lastCheck = 0;
+  let pauseRequested = false;
   const cancelled = async () => {
     if (Date.now() - lastCheck < 3000) return false;
     lastCheck = Date.now();
@@ -877,8 +1076,10 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
       where: { id: crawlId },
       select: { status: true },
     });
+    if (c?.status === "pausing") pauseRequested = true;
     return c?.status === "cancelled";
   };
+  const fetchOpts: FetchOpts = { userAgent: ua, templates: o.templates, extract: o.extract, auth: { host: site, headers: authHdrs } };
   const seen = new Map<string, number>(); // url → depth
   const pages: PageData[] = [];
   const external = new Set<string>();
@@ -886,6 +1087,23 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   seen.set(start, 0);
   const limit = pLimit(o.concurrency!);
   let depth = 0;
+  // reanudación: las páginas ya leídas están guardadas; se retoma la cola donde quedó
+  const frontier = crawl.frontier as { queue: string[]; next?: string[]; seen: [string, number][]; depth: number } | null;
+  // links ya descubiertos del nivel siguiente cuando la pausa cayó a mitad de un nivel
+  let carry: string[] = [];
+  if (frontier) {
+    const done = await db.page.findMany({ where: { crawlId } });
+    pages.push(...done.map(pageFromRow));
+    seen.clear();
+    for (const [u, d] of frontier.seen) seen.set(u, d);
+    queue = frontier.queue;
+    carry = frontier.next ?? [];
+    depth = frontier.depth;
+    if (!queue.length) {
+      queue = carry;
+      carry = [];
+    }
+  }
   while (
     queue.length &&
     pages.length < o.maxPages! &&
@@ -893,25 +1111,28 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     !wafAbort
   ) {
     const batch = queue.slice(0, o.maxPages! - pages.length);
-    const next: string[] = [];
+    const next: string[] = carry;
+    carry = [];
+    const pending = new Set(batch);
     await Promise.all(
       batch.map((u) =>
         limit(async () => {
+          // pausa pedida: lo que falta de la tanda vuelve a la cola
+          if (pauseRequested) return;
+          pending.delete(u);
+          await cancelled();
           if (blocked(u)) {
             pages.push({ ...emptyPage(u), status: 0 } as PageData);
             return;
           }
           let pd: PageData;
           try {
-            pd = await fetchPage(u, o.render, {
-              userAgent: ua,
-              templates: o.templates,
-              extract: o.extract,
-            });
+            pd = await fetchPage(u, renderFor(u), fetchOpts);
           } catch (e) {
             pd = {
               ...emptyPage(u),
               error: e instanceof SsrfError ? "ssrf_blocked" : "fetch_failed",
+              fetchError: e instanceof RedirectLoopError ? e.message : describeFetchError(e),
             };
             if (u === start) startError = describeFetchError(e);
           }
@@ -947,6 +1168,10 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
         }),
       ),
     );
+    if (pauseRequested) {
+      await pauseCrawl(crawlId, pages, pending.size ? { queue: [...pending], next, seen: [...seen], depth } : { queue: next, next: [], seen: [...seen], depth: depth + 1 }, jobRunId);
+      return { status: "paused" as const, pages: pages.length };
+    }
     queue = next;
     depth++;
     if (await cancelled()) throw new NoRetryError("Crawl cancelado");
@@ -971,11 +1196,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
       .map((u) =>
         limit(async () => {
           try {
-            const pd = await fetchPage(u, false, {
-              userAgent: ua,
-              templates: o.templates,
-              extract: o.extract,
-            });
+            const pd = await fetchPage(u, false, fetchOpts);
             pages.push({ ...pd, blocks: [] });
             seen.set(u, -1);
           } catch {}
@@ -991,59 +1212,17 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   await jobProgress(jobRunId, 90, "guardando");
   await db.page.deleteMany({ where: { crawlId } });
   const orphanSet = new Set(linkLimitHit ? [] : orphans);
-  const rows = pages.map((p) => ({
-    crawlId,
-    url: p.url,
-    finalUrl: p.finalUrl,
-    status: p.status,
-    redirects: p.redirects,
-    contentType: p.contentType,
-    title: p.title,
-    titleLen: p.title?.length ?? 0,
-    metaDesc: p.metaDesc,
-    metaLen: p.metaDesc?.length ?? 0,
-    h1: p.h1,
-    canonical: p.canonical,
-    canonicalType: p.canonicalType,
-    noindex: p.noindex,
-    nofollow: p.nofollow ?? false,
-    hreflang: p.hreflang,
-    jsonldTypes: p.jsonldTypes,
-    jsonldErrors: p.jsonldErrors,
-    wordCount: p.wordCount,
-    imgNoAlt: p.imgNoAlt,
-    inlinks: inlinks.get(p.url) ?? 0,
-    outlinks: p.links.length,
-    links: p.links.filter(isInternal).slice(0, 500),
-    responseMs: p.responseMs,
-    depth: seen.get(p.url) ?? -1,
-    contentHash: p.contentHash,
-    inSitemap: sitemapUrls.has(p.url),
-    lastmod: sitemapLastmod.get(p.url)
-      ? new Date(sitemapLastmod.get(p.url)!)
-      : null,
-    orphan: orphanSet.has(p.url),
-    blocked: p.status === 0 && !p.error && blocked(p.url),
-    error: p.error ?? null,
-    jsLinks: p.jsLinks ?? 0,
-    rawWordCount: p.rawWordCount ?? null,
-    schemaIssues: p.schemaIssues ?? [],
-    robotsMeta: p.evidence?.robotsMeta ?? null,
-    xRobots: p.evidence?.xRobots ?? null,
-    headers: p.evidence?.headers ?? {},
-    htmlSnippet: p.evidence?.htmlSnippet ?? null,
-    responseHtml: p.evidence?.responseHtml ?? null,
-    responseTruncated: p.evidence?.responseTruncated ?? false,
-    template: p.parsedExtra?.template ?? null,
-    mainHash: p.parsedExtra?.mainHash ?? null,
-    simhash: p.parsedExtra?.simhash ?? null,
-    structured: JSON.parse(JSON.stringify(p.parsedExtra?.structured ?? {})),
-    images: p.parsedExtra?.images ?? [],
-    commerce: JSON.parse(JSON.stringify(p.parsedExtra?.commerce ?? {})),
-    // solo enlaces internos y con tope, como `links`: es lo que usan arquitectura y evidencia
-    linkDetails: (p.parsedExtra?.linkDetails ?? []).filter((l) => isInternal(l.to)).slice(0, 500),
-    extracted: p.parsedExtra?.extracted ?? {},
-  }));
+  const rows = pages.map((p) =>
+    pageRow(crawlId, p, {
+      inlinks: inlinks.get(p.url) ?? 0,
+      depth: seen.get(p.url) ?? -1,
+      inSitemap: sitemapUrls.has(p.url),
+      lastmod: sitemapLastmod.get(p.url) ?? null,
+      orphan: orphanSet.has(p.url),
+      blocked: p.status === 0 && !p.error && blocked(p.url),
+      isInternal,
+    }),
+  );
   for (let i = 0; i < rows.length; i += 200)
     await db.page.createMany({
       data: rows.slice(i, i + 200),
@@ -1137,6 +1316,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
       reason: outcome.reason,
       stats,
       finishedAt: new Date(),
+      frontier: Prisma.DbNull,
     },
   });
   if (!crawl.private) await syncCrawlTasks(crawlId);
