@@ -145,7 +145,7 @@ export const EASE: Record<string, number> = {
   title_missing: 1, title_long: 1, title_short: 1, title_dup: 0.9, meta_missing: 1, meta_long: 1, meta_short: 1, meta_dup: 0.9,
   h1_missing: 1, h1_multiple: 1, canonical_missing: 1, canonical_other: 0.9, canonical_bad_target: 0.9, jsonld_mismatch: 0.8, js_dependent: 0.5, jsonld_invalid: 0.9, img_no_alt: 0.9, hreflang_no_self: 0.9,
   robots_missing: 1, sitemap_missing: 1, noindex_in_sitemap: 1, blocked_robots: 0.9, noindex: 0.9, nofollow: 0.9, redirect: 0.9,
-  broken_link: 0.8, redirect_chain: 0.8, redirect_loop: 0.8, canonical_loop: 0.9, robots_conflict: 0.9, noindex_canonical: 0.9, not_in_sitemap: 1, render_mismatch: 0.5, http_4xx: 0.7, http_5xx: 0.6, fetch_failed: 0.6, blocked_by_waf: 0.7,
+  broken_link: 0.8, redirect_chain: 0.8, redirect_loop: 0.8, canonical_loop: 0.9, robots_conflict: 0.9, noindex_canonical: 0.9, not_in_sitemap: 1, faq_mismatch: 0.9, breadcrumb_mismatch: 0.9, render_mismatch: 0.5, http_4xx: 0.7, http_5xx: 0.6, fetch_failed: 0.6, blocked_by_waf: 0.7,
   orphan: 0.6, no_inlinks: 0.6, deep_page: 0.5, slow: 0.5, thin_content: 0.4, dup_content: 0.4,
 };
 export const EASE_LABEL = (e: number) => (e >= 0.9 ? "fácil" : e >= 0.6 ? "media" : "difícil");
@@ -205,7 +205,17 @@ export const ISSUE_RISK: Record<string, string> = {
  * Orden final: solo por impacto. Antes los on-page menores iban siempre al final, y un title de la home con mucho
  * tráfico quedaba detrás de tareas casi sin impacto; ahora pesan la mitad (ya incluido en score) y compiten por impacto.
  */
-export const byPriority = (a: Task, b: Task) => b.score - a.score || Number(Boolean(a.minor)) - Number(Boolean(b.minor));
+/**
+ * Nivel antes que puntaje: 0 = problema comprobado (confianza alta), 1 = hipótesis o mejora con datos, 2 = oportunidad
+ * (crear/optimizar contenido) o mejora menor. Así un volumen de búsqueda grande no pasa por delante de un error real,
+ * y el resumen y la lista técnica empiezan por lo mismo.
+ */
+export function priorityTier(t: Pick<Task, "sevLabel" | "confidence" | "minor" | "sev">): 0 | 1 | 2 {
+  if (t.minor || /oportunidad|mejora opcional/i.test(t.sevLabel)) return 2;
+  if (t.confidence === "alta" && t.sev >= 2 && !/hipótesis/i.test(t.sevLabel)) return 0;
+  return 1;
+}
+export const byPriority = (a: Task, b: Task) => priorityTier(a) - priorityTier(b) || b.score - a.score || Number(Boolean(a.minor)) - Number(Boolean(b.minor));
 
 /** Menos de esto en 28 días: las cifras de Search Console son orientativas. */
 export const LOW_GSC_IMPRESSIONS = 1000;

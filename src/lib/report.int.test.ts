@@ -173,7 +173,9 @@ test("informe: priorización por impacto, falsos positivos, tendencias, GSC agru
     return { score: Number(m[1].replace(/\./g, "")), minor: Boolean(m[2]) };
   });
   assert.ok(meta.some((m) => m.minor), "hay tareas on-page menores en el informe");
-  for (let i = 1; i < meta.length; i++) assert.ok(meta[i - 1].score >= meta[i].score, `orden: ${meta.map((x) => x.score).join(",")}`);
+  // primero problemas, al final oportunidades y mejoras menores; dentro de las oportunidades, por impacto
+  const opp = lines.map((l) => /oportunidad|on-page menor|mejora opcional/.test(tasks.slice(tasks.indexOf(l)).split(/\n\d+\. /)[0]));
+  for (let i = 1; i < opp.length; i++) assert.ok(!opp[i - 1] || opp[i], `una oportunidad quedó antes que un problema: ${lines[i]}`);
   // consultas de marca marcadas
   assert.match(sec("Search Console"), /\| mi sitio \| 90 \| 300 \| 1\.1 \| sí \|/);
   // un solo período, con fuente, en todas las secciones con cifras de Search Console

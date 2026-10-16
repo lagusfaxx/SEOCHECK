@@ -82,5 +82,10 @@ test("backlinks: foto con competidores, reuso semanal, informe con tareas de lin
   assert.equal(lab.intersections, false);
   const ov = await gapOverview(projectId);
   assert.deepEqual(ov.gap!.items[0].peaks, [1]);
-  assert.match(await buildReport(projectId), /Cubrir 1 keyword que traen tráfico a la competencia/);
+  // sin crawl ni Search Console no se sabe el rubro del sitio: la brecha se muestra, pero no se vuelve tarea
+  assert.doesNotMatch(await buildReport(projectId), /Cubrir 1 keyword/);
+  // con el catálogo rastreado («Trajes de competición») la keyword es del rubro y apunta a la página que ya existe
+  const crawl = await db.crawl.create({ data: { projectId, status: "completed" } });
+  await db.page.create({ data: { crawlId: crawl.id, url: "https://www.mi-tienda.cl/trajes", status: 200, contentType: "text/html", title: "Trajes de competición | Mi tienda", h1: ["Trajes de competición"] } });
+  assert.match(await buildReport(projectId), /Cubrir 1 keyword del rubro donde la competencia aparece y el sitio no[^\n]*«trajes de competicion» → optimizar https:\/\/www\.mi-tienda\.cl\/trajes/);
 });

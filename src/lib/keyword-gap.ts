@@ -13,6 +13,7 @@ import { dfsAuth, dfsBase, dfsAccountError } from "./volume/dataforseo";
 import { assertBudget } from "./budget";
 import { backlinksConfigured, bareDomain, pickCompetitors } from "./backlinks";
 import { competitorsOverview } from "./marketing";
+import { siteVocabulary, topicWords } from "./keyword-triage";
 
 const DAY = 864e5;
 export const GAP_REFRESH_DAYS = 30;
@@ -66,32 +67,16 @@ export function upcomingPeaks<T extends { monthly?: Monthly | null }>(items: T[]
 }
 
 /**
- * Palabras que no definen el tema (público, lugar, compra, colores, tallas): «zapatillas nike mujer» no es relevante
- * para una tienda de trajes de baño solo porque el sitio también dice «mujer».
- */
-const GENERIC = new Set(
-  "para con sin los las del una uno unos unas que como mas muy por sus este esta mujer mujeres hombre hombres nino nina ninos ninas infantil adulto unisex chile santiago online tienda comprar compra precio precios oferta ofertas barato barata baratos venta ventas mejor mejores nuevo nueva nuevos envio gratis original originales marca marcas talla tallas color colores negro negra blanco blanca azul rojo roja rosado verde gris morado purpura amarillo modelo modelos new"
-    .split(" "),
-);
-const fold = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-/** Raíz simple: plural en -es/-s fuera (trajes → traje, zapatillas → zapatilla). */
-const stem = (w: string) => (w.length > 5 && w.endsWith("es") ? w.slice(0, -2) : w.length > 4 && w.endsWith("s") ? w.slice(0, -1) : w);
-export const topicWords = (text: string) =>
-  fold(text)
-    .split(/[^a-z0-9ñ]+/)
-    .filter((w) => w.length >= 4 && !/^\d+$/.test(w) && !GENERIC.has(w))
-    .map(stem);
-
-/**
- * Solo keywords del tema del sitio: al menos una palabra que define el tema (no genérica) tiene que aparecer en el
- * vocabulario propio (titles y H1 del crawl, consultas de Search Console, keywords investigadas). Competidores
- * generalistas (multitiendas, marketplaces) rankean en miles de cosas que el negocio no vende.
+ * Solo keywords del tema del sitio (ver keyword-triage): todas sus palabras de tema aparecen en el vocabulario propio.
+ * Competidores generalistas (multitiendas, marketplaces) rankean en miles de cosas que el negocio no vende.
  */
 export function relevantGap<T extends { keyword: string }>(items: T[], vocab: Iterable<string>) {
-  const own = new Set<string>();
-  for (const t of vocab) for (const w of topicWords(t)) own.add(w);
+  const own = siteVocabulary(vocab);
   const relevant: T[] = [], discarded: T[] = [];
-  for (const i of items) (topicWords(i.keyword).some((w) => own.has(w)) ? relevant : discarded).push(i);
+  for (const i of items) {
+    const words = topicWords(i.keyword);
+    (words.length && words.every((w) => own.has(w)) ? relevant : discarded).push(i);
+  }
   return { relevant, discarded };
 }
 
@@ -146,7 +131,7 @@ export async function gapOverview(projectId: string) {
     crawl ? db.page.findMany({ where: { crawlId: crawl.id, status: 200 }, select: { title: true, h1: true }, take: 3000 }) : [],
     db.gscRow.groupBy({ by: ["query"], where: { projectId }, _sum: { impressions: true }, orderBy: { _sum: { impressions: "desc" } }, take: 500 }),
   ]);
-  const vocab = [...pages.map((p) => `${p.title ?? ""} ${p.h1.join(" ")}`), ...queries.map((q) => q.query), ...own.map((k) => k.term)];
+  const vocab = [...pages.map((p) => `${p.title ?? ""} ${p.h1.join(" ")}`), ...queries.map((q) => q.query)];
   const all = (g?.items as GapItem[] | undefined) ?? [];
   // sin vocabulario propio no se puede juzgar: se muestra todo con la advertencia de siempre
   const { relevant, discarded } = vocab.length ? relevantGap(all, vocab) : { relevant: all, discarded: [] as GapItem[] };

@@ -61,6 +61,11 @@ export async function auditComparison(projectId: string) {
   };
 }
 /** Dos acciones con el mismo título (mismo problema en secciones distintas) se distinguen por su sección. */
+/** Mismo orden que el informe técnico: errores comprobados, luego hipótesis, luego mejoras opcionales. */
+export function byKind<T extends { kind: string | null }>(actions: T[]): T[] {
+  const rank = (k: string | null) => (k === KIND_LABEL.confirmed ? 0 : k === KIND_LABEL.opportunity ? 2 : 1);
+  return actions.map((a, i) => ({ a, i })).sort((x, y) => rank(x.a.kind) - rank(y.a.kind) || x.i - y.i).map((x) => x.a);
+}
 export function withSection<T extends { title: string; pattern: string | null }>(actions: T[]): T[] {
   const n = new Map<string, number>();
   for (const a of actions) n.set(a.title, (n.get(a.title) ?? 0) + 1);
@@ -183,7 +188,7 @@ export async function executiveReport(projectId: string) {
     generatedAt: new Date().toISOString(),
     comparison,
     // acciones de la MISMA auditoría que las tablas: con su evidencia actual (URL + valor observado)
-    actions: withSection([...(indexAction ? [indexAction] : []), ...actions.actions.map((t) => ({
+    actions: withSection(byKind([...(indexAction ? [indexAction] : []), ...actions.actions.map((t) => ({
       kind: t.source === "crawl" && t.code ? KIND_LABEL[kindOf(t.code)] : null,
       evidence:
         t.source === "crawl"
@@ -204,7 +209,7 @@ export async function executiveReport(projectId: string) {
       fix: t.fix,
       url: t.url,
       status: t.status,
-    }))]),
+    }))])),
     guidance: { goal: advice.goalLabel, actions: advice.actions.slice(0, 3), checks: advice.checks.filter(c => c.status !== "available") },
     improved: actions.improved.length,
     traffic: {

@@ -31,7 +31,9 @@ export function KeywordInsights({ runId }: { runId?: string }) {
                   ? "Revisar y consolidar"
                   : c.recommendation === "optimize"
                     ? "Optimizar"
-                    : "Crear"}
+                    : c.recommendation === "review"
+                      ? "Revisar: fuera del catálogo"
+                      : "Evaluar página nueva"}
               </b>
             </p>
             <p className="text-xs text-ink-500">{c.note}</p>

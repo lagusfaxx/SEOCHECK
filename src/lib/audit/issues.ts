@@ -47,6 +47,8 @@ export const ISSUE_LABELS: Record<string, string> = {
   canonical_loop: "Canonicals en bucle",
   robots_conflict: "Directivas de robots contradictorias",
   noindex_canonical: "noindex y canonical a otra URL a la vez",
+  faq_mismatch: "FAQ del JSON-LD que no se ve en la página",
+  breadcrumb_mismatch: "Breadcrumb del JSON-LD que no se ve en la página",
   not_in_sitemap: "Página indexable que no está en el sitemap",
   render_mismatch: "El HTML y la página con JavaScript no coinciden",
   ...EXTRA_ISSUE_LABELS,
@@ -199,7 +201,13 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
       else add(p.url, "canonical_other", "info", p.canonical ?? "");
     }
     if (p.jsonldErrors) add(p.url, "jsonld_invalid", "warning", `${p.jsonldErrors} bloque${p.jsonldErrors === 1 ? "" : "s"} JSON-LD que no se pueden leer`);
-    if (p.schemaIssues?.length) add(p.url, "jsonld_mismatch", "warning", p.schemaIssues.join("; "));
+    // cada tipo de marcado tiene su diagnóstico y su solución: un FAQ no se arregla revisando precios
+    const faq = (p.schemaIssues ?? []).filter((s) => s.startsWith("FAQ"));
+    const crumbs = (p.schemaIssues ?? []).filter((s) => s.startsWith("Breadcrumb"));
+    const product = (p.schemaIssues ?? []).filter((s) => !s.startsWith("FAQ") && !s.startsWith("Breadcrumb"));
+    if (product.length) add(p.url, "jsonld_mismatch", "warning", product.join("; "));
+    if (faq.length) add(p.url, "faq_mismatch", "info", faq.join("; "));
+    if (crumbs.length) add(p.url, "breadcrumb_mismatch", "info", crumbs.join("; "));
     // solo se sabe con render JS: el HTML inicial no trae links o la mitad del texto
     const jsWords = p.rawWordCount != null && p.wordCount >= 100 && p.rawWordCount < p.wordCount * 0.5;
     if (p.jsLinks > 0 || jsWords) add(p.url, "js_dependent", "info", [p.jsLinks ? `${p.jsLinks} links solo aparecen al ejecutar JavaScript` : "", jsWords ? `${p.rawWordCount} de ${p.wordCount} palabras en el HTML inicial` : ""].filter(Boolean).join(" · "));
