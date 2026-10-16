@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { db } from "./db";
-import { projectRole, SESSION_COOKIE, userFromToken } from "./auth";
+import { requireProject, AuthError, SESSION_COOKIE, userFromToken } from "./auth";
 
 /** Para server components: usuario de la sesión o redirección al login. */
 export async function pageUser(next?: string) {
@@ -13,6 +13,6 @@ export async function pageUser(next?: string) {
 /** El proyecto tiene que ser de un workspace del usuario; si no, 404 (no se revela que existe). */
 export async function pageProject(projectId: string) {
   const u = await pageUser(`/p/${projectId}`);
-  if (!(await projectRole(u.id, projectId))) notFound();
+  try { await requireProject(u.id, projectId); } catch (e) { if (e instanceof AuthError) notFound(); throw e; }
   return u;
 }

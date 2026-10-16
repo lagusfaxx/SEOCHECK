@@ -8,7 +8,7 @@ import { api, cx, Icon, useApi, fmtDate, Spinner, Skeleton } from "@/components/
 type Step = { step: string; status: "ok" | "skipped" | "error"; detail?: string };
 type Job = { id: string; status: string; progress: number; message: string | null; createdAt: string; updatedAt: string; log: { msg: string; data?: unknown }[] };
 
-const STEP: Record<string, string> = { crawl: "Crawl", gsc: "Search Console", inspect: "Indexación", psi: "PageSpeed", keywords: "Keywords", rank: "Rankings", backlinks: "Backlinks", ga4: "Google Analytics", ai: "Visibilidad en IA", local: "SEO local", gap: "Keyword gap", alerts: "Alertas" };
+const STEP: Record<string, string> = { crawl: "Crawl", gsc: "Search Console", inspect: "Indexación", psi: "PageSpeed", keywords: "Keywords", rank: "Rankings", backlinks: "Backlinks", ga4: "Google Analytics", ai: "Visibilidad en IA", local: "SEO local", gap: "Keyword gap", advice: "Próximas acciones explicadas", alerts: "Alertas" };
 
 export default function ReportPage() {
   const { id, refreshJobs, project } = useProject();

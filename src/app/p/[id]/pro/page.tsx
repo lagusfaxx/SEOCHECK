@@ -11,6 +11,8 @@ import ContentPro from "@/components/pro/ContentPro";
 import Analytics from "@/components/pro/Analytics";
 import Advanced from "@/components/pro/Advanced";
 import Ops from "@/components/pro/Ops";
+import { useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { Tabs, useLocal } from "@/components/ui";
 
 const TABS = [
@@ -32,6 +34,8 @@ type TabId = (typeof TABS)[number]["id"];
 /** Herramientas expertas: cada pestaña muestra su fuente, fecha y qué no se pudo medir. */
 export default function ProPage() {
   const [tab, setTab] = useLocal<TabId>("pro-tab", "crawl");
+  const search=useSearchParams();
+  useEffect(()=>{const requested=search.get("tab");if(TABS.some(t=>t.id===requested))setTab(requested as TabId);},[search]);
   const Cur = (TABS.find((t) => t.id === tab) ?? TABS[0]).C;
   return (
     <div className="space-y-4">

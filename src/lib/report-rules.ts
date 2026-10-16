@@ -1,3 +1,4 @@
+import { fieldCls } from "./web-vitals";
 /** Reglas del informe: puntaje de impacto, falsos positivos, variantes ortográficas, PageSpeed lab vs campo. */
 import { strip } from "./text";
 
@@ -114,20 +115,24 @@ export function spellingVariants(rows: QueryRow[], minShare = 0.1, minImpr = 20)
 }
 
 type Metric = { p75: number; cat: string | null } | null;
-export type PsiField = { lcp?: Metric; inp?: Metric; cls?: Metric; source?: "url" | "origin" | null } | null;
+export type PsiField = { clsUnit?: "ratio" | "hundredths"; lcp?: Metric; inp?: Metric; cls?: Metric; source?: "url" | "origin" | null } | null;
 
 /** PageSpeed: prioriza datos de campo y marca cuando el laboratorio no se parece a lo que viven los usuarios. */
 export function psiVerdict(score: number | null, lab: { lcp?: number | null } | null, field: PsiField) {
   const fLcp = field?.lcp?.p75 ?? null;
-  const hasField = Boolean(field?.source && (field?.lcp || field?.inp || field?.cls));
-  const fieldBad = hasField && ((fLcp ?? 0) > 2500 || (field?.inp?.p75 ?? 0) > 200 || (field?.cls?.p75 ?? 0) > 0.1);
+  const metrics = [fLcp, field?.inp?.p75 ?? null, fieldCls(field)];
+  const valid = (n: number | null) => typeof n === "number" && Number.isFinite(n) && n >= 0;
+  const hasField = Boolean(field?.source && metrics.some(valid));
+  const fieldComplete = Boolean(field?.source && metrics.every(valid));
+  const fieldBad = hasField && ((fLcp ?? 0) > 2500 || (field?.inp?.p75 ?? 0) > 200 || (fieldCls(field) ?? 0) > 0.1);
   const discrepancy = Boolean(fLcp && lab?.lcp && lab.lcp > 3 * fLcp);
   return {
     hasField,
+    fieldComplete,
     fieldBad,
     discrepancy,
-    /** hay que actuar: campo malo, o sin campo y laboratorio < 50 */
-    actionable: fieldBad || (!hasField && score != null && score < 50),
+    /** Hay que revisar: campo fuera de rango, o campo incompleto y laboratorio < 50. */
+    actionable: fieldBad || (!fieldComplete && score != null && score < 50),
   };
 }
 

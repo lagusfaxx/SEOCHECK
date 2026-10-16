@@ -2,6 +2,7 @@
  * Módulos expertos. Cada uno registra sus rutas bajo /api/p/:id/pro/<prefix>/<ruta> y, opcionalmente, una tarea
  * diaria y un gancho al terminar el crawl.
  */
+import { module as advice } from "./advice";
 import type { ProHandler, ProModule } from "./types";
 import { module as crawlpro } from "./crawlpro";
 import { module as indexation } from "./indexation";
@@ -16,6 +17,7 @@ import { module as ops } from "./ops";
 import { module as structure, templatesModule } from "./structure";
 
 export const PRO_MODULES: ProModule[] = [
+  advice,
   crawlpro,
   structure,
   templatesModule,

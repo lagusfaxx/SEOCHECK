@@ -1,5 +1,5 @@
 "use client";
-import { NextActions } from "@/components/NextActions";
+import { GuidanceCard } from "@/components/GuidanceCard";
 import Link from "next/link";
 import { type ReactNode } from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
@@ -221,7 +221,7 @@ export default function Overview() {
 
   return (
     <div className="space-y-4 p-4 md:p-6">
-      <NextActions />
+      <GuidanceCard />
       <SetupBanner id={id} />
       <GscConnect compact returnTo={`/p/${id}`} hideWhenConnected />
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>

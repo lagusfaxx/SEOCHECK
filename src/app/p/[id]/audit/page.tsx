@@ -1,4 +1,5 @@
 "use client";
+import { fieldCls } from "@/lib/web-vitals";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useProject } from "@/components/Shell";
 import { api, cx, Metric, DataTable, Drawer, Empty, fmt, Hint, Icon, Score, SEV, Stat, Tabs, useApi, type Col, fmtDate, Spinner, IconBadge } from "@/components/ui";
@@ -266,7 +267,7 @@ function PsiTable({ rows }: { rows: any[] }) {
                 <>
                   <td className={cx("num", cwv("lcp", r.field.lcp?.p75))}>{r.field.lcp ? ms(r.field.lcp.p75) : "sin datos"}{r.field.source === "origin" && <span className="ml-1 text-[10px] text-ink-400" title="CrUX a nivel de origen: la URL no tiene datos propios">origen</span>}</td>
                   <td className={cx("num", cwv("inp", r.field.inp?.p75))}>{r.field.inp ? ms(r.field.inp.p75) : "sin datos"}</td>
-                  <td className={cx("num", cwv("cls", r.field.cls ? r.field.cls.p75 / 100 : null))}>{r.field.cls ? (r.field.cls.p75 / 100).toFixed(2) : "sin datos"}</td>
+                  <td className={cx("num", cwv("cls", fieldCls(r.field)))}>{fieldCls(r.field) != null ? fieldCls(r.field)!.toFixed(2) : "sin datos"}</td>
                 </>
               ) : (
                 <td colSpan={3} className="text-center text-xs text-ink-400" title="CrUX no tiene datos de campo para esta URL ni su origen">sin datos de campo</td>

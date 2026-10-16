@@ -55,12 +55,12 @@ export function inspectMessage(msg: any, requested: string): { events: LlmEvent[
 class AnthropicLLM implements LLMProvider {
   private client = new Anthropic({ apiKey: env.anthropicKey });
 
-  async json<T>(system: string, user: string, maxTokens = 16000, effort: "low" | "medium" | "high" = "low"): Promise<T> {
+  async json<T>(system: string, user: string, maxTokens = 16000, effort: "low" | "medium" | "high" = "low", schema?: { name: string; schema: Record<string, unknown> }): Promise<T> {
     const model = env.llmModel;
     const params = {
       model,
       max_tokens: maxTokens,
-      system: `${system}\nResponde solo con JSON válido, sin texto adicional.`,
+      system: `${system}\nResponde solo con JSON válido, sin texto adicional.${schema ? ` Esquema requerido: ${JSON.stringify(schema.schema)}` : ""}`,
       messages: [{ role: "user" as const, content: user }],
       output_config: { effort },
       ...fallbackParams(model),
@@ -82,7 +82,7 @@ class AnthropicLLM implements LLMProvider {
 class OpenAILLM implements LLMProvider {
   constructor(private base = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1") {}
 
-  async json<T>(system: string, user: string, maxTokens = 8000): Promise<T> {
+  async json<T>(system: string, user: string, maxTokens = 8000, _effort: "low" | "medium" | "high" = "low", schema?: { name: string; schema: Record<string, unknown> }): Promise<T> {
     const model = env.llmModel;
     const res = await fetchT(`${this.base}/chat/completions`, {
       method: "POST",
@@ -91,7 +91,7 @@ class OpenAILLM implements LLMProvider {
         model,
         // max_completion_tokens vale para gpt-4o-mini y para la familia gpt-5 (que no acepta max_tokens)
         max_completion_tokens: maxTokens,
-        response_format: { type: "json_object" },
+        response_format: schema ? { type: "json_schema", json_schema: { name: schema.name, strict: true, schema: schema.schema } } : { type: "json_object" },
         messages: [
           { role: "system", content: `${system}\nResponde solo con JSON válido.` },
           { role: "user", content: user },

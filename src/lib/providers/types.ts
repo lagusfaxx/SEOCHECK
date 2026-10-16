@@ -25,6 +25,6 @@ export interface EmbeddingProvider {
 }
 
 export interface LLMProvider {
-  json<T>(system: string, user: string, maxTokens?: number, effort?: "low" | "medium" | "high"): Promise<T>;
+  json<T>(system: string, user: string, maxTokens?: number, effort?: "low" | "medium" | "high", schema?: { name: string; schema: Record<string, unknown> }): Promise<T>;
 }
 export type { VolumeProvider, VolumeData, VolumeCtx, VolumeSource } from "../volume/types";

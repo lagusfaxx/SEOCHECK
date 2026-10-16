@@ -45,7 +45,7 @@ El informe (`GET /api/p/{id}/report`, `?download=1` para bajar el `.md`) se arma
 
 ## Resultados (marketing)
 
-`/p/{id}/results`: clics con y sin marca, objetivo del mes con proyección, efecto de cada cambio anotado y de las tareas resueltas, oportunidades 4–20 con clics extra estimados, contenido en caída, conversiones e ingresos orgánicos (GA4), backlinks, visibilidad en IA, SEO local, keyword gap con estacionalidad, competencia, avisos y exportación CSV. Mapa completo en `docs/funcionalidades-marketing.md`.
+`/p/{id}/results`: clics con y sin marca, objetivo del mes con proyección, efecto de cada cambio anotado y de las tareas resueltas, oportunidades 4–20 con clics extra estimados, contenido en caída, conversiones e ingresos orgánicos (GA4), backlinks, visibilidad en IA, SEO local, keyword gap con estacionalidad, competencia, avisos y exportación CSV. Mapa completo en `docs/funcionalidades-marketing.md`. Revisión de utilidad, vistas guiada/técnica e IA con fuentes: [docs/revision-producto-ia.md](docs/revision-producto-ia.md).
 
 - **GA4:** la conexión de Google pide Search Console y Analytics (`analytics.readonly`) en una sola autorización. Las conexiones anteriores deben reconectarse para habilitar Analytics. Se sincroniza con el cron de GSC.
 - **Avisos inmediatos:** después de cada crawl, sync de GSC y revisión de rankings; una vez por semana por clave, solo a miembros (por defecto dueños y admins). Requiere `RESEND_API_KEY` y `MAIL_FROM` para enviarse.

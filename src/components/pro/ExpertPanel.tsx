@@ -3,6 +3,8 @@ import { useSWRConfig } from "swr";
 import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 import { useProject } from "../Shell";
+import { useSeoView, type SeoView } from "../useSeoView";
+import { columnLabel, visibleColumns, displayValue, MODULE_HELP } from "@/lib/advice/presentation";
 import { api, useApi, fmtDate } from "../ui";
 import type { Analysis } from "@/lib/pro/analysis";
 export type Field = {
@@ -34,6 +36,8 @@ export default function ExpertPanel({
   forms?: Form[];
   links?: { title: string; path: string }[];
 }) {
+  const [view,setView]=useSeoView();
+  const help=MODULE_HELP[kind];
   const { mutate: globalMutate } = useSWRConfig();
   const { id, refreshJobs } = useProject(),
     base = `/api/p/${id}/pro/${kind}`;
@@ -54,9 +58,9 @@ export default function ExpertPanel({
       ),
     [data, query],
   );
-  const keys = [...new Set(rows.flatMap(Object.keys))].filter(
-    (k) => k !== "clusterId" && k !== "id",
-  );
+  const allKeys = [...new Set(rows.flatMap(Object.keys))].filter(k => k !== "clusterId" && k !== "id");
+  const keys = visibleColumns(kind,allKeys,view);
+  const lastPage=Math.max(0,Math.ceil(rows.length/50)-1),currentPage=Math.min(page,lastPage);
   async function call(path: string, body: object = {}, method = "POST") {
     setBusy(true);
     setMessage("");
@@ -121,6 +125,7 @@ export default function ExpertPanel({
         >
           Actualizar análisis
         </button>
+        <label className="ml-auto text-sm">Vista <select aria-label="Vista" className="input ml-2 w-auto" value={view} onChange={e=>setView(e.target.value as SeoView)}><option value="guided">Guiada</option><option value="technical">Técnica</option></select></label>
         {actions.map((a) => (
           <button
             key={a.path}
@@ -132,6 +137,7 @@ export default function ExpertPanel({
           </button>
         ))}
       </div>
+      {help && <p className="text-sm text-ink-500">{help.purpose}</p>}
       {links.length > 0 && (
         <nav className="flex flex-wrap gap-4">
           {links.map((l) => (
@@ -162,11 +168,7 @@ export default function ExpertPanel({
             {data.source}
             {data.at ? ` · Calculado: ${fmtDate(data.at, "datetime")}` : ""}
           </p>
-          {data.notes.map((n, i) => (
-            <p className="text-sm" key={i}>
-              {n}
-            </p>
-          ))}
+          <details className="text-sm"><summary className="cursor-pointer">Alcance y límites de este análisis</summary>{data.notes.map((n,i)=><p className="mt-2 text-ink-500" key={i}>{n}</p>)}</details>
           <label className="block">
             Filtrar resultados
             <input
@@ -180,9 +182,7 @@ export default function ExpertPanel({
             />
           </label>
           {!rows.length ? (
-            <p className="rounded border p-4">
-              No hay resultados para mostrar con los datos disponibles.
-            </p>
+            <div className="rounded border p-4 text-sm"><p>{query ? "Ningún resultado coincide con este filtro." : help?.empty ?? "No hay datos disponibles para este análisis."}</p>{query?<button className="btn mt-2" onClick={()=>{setQuery("");setPage(0);}}>Limpiar filtro</button>:help&&<Link className="btn mt-2" href={`/p/${id}/${help.href}`}>Obtener o revisar datos</Link>}</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -190,24 +190,25 @@ export default function ExpertPanel({
                   <tr>
                     {keys.map((k) => (
                       <th className="border-b px-3 py-2 text-left" key={k}>
-                        {k}
+                        {columnLabel(k)}
                       </th>
                     ))}
                     <th className="border-b px-3 py-2">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.slice(page * 50, page * 50 + 50).map((r, i) => (
+                  {rows.slice(currentPage * 50, currentPage * 50 + 50).map((r, i) => (
                     <tr key={i}>
                       {keys.map((k) => (
                         <td
                           className="max-w-sm break-words border-b px-3 py-2 align-top"
                           key={k}
                         >
-                          {cell(r[k])}
+                          {displayValue(k,r[k])}
                         </td>
                       ))}
                       <td className="border-b px-3 py-2">
+                        {view==="guided"&&allKeys.some(k=>!keys.includes(k)&&r[k]!=null)&&<details className="mb-2 text-xs"><summary className="cursor-pointer">Ver detalle</summary><dl className="mt-2 space-y-2">{allKeys.filter(k=>r[k]!=null).map(k=><div key={k}><dt className="font-medium">{columnLabel(k)}</dt><dd className="break-words">{displayValue(k,r[k])}</dd></div>)}</dl></details>}
                         {kind === "crawl" && r.url && (
                           <button
                             className="underline"
@@ -223,7 +224,7 @@ export default function ExpertPanel({
                               }
                             }}
                           >
-                            Ver respuesta
+                            Ver respuesta técnica
                           </button>
                         )}
                         {kind === "content" && r.clusterId && (
@@ -261,18 +262,18 @@ export default function ExpertPanel({
           {rows.length > 50 && (
             <div className="flex gap-4">
               <button
-                disabled={page === 0}
-                onClick={() => setPage((p) => p - 1)}
+                disabled={currentPage === 0}
+                onClick={() => setPage(currentPage - 1)}
               >
                 Anterior
               </button>
               <span>
-                {page + 1} / {Math.ceil(rows.length / 50)} ({rows.length}{" "}
+                {currentPage + 1} / {Math.ceil(rows.length / 50)} ({rows.length}{" "}
                 resultados)
               </span>
               <button
-                disabled={(page + 1) * 50 >= rows.length}
-                onClick={() => setPage((p) => p + 1)}
+                disabled={currentPage === lastPage}
+                onClick={() => setPage(currentPage + 1)}
               >
                 Siguiente
               </button>
@@ -280,7 +281,7 @@ export default function ExpertPanel({
           )}
         </>
       )}
-      {forms.map((f) => (
+      {forms.length>0&&<details><summary className="cursor-pointer text-sm font-medium">Opciones de configuración y herramientas avanzadas</summary><div className="mt-3 space-y-3">{forms.map((f) => (
         <details key={f.title} className="rounded border p-4">
           <summary className="cursor-pointer font-medium">{f.title}</summary>
           {f.hint && <p className="my-2 text-sm">{f.hint}</p>}
@@ -320,7 +321,7 @@ export default function ExpertPanel({
             </button>
           </form>
         </details>
-      ))}
+      ))}</div></details>}
       {details !== undefined && (
         <div className="rounded border p-4">
           <div className="flex justify-between">

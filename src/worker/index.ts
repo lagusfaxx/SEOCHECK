@@ -29,6 +29,7 @@ type Data = { projectId: string; jobRunId?: string; [k: string]: any };
 
 async function handle(boss: PgBoss, name: QueueName, d: Data) {
   switch (name) {
+    case QUEUES.advice: return (await import("../lib/advice/service")).generateAdvice(d.projectId);
     case QUEUES.keywords:
       return runKeywordPipeline(d.runId, d.jobRunId);
     case QUEUES.crawl:

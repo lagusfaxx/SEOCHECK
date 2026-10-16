@@ -1,3 +1,4 @@
+import { fieldCls, vitalStatus } from "../web-vitals";
 import { soft404 } from "../audit/soft404";
 import type {
   Page as PrismaPage,
@@ -398,6 +399,10 @@ export function perfAnalysis(pages: Page[], results: PsiResult[]): Analysis {
             : "Solo laboratorio",
       lcpCampo: field.lcp?.p75 ?? null,
       inpCampo: field.inp?.p75 ?? null,
+      clsCampo: fieldCls(field),
+      estadoLcp: vitalStatus("lcp", field.lcp?.p75 ?? null),
+      estadoInp: vitalStatus("inp", field.inp?.p75 ?? null),
+      estadoCls: vitalStatus("cls", fieldCls(field)),
       lcpLaboratorio: lab.lcp ?? null,
       tbtLaboratorio: lab.tbt ?? null,
       fecha: r.createdAt.toISOString(),

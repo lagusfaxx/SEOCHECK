@@ -6,11 +6,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
+import { PRO_GETS, PRO_POSTS, PRO_PATCHS, PRO_DELETES } from "./pro";
 
 const ROOT = path.join(__dirname, "..");
 const files = (dir: string): string[] => readdirSync(dir).flatMap((f) => { const p = path.join(dir, f); return statSync(p).isDirectory() ? files(p) : /\.tsx?$/.test(f) ? [p] : []; });
 
-/** Claves de cada tabla (GETS/POSTS/PATCHS/DELETES) leídas del código, sin importar módulos con base de datos. */
+/** Tablas centrales leídas del código y rutas de los módulos desde su registro, sin consultas a la BD. */
 function tables() {
   const out: Record<string, Set<string>> = { GET: new Set(), POST: new Set(), PATCH: new Set(), DELETE: new Set() };
   const scan = (src: string, startRe: RegExp, method: string) => {
@@ -25,6 +26,9 @@ function tables() {
   for (const [m, t] of [["GET", "GETS"], ["POST", "POSTS"], ["PATCH", "PATCHS"], ["DELETE", "DELETES"]]) {
     scan(api, new RegExp(`export const PRODUCT_${t}: Record<string, Handler> = \\{`), m);
     scan(route, new RegExp(`const ${t}: Record<string, H> = \\{`), m);
+  }
+  for (const [method, routes] of Object.entries({GET: PRO_GETS, POST: PRO_POSTS, PATCH: PRO_PATCHS, DELETE: PRO_DELETES})) {
+    for (const key of Object.keys(routes)) out[method].add(key);
   }
   return out;
 }
