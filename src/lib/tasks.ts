@@ -18,7 +18,7 @@ export async function syncCrawlTasks(crawlId: string) {
   const period = await gscPeriod(crawl.projectId);
   const [issues, pages, traffic] = await Promise.all([
     db.issue.findMany({ where: { crawlId } }),
-    db.page.findMany({ where: { crawlId } }),
+    db.page.findMany({ where: { crawlId }, omit: { responseHtml: true } }),
     period
       ? db.gscRow.groupBy({
           by: ["page"],

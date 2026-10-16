@@ -252,6 +252,9 @@ async function fetchFollow(url: string, o: FetchOpts = {}) {
   };
 }
 
+/** Máximo de HTML guardado como evidencia por URL. */
+const EVIDENCE_MAX = 256 * 1024;
+
 let browserP: Promise<any> | null = null;
 const SKIP_TYPES = new Set(["image", "media", "font"]);
 
@@ -725,8 +728,9 @@ export async function fetchPage(
       xRobots: r.xRobots,
       headers: r.headers,
       htmlSnippet: r.responseHtml.slice(0, 8000),
-      responseHtml: r.responseHtml,
-      responseTruncated: r.responseTruncated,
+      // evidencia: hasta 256 KB por URL (se parsea hasta 2 MB); el HTML completo de miles de páginas no cabe en memoria
+      responseHtml: r.responseHtml.slice(0, EVIDENCE_MAX),
+      responseTruncated: r.responseTruncated || r.responseHtml.length > EVIDENCE_MAX,
     },
     parsedExtra: parsed?.parsedExtra,
     finalUrl: r.finalUrl,
@@ -788,8 +792,10 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     ...projectCrawler,
     ...(crawl.options as CrawlOptions),
   };
-  o.concurrency = Math.max(1, Math.min(10, Number(o.concurrency) || 5));
-  o.maxDepth = Math.max(0, Math.min(50, Number(o.maxDepth) || 20));
+  const num = (v: unknown, d: number) => (v != null && v !== "" && Number.isFinite(Number(v)) ? Number(v) : d);
+  // 0 es un valor válido (maxDepth 0 = solo la URL de inicio): no usar «|| defecto»
+  o.concurrency = Math.max(1, Math.min(10, num(o.concurrency, 5)));
+  o.maxDepth = Math.max(0, Math.min(50, num(o.maxDepth, 20)));
   o.maxPages = await crawlLimit(crawl.projectId, o.maxPages ?? 500);
   const ua = o.userAgent || env.userAgent;
   const patterns = new PatternLimiter(o.maxPerPattern ?? 0);
@@ -822,7 +828,8 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
       robotsFailure = `robots.txt respondió HTTP ${r.status}; se suspende el crawl para respetar el control de acceso`;
     if (r.ok) {
       robotsTxt = await r.text();
-      robots = parseRobots(robotsTxt, ua);
+      // reglas de Googlebot: «bloqueada» en la auditoría significa bloqueada para Google
+      robots = parseRobots(robotsTxt);
     }
   } catch {}
   if (robotsFailure) {
@@ -1041,7 +1048,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     });
 
   await jobProgress(jobRunId, 95, "issues");
-  const saved = await db.page.findMany({ where: { crawlId } });
+  const saved = (await db.page.findMany({ where: { crawlId }, omit: { responseHtml: true } })) as import("@prisma/client").Page[];
   const issues = computeIssues(saved, {
     robotsTxt,
     sitemapCount: sitemapUrls.size,

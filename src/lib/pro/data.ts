@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { requireProject } from "../auth";
+import { requireProject, requireProjectWrite } from "../auth";
 import { gscPeriod } from "../gsc-period";
 import { ProError, type ProModule, type ProCtx } from "./types";
 import * as a from "./analysis";
@@ -246,7 +246,8 @@ export function standard(
       },
       POST: {
         refresh: async (c) => {
-          await admin(c);
+          // recalcular no cambia configuración: basta con poder editar (un viewer no puede)
+          await requireProjectWrite(c.user.id, c.id);
           return refresh(kind, c.id);
         },
         ...extra.POST,

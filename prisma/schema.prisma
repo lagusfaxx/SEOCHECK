@@ -1,6 +1,7 @@
 generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+  provider        = "prisma-client-js"
+  previewFeatures = ["omitApi"]
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -350,79 +351,79 @@ model Crawl {
 }
 
 model Page {
-  id            String    @id @default(cuid())
-  crawlId       String
-  crawl         Crawl     @relation(fields: [crawlId], references: [id], onDelete: Cascade)
-  url           String
-  finalUrl      String?
-  status        Int
-  redirects     Json      @default("[]")
-  contentType   String?
-  title         String?
-  titleLen      Int       @default(0)
-  metaDesc      String?
-  metaLen       Int       @default(0)
-  h1            String[]
-  canonical     String?
-  canonicalType String? // self | other | none
-  noindex       Boolean   @default(false)
+  id                String    @id @default(cuid())
+  crawlId           String
+  crawl             Crawl     @relation(fields: [crawlId], references: [id], onDelete: Cascade)
+  url               String
+  finalUrl          String?
+  status            Int
+  redirects         Json      @default("[]")
+  contentType       String?
+  title             String?
+  titleLen          Int       @default(0)
+  metaDesc          String?
+  metaLen           Int       @default(0)
+  h1                String[]
+  canonical         String?
+  canonicalType     String? // self | other | none
+  noindex           Boolean   @default(false)
   /// meta robots / X-Robots-Tag con nofollow: Google no sigue sus links
-  nofollow      Boolean   @default(false)
-  hreflang      Json      @default("[]")
-  jsonldTypes   String[]
-  jsonldErrors  Int       @default(0)
-  wordCount     Int       @default(0)
-  imgNoAlt      Int       @default(0)
-  inlinks       Int       @default(0)
-  outlinks      Int       @default(0)
-  links         String[]
-  responseMs    Int       @default(0)
-  depth         Int       @default(0)
-  contentHash   String?
-  inSitemap     Boolean   @default(false)
-  orphan        Boolean   @default(false)
-  blocked       Boolean   @default(false)
+  nofollow          Boolean   @default(false)
+  hreflang          Json      @default("[]")
+  jsonldTypes       String[]
+  jsonldErrors      Int       @default(0)
+  wordCount         Int       @default(0)
+  imgNoAlt          Int       @default(0)
+  inlinks           Int       @default(0)
+  outlinks          Int       @default(0)
+  links             String[]
+  responseMs        Int       @default(0)
+  depth             Int       @default(0)
+  contentHash       String?
+  inSitemap         Boolean   @default(false)
+  orphan            Boolean   @default(false)
+  blocked           Boolean   @default(false)
   /// blocked_by_waf | ssrf_blocked | fetch_failed (la página no es válida)
-  error         String?
+  error             String?
   /// solo con render JS: links que aparecen al ejecutar JavaScript y no están en el HTML inicial
-  jsLinks       Int       @default(0)
+  jsLinks           Int       @default(0)
   /// solo con render JS: palabras en el HTML inicial (antes de ejecutar JavaScript)
-  rawWordCount  Int?
+  rawWordCount      Int?
   /// diferencias entre los datos estructurados (Product/Offer/Rating) y lo visible en la página
-  schemaIssues  String[]
+  schemaIssues      String[]
   /// meta robots/googlebot tal como viene en el HTML
-  robotsMeta    String?
+  robotsMeta        String?
   /// cabecera X-Robots-Tag tal como la envía el servidor
-  xRobots       String?
+  xRobots           String?
   /// motivo de una falla de red: timeout | dns | refused | reset | tls | other
-  fetchError    String?
+  fetchError        String?
   /// cabeceras relevantes de la respuesta (evidencia)
-  headers       Json      @default("{}")
+  headers           Json      @default("{}")
   /// HTML recibido (hasta 2 MiB); responseTruncated indica si fue recortado.
   responseHtml      String?
-  responseTruncated Boolean @default(false)
+  responseTruncated Boolean   @default(false)
   /// primeros bytes de la respuesta (evidencia)
-  htmlSnippet   String?
-  fetchedAt     DateTime  @default(now())
+  htmlSnippet       String?
+  fetchedAt         DateTime  @default(now())
   /// con render JS: diferencias entre el HTML recibido y el DOM renderizado (title, robots, canonical, H1, links, texto)
-  renderDiff    Json      @default("[]")
+  renderDiff        Json      @default("[]")
   /// plantilla detectada o configurada: home | product | category | article | filter | pagination | legal | search | other
-  template      String?
+  template          String?
   /// hash del contenido principal (sin menú/footer) y simhash para duplicados aproximados
-  mainHash      String?
-  simhash       String?
+  mainHash          String?
+  simhash           String?
   /// extracción personalizada (CSS / XPath / regex): { nombre: valores }
-  extracted     Json      @default("{}")
+  extracted         Json      @default("{}")
   /// enlaces internos con contexto: [{ to, anchor, zone: nav|header|footer|breadcrumb|content|aside, nofollow }]
-  linkDetails   Json      @default("[]")
+  linkDetails       Json      @default("[]")
   /// datos estructurados por formato: { jsonld: [...], microdata: [...], rdfa: [...] } (entidades resumidas)
-  structured    Json      @default("{}")
+  structured        Json      @default("{}")
   /// imágenes de la página (muestra): [{ src, alt, width, height, loading, format }]
-  images        Json      @default("[]")
+  images            Json      @default("[]")
   /// lastmod del sitemap para esta URL
-  lastmod       DateTime?
+  lastmod           DateTime?
   /// señales de ecommerce: { price, currency, availability, sku, productLinks, pagination: { next, prev, infinite } }
-  commerce      Json      @default("{}")
+  commerce          Json      @default("{}")
 
   @@unique([crawlId, url])
 }
@@ -1101,22 +1102,22 @@ model ApiToken {
 /// Webhook saliente: se firma con HMAC-SHA256 (cabecera X-Seocheck-Signature).
 model Webhook {
   /// json | slack | whatsapp
-  format     String @default("json")
+  format     String            @default("json")
   recipient  String?
   template   String?
   deliveries WebhookDelivery[]
-  id         String    @id @default(cuid())
+  id         String            @id @default(cuid())
   projectId  String
-  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project    Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   url        String
   /// crawl.completed | alert.created | daily.digest | task.updated | report.ready | * (todos)
   events     String[]
   secret     String
-  active     Boolean   @default(true)
+  active     Boolean           @default(true)
   lastStatus Int?
   lastError  String?
   lastAt     DateTime?
-  createdAt  DateTime  @default(now())
+  createdAt  DateTime          @default(now())
 
   @@index([projectId])
 }

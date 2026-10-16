@@ -6,7 +6,11 @@ import { classifyTemplate } from "../audit/parse/template";
 import { load } from "cheerio";
 export const module = standard("crawl", {
   GET: {
-    settings: async ({ id }) => ({ crawler: (await project(id)).settings }),
+    // solo la configuración del crawler: el resto de settings (feed, GA4, avisos…) no es para cualquier miembro
+    settings: async ({ id }) => {
+      const { auth: _auth, ...crawler } = ((await project(id)).settings as any)?.crawler ?? {};
+      return { crawler };
+    },
     evidence: async ({ id, url }) => {
       const crawl = await lastCrawl(id);
       if (!crawl) throw new ProError("Sin crawl", 404);
@@ -50,7 +54,7 @@ export const module = standard("crawl", {
       ] as const)
         if (
           b[key] != null &&
-          (!Number.isInteger(b[key]) || b[key] < 0 || b[key] > max)
+          (!Number.isInteger(b[key]) || b[key] < (key === "maxPages" || key === "concurrency" ? 1 : 0) || b[key] > max)
         )
           throw new ProError(`${key} fuera de rango`);
       if (

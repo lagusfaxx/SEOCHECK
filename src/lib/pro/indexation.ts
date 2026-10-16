@@ -37,10 +37,7 @@ export const module = standard("index", {
         }),
         skip = new Set(recent.map((r) => r.url));
       const [crawl, p] = await Promise.all([lastCrawl(c.id), project(c.id)]),
-        robots = parseRobots(
-          crawl?.robots ?? "",
-          json(crawl?.config).userAgent ?? "SEOCheckBot",
-        );
+        robots = parseRobots(crawl?.robots ?? "");
       const candidates = [
         ...new Set([
           ...pages.filter((p) => !p.blocked && !p.error).map((p) => p.url),

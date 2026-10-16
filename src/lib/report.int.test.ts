@@ -164,7 +164,7 @@ test("informe: priorización por impacto, falsos positivos, tendencias, GSC agru
   // 4. PSI: discrepancia lab vs campo marcada y sin tarea alta para esa URL
   const psi = sec("Velocidad (PageSpeed)");
   assert.match(psi, /LCP laboratorio 9\.000 ms vs usuarios reales 1\.900 ms\..*interstitial o modal/);
-  assert.match(tasks, /Velocidad móvil de la plantilla `\/perfil\/\*` \(laboratorio 31\/100 pero los usuarios reales están bien\)[\s\S]*?× bajo ×/);
+  assert.match(tasks, /Velocidad móvil de la plantilla `\/perfil\/\*` \(laboratorio 31\/100 pero los usuarios reales están dentro de los umbrales\)[\s\S]*?× bajo ×/);
   // C7. contenido priorizado como cualquier tarea
   assert.match(tasks, /Contenido de https:\/\/mi-sitio\.cl\/perfil\/ana para «masajes providencia» \(score 45\/100\).*listado: intro corta/);
   // solo por impacto (los on-page menores ya vienen con su peso a la mitad en el impacto)
@@ -197,7 +197,7 @@ test("correr todo: sigue aunque un paso falle y salta lo que no tiene credencial
   const { runFull } = await import("./fullrun");
   const steps = await runFull(projectId, { maxPages: 5 });
   const by = Object.fromEntries(steps.map((s) => [s.step, s]));
-  assert.deepEqual(Object.keys(by), ["crawl", "gsc", "ga4", "inspect", "psi", "keywords", "rank", "backlinks", "ai", "local", "gap", "alerts"]);
+  assert.deepEqual(Object.keys(by), ["crawl", "gsc", "ga4", "inspect", "psi", "keywords", "rank", "backlinks", "ai", "local", "gap", "alerts", "advice"]);
   // localhost no es accesible: el crawl queda fallido con motivo, sin puntaje, y el resto sigue
   assert.equal(by.crawl.status, "error");
   assert.match(by.crawl.detail ?? "", /No se pudo acceder al sitio: bloqueado por seguridad: host bloqueado: localhost/);
@@ -210,5 +210,7 @@ test("correr todo: sigue aunque un paso falle y salta lo que no tiene credencial
   assert.equal(by.rank.detail, "sin keywords trackeadas");
   assert.equal(by.backlinks.status, "skipped");
   assert.equal(by.alerts.status, "ok");
+  // sin proveedor de IA configurado la orientación se salta con motivo, no falla
+  assert.equal(by.advice.status, "skipped");
   await db.project.update({ where: { id: projectId }, data: { domain: "mi-sitio.cl" } });
 });
