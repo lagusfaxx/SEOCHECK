@@ -66,6 +66,10 @@ const NAV: { group: string; items: NavItem[] }[] = [
         steps: ["Aprieta Analizar sitio con un máximo mayor que la cantidad de páginas del sitio (si no, aparecen huérfanas falsas).", "Corrige primero los errores, después las advertencias. Las observaciones son mejoras opcionales.", "Haz clic en un problema para ver qué significa, cómo se arregla y qué URLs lo tienen."],
       },
       {
+        href: "/pro", icon: "audit", label: "Experto", desc: "Rastreo, indexación, rendimiento y más",
+        intro: "Herramientas para el especialista: evidencia completa por URL, indexación real, arquitectura y enlazado, rendimiento de campo y laboratorio, ecommerce, datos estructurados, SERP, contenido, analítica, logs, migraciones, API y webhooks. Cada vista indica de qué ejecución y fuente salen sus cifras.",
+      },
+      {
         href: "/rank", icon: "rank", label: "Rankings", desc: "Posiciones en Google", jobs: ["rank.check"],
         intro: "Sigue la posición de tus keywords en Google (top 100) cada semana. Avisa cuando una keyword cae más de 3 posiciones, cuando dos páginas tuyas compiten por la misma keyword (canibalización) y cuando el CTR es bajo para la posición.",
         steps: ["Agrega las keywords que te importan (una por línea).", "Se revisan solas cada semana; Revisar las actualiza ahora (consume cuota de búsquedas).", "Haz clic en una keyword para ver su historial y el top 10 actual."],

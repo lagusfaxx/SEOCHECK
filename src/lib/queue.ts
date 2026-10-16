@@ -20,6 +20,7 @@ export const QUEUES = {
   socialDue: "social.due",
   socialInsights: "social.insights",
   billingSync: "billing.sync",
+  proDaily: "pro.daily",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 

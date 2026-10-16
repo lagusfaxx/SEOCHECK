@@ -122,6 +122,14 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
       for (const c of conns) await syncInsights(c.projectId).catch((e) => console.error("[social] stats", c.projectId, e));
       return { projects: conns.length };
     }
+    case QUEUES.proDaily: {
+      // módulos expertos: una vez al día por proyecto activo (snapshots, alertas, muestras de inspección…)
+      const { runProDaily } = await import("../lib/pro");
+      const projects = d.projectId ? [{ id: d.projectId }] : await db.project.findMany({ select: { id: true } });
+      const errors: string[] = [];
+      for (const p of projects) errors.push(...(await runProDaily(p.id)).errors);
+      return { projects: projects.length, errors: errors.slice(0, 20) };
+    }
     case QUEUES.billingSync: {
       const { syncAllSubscriptions } = await import("../lib/mercadopago");
       return syncAllSubscriptions();
@@ -193,6 +201,7 @@ async function main() {
   await boss.schedule(QUEUES.socialDue, "* * * * *", {}, { tz: env.tz });
   await boss.schedule(QUEUES.socialInsights, "40 7 * * *", {}, { tz: env.tz });
   await boss.schedule(QUEUES.billingSync, "20 6 * * *", {}, { tz: env.tz });
+  await boss.schedule(QUEUES.proDaily, process.env.PRO_CRON ?? "30 8 * * *", {}, { tz: env.tz });
   console.log("worker listo");
 }
 

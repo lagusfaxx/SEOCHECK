@@ -771,6 +771,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   await syncCrawlTasks(crawlId);
   // avisos inmediatos (home caída, noindex o errores nuevos en páginas con tráfico, cambios masivos): no deben tirar el crawl
   await import("../watch").then((w) => w.runWatch(crawl.projectId)).catch(() => {});
+  await import("../pro").then((m) => m.runAfterCrawl(crawlId, crawl.projectId)).catch(() => {});
   if (outcome.status === "failed") throw new NoRetryError(outcome.reason ?? "Crawl fallido");
   return { ...stats, status: outcome.status };
 }

@@ -44,6 +44,8 @@ import { aiLocalOverview, MAX_LOCAL_KEYWORDS } from "./ai-local";
 import { gapOverview } from "./keyword-gap";
 import { FEEDS, revokeFeedToken, rotateFeedToken } from "./feed";
 import { appBaseUrl } from "./util";
+import { PRO_DELETES, PRO_GETS, PRO_PATCHS, PRO_POSTS } from "./pro";
+import { ProError } from "./pro/types";
 
 /** Fecha YYYY-MM-DD (no futura) para anotaciones. */
 function dayParam(v: unknown) {
@@ -76,6 +78,17 @@ export class ProductError extends Error {
   }
 }
 const invalid = (message: string) => new ProductError(400, message);
+/** Rutas de los módulos expertos: un ProError llega al cliente con su mensaje y status. */
+function wrapPro(t: Record<string, Handler>): Record<string, Handler> {
+  return Object.fromEntries(Object.entries(t).map(([k, h]) => [k, async (c: Ctx) => {
+    try {
+      return await h(c);
+    } catch (e) {
+      if (e instanceof ProError) throw new ProductError(e.status, e.message);
+      throw e;
+    }
+  }]));
+}
 async function ownContent(id: string, cid: unknown) {
   if (typeof cid !== "string") throw invalid("Falta el análisis");
   return db.contentAnalysis.findFirstOrThrow({
@@ -97,6 +110,7 @@ function boundedText(v: unknown, max = 200) {
   return v.trim();
 }
 export const PRODUCT_GETS: Record<string, Handler> = {
+  ...wrapPro(PRO_GETS),
   "billing/config": async () => billingConfig(),
   onboarding: async ({ id }) => {
     const [p, mode, crawl, keywords, rankings, report] = await Promise.all([
@@ -307,6 +321,7 @@ export const PRODUCT_GETS: Record<string, Handler> = {
   },
 };
 export const PRODUCT_POSTS: Record<string, Handler> = {
+  ...wrapPro(PRO_POSTS),
   "marketing/annotations": async ({ id, body, user }) => {
     const scope = typeof body.scope === "string" && body.scope.trim() ? body.scope.trim().slice(0, 500) : null;
     if (scope && !/^(https?:\/\/|\/)/.test(scope)) throw invalid("Alcance: una URL completa, una ruta (/blog/*) o vacío para todo el sitio");
@@ -641,6 +656,7 @@ export const PRODUCT_POSTS: Record<string, Handler> = {
   },
 };
 export const PRODUCT_PATCHS: Record<string, Handler> = {
+  ...wrapPro(PRO_PATCHS),
   onboarding: async ({ id, body }) => {
     const p = await db.project.findUniqueOrThrow({ where: { id } }),
       s = p.settings as any;
@@ -748,6 +764,7 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
   },
 };
 export const PRODUCT_DELETES: Record<string, Handler> = {
+  ...wrapPro(PRO_DELETES),
   "marketing/annotations": async ({ id, body }) =>
     db.annotation.deleteMany({ where: { projectId: id, id: boundedText(body.annotationId) } }),
   explorations: async ({ id, body }) =>

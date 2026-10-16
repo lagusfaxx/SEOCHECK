@@ -1,4 +1,5 @@
 import type { Page } from "@prisma/client";
+import { computeExtraIssues, EXTRA_ISSUE_LABELS } from "./issues-extra";
 import { isParamCanonical, serpWidthPx, TITLE_MAX_PX, META_MAX_PX } from "../report-rules";
 
 export type IssueRow = { url: string; code: string; severity: "critical" | "warning" | "info"; detail?: string };
@@ -42,6 +43,7 @@ export const ISSUE_LABELS: Record<string, string> = {
   hreflang_no_self: "hreflang sin auto-referencia",
   noindex: "noindex",
   nofollow: "nofollow en la única vía a otras URLs",
+  ...EXTRA_ISSUE_LABELS,
 };
 
 /** Por debajo de esto la página casi no tiene texto propio; no es un objetivo de largo. */
@@ -162,6 +164,7 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
   for (const g of group((p) => p.title)) for (const p of g) add(p.url, "title_dup", "warning", `mismo title en ${g.length} páginas: «${(p.title ?? "").slice(0, 80)}»`);
   for (const g of group((p) => p.metaDesc)) for (const p of g) add(p.url, "meta_dup", "info", `misma descripción en ${g.length} páginas: «${(p.metaDesc ?? "").slice(0, 80)}…»`);
   for (const g of group((p) => (p.wordCount > 50 ? p.contentHash : null))) for (const p of g) add(p.url, "dup_content", "warning", g.filter((x) => x !== p).map((x) => x.url).slice(0, 3).join(" "));
+  out.push(...computeExtraIssues(pages, { site: ctx.site }));
   return out;
 }
 

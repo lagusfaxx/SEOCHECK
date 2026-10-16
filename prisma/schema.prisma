@@ -9,48 +9,48 @@ datasource db {
 }
 
 model Workspace {
-  id        String    @id @default(cuid())
-  name      String
+  id                   String         @id @default(cuid())
+  name                 String
   /// workspace del dueño de la instancia: puede usar la cuenta de servicio de GSC compartida
-  trusted   Boolean   @default(false)
-  createdAt DateTime  @default(now())
-  projects  Project[]
-  members   Membership[]
-  plan String @default("trial")
-  branding Json @default("{}")
-  billing BillingOrder[]
-  stripeCustomerId String? @unique
-  stripeSubscriptionId String? @unique
-  planValidUntil DateTime?
-  trialEndsAt DateTime @default(dbgenerated("(now() + '7 days'::interval)"))
-  reportCredits Int @default(0)
+  trusted              Boolean        @default(false)
+  createdAt            DateTime       @default(now())
+  projects             Project[]
+  members              Membership[]
+  plan                 String         @default("trial")
+  branding             Json           @default("{}")
+  billing              BillingOrder[]
+  stripeCustomerId     String?        @unique
+  stripeSubscriptionId String?        @unique
+  planValidUntil       DateTime?
+  trialEndsAt          DateTime       @default(dbgenerated("(now() + '7 days'::interval)"))
+  reportCredits        Int            @default(0)
   /// perfiles (proyectos) contratados en el plan pagado
-  seats Int @default(1)
+  seats                Int            @default(1)
   /// suscripción de Mercado Pago vigente (preapproval)
-  mpPreapprovalId String? @unique
+  mpPreapprovalId      String?        @unique
   /// estado de esa suscripción en Mercado Pago: pending | authorized | paused | cancelled
-  mpStatus String?
-  quotaUsage QuotaUsage[]
+  mpStatus             String?
+  quotaUsage           QuotaUsage[]
 }
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  name         String?
+  id              String              @id @default(cuid())
+  email           String              @unique
+  name            String?
   /// scrypt$N$r$p$salt$hash
-  passwordHash String
-  createdAt    DateTime  @default(now())
-  lastLoginAt  DateTime?
+  passwordHash    String
+  createdAt       DateTime            @default(now())
+  lastLoginAt     DateTime?
   emailVerifiedAt DateTime?
   termsAcceptedAt DateTime?
   /// "sub" de Google (inicio de sesión con Google)
-  googleSub    String?   @unique
+  googleSub       String?             @unique
   /// cuenta suspendida por el administrador: no puede entrar
-  disabledAt   DateTime?
-  memberships  Membership[]
-  sessions     Session[]
-  resets       PasswordReset[]
-  verifications EmailVerification[]
+  disabledAt      DateTime?
+  memberships     Membership[]
+  sessions        Session[]
+  resets          PasswordReset[]
+  verifications   EmailVerification[]
 }
 
 model EmailVerification {
@@ -112,48 +112,58 @@ model RateLimit {
 }
 
 model Project {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   workspaceId  String
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   name         String
   domain       String
-  country      String   @default("cl")
-  language     String   @default("es")
-  locationCode Int      @default(2152)
+  country      String    @default("cl")
+  language     String    @default("es")
+  locationCode Int       @default(2152)
   gscProperty  String?
-  settings     Json     @default("{}")
-  createdAt    DateTime @default(now())
+  settings     Json      @default("{}")
+  createdAt    DateTime  @default(now())
 
-  runs        KeywordRun[]
-  keywords    Keyword[]
-  clusters    Cluster[]
-  topics      Topic[]
-  serps       SerpSnapshot[]
-  crawls      Crawl[]
-  psi         PsiResult[]
-  inspections UrlInspection[]
-  tracked     TrackedKeyword[]
-  gscRows     GscRow[]
-  gscDays     GscDay[]
-  alerts      Alert[]
-  contents    ContentAnalysis[]
-  jobs        JobRun[]
-  gscConnection  GscConnection?
-  metaConnection MetaConnection?
-  socialPosts    SocialPost[]
-  socialImages   SocialImage[]
-  igMedia        IgMedia[]
+  runs             KeywordRun[]
+  keywords         Keyword[]
+  clusters         Cluster[]
+  topics           Topic[]
+  serps            SerpSnapshot[]
+  crawls           Crawl[]
+  psi              PsiResult[]
+  inspections      UrlInspection[]
+  tracked          TrackedKeyword[]
+  gscRows          GscRow[]
+  gscDays          GscDay[]
+  alerts           Alert[]
+  contents         ContentAnalysis[]
+  jobs             JobRun[]
+  gscConnection    GscConnection?
+  metaConnection   MetaConnection?
+  socialPosts      SocialPost[]
+  socialImages     SocialImage[]
+  igMedia          IgMedia[]
   igAccessRequests IgAccessRequest[]
-  tasks ProjectTask[]
-  explorations Exploration[]
-  reports ReportSnapshot[]
-  reportSchedule ReportSchedule?
-  annotations Annotation[]
-  backlinks   BacklinkSnapshot[]
-  ga4Rows     Ga4Row[]
-  aiChecks    AiCheck[]
-  localRanks  LocalRank[]
-  keywordGaps KeywordGap[]
+  tasks            ProjectTask[]
+  explorations     Exploration[]
+  reports          ReportSnapshot[]
+  reportSchedule   ReportSchedule?
+  annotations      Annotation[]
+  backlinks        BacklinkSnapshot[]
+  ga4Rows          Ga4Row[]
+  aiChecks         AiCheck[]
+  localRanks       LocalRank[]
+  keywordGaps      KeywordGap[]
+  snapshots        ProSnapshot[]
+  rum              RumMetric[]
+  logUploads       LogUpload[]
+  migrations       Migration[]
+  activity         ActivityLog[]
+  apiTokens        ApiToken[]
+  webhooks         Webhook[]
+  savedViews       SavedView[]
+  overrides        IssueOverride[]
+  access           ProjectAccess[]
 }
 
 /// Conexión OAuth de Google Search Console del proyecto (la cuenta de Google del cliente). Token cifrado.
@@ -221,162 +231,202 @@ model KeywordRun {
 }
 
 model Keyword {
-  id          String    @id @default(cuid())
-  projectId   String
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  runId       String?
-  run         KeywordRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
-  term        String
-  sources     String[]
-  relevance   Float?
-  volume      Int?
+  id           String      @id @default(cuid())
+  projectId    String
+  project      Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runId        String?
+  run          KeywordRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+  term         String
+  sources      String[]
+  relevance    Float?
+  volume       Int?
   /// Rangos de Keyword Planner (CSV): "100 – 1K" → 100 / 1000
-  volumeMin   Int?
-  volumeMax   Int?
+  volumeMin    Int?
+  volumeMax    Int?
   /// gsc | dataforseo | apify | csv
   volumeSource String?
-  volumeAt    DateTime?
-  cpc         Float?
-  competition Float?
-  intent      String?
+  volumeAt     DateTime?
+  cpc          Float?
+  competition  Float?
+  intent       String?
   /// búsquedas por mes de los últimos 12 meses: [{ year, month, volume }] (estacionalidad)
-  monthly     Json?
-  difficulty  Float?
-  score       Float?
-  excluded    Boolean   @default(false)
+  monthly      Json?
+  difficulty   Float?
+  score        Float?
+  excluded     Boolean     @default(false)
   /// Asignación keyword→cluster hecha a mano: el re-run no la cambia
-  locked      Boolean   @default(false)
-  clusterId   String?
-  cluster     Cluster?  @relation(fields: [clusterId], references: [id], onDelete: SetNull)
-  embedding   Float[]
-  createdAt   DateTime  @default(now())
+  locked       Boolean     @default(false)
+  clusterId    String?
+  cluster      Cluster?    @relation(fields: [clusterId], references: [id], onDelete: SetNull)
+  embedding    Float[]
+  createdAt    DateTime    @default(now())
 
   @@unique([projectId, term])
   @@index([runId])
 }
 
 model Cluster {
-  id        String    @id @default(cuid())
-  projectId String
-  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  runId     String?
-  run       KeywordRun? @relation(fields: [runId], references: [id], onDelete: Cascade)
-  name      String
-  primary   String
-  intent    String?
-  volume    Int       @default(0)
-  score     Float     @default(0)
-  urls      String[]
-  targetUrl String?
-  topicId   String?
-  topic     Topic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
-  isPillar  Boolean   @default(false)
+  id           String      @id @default(cuid())
+  projectId    String
+  project      Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runId        String?
+  run          KeywordRun? @relation(fields: [runId], references: [id], onDelete: Cascade)
+  name         String
+  primary      String
+  intent       String?
+  volume       Int         @default(0)
+  score        Float       @default(0)
+  urls         String[]
+  targetUrl    String?
+  topicId      String?
+  topic        Topic?      @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  isPillar     Boolean     @default(false)
   /// Ediciones manuales que el re-run respeta
-  topicLocked  Boolean @default(false)
-  nameLocked   Boolean @default(false)
-  pillarLocked Boolean @default(false)
-  pos       Json?
-  keywords  Keyword[]
+  topicLocked  Boolean     @default(false)
+  nameLocked   Boolean     @default(false)
+  pillarLocked Boolean     @default(false)
+  pos          Json?
+  keywords     Keyword[]
 }
 
 model Topic {
-  id        String    @id @default(cuid())
-  projectId String
-  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  runId     String?
-  run       KeywordRun? @relation(fields: [runId], references: [id], onDelete: Cascade)
-  name      String
-  pos       Json?
+  id          String      @id @default(cuid())
+  projectId   String
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runId       String?
+  run         KeywordRun? @relation(fields: [runId], references: [id], onDelete: Cascade)
+  name        String
+  pos         Json?
   /// Creado por el fallback average-linkage (HDBSCAN no separó nada)
-  forcedSplit Boolean @default(false)
-  nameLocked  Boolean @default(false)
-  clusters  Cluster[]
+  forcedSplit Boolean     @default(false)
+  nameLocked  Boolean     @default(false)
+  clusters    Cluster[]
 }
 
 model SerpSnapshot {
-  id        String   @id @default(cuid())
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  keyword   String
-  depth     Int      @default(10)
-  source    String   @default("deep") // deep | quick
-  organic   Json
-  paa       String[]
-  related   String[]
-  features  String[]
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  keyword    String
+  depth      Int      @default(10)
+  source     String   @default("deep") // deep | quick
+  organic    Json
+  paa        String[]
+  related    String[]
+  features   String[]
   aiOverview Json?
-  fetchedAt DateTime @default(now())
+  fetchedAt  DateTime @default(now())
 
   @@index([projectId, keyword, fetchedAt])
 }
 
 model Crawl {
-  id         String   @id @default(cuid())
-  projectId  String
-  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id           String    @id @default(cuid())
+  projectId    String
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   /// queued | running | completed | partial | failed | cancelled
-  status     String   @default("queued")
+  status       String    @default("queued")
   /// por qué quedó parcial, fallido o cancelado (texto para el usuario)
-  reason     String?
-  options    Json     @default("{}")
-  stats      Json     @default("{}")
-  robots     String?
-  sitemapUrls Int     @default(0)
-  startedAt  DateTime @default(now())
-  finishedAt DateTime?
-  pages      Page[]
-  issues     Issue[]
+  reason       String?
+  options      Json      @default("{}")
+  stats        Json      @default("{}")
+  robots       String?
+  sitemapUrls  Int       @default(0)
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+  /// auditoría autenticada (staging): no entra en informes públicos ni en tareas
+  private      Boolean   @default(false)
+  /// versión de las reglas con que se calcularon los issues
+  rulesVersion String?
+  /// configuración efectiva del crawl (copiada al empezar, para reproducirlo)
+  config       Json      @default("{}")
+  /// estado para reanudar un crawl en pausa: { queue, seen, depth }
+  frontier     Json?
+  /// auditoría de sitemaps: índices, URLs inválidas, no indexables, redirigidas, fechas sospechosas
+  sitemapAudit Json      @default("{}")
+  pages        Page[]
+  issues       Issue[]
 }
 
 model Page {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   crawlId       String
-  crawl         Crawl    @relation(fields: [crawlId], references: [id], onDelete: Cascade)
+  crawl         Crawl     @relation(fields: [crawlId], references: [id], onDelete: Cascade)
   url           String
   finalUrl      String?
   status        Int
-  redirects     Json     @default("[]")
+  redirects     Json      @default("[]")
   contentType   String?
   title         String?
-  titleLen      Int      @default(0)
+  titleLen      Int       @default(0)
   metaDesc      String?
-  metaLen       Int      @default(0)
+  metaLen       Int       @default(0)
   h1            String[]
   canonical     String?
-  canonicalType String?  // self | other | none
-  noindex       Boolean  @default(false)
+  canonicalType String? // self | other | none
+  noindex       Boolean   @default(false)
   /// meta robots / X-Robots-Tag con nofollow: Google no sigue sus links
-  nofollow      Boolean  @default(false)
-  hreflang      Json     @default("[]")
+  nofollow      Boolean   @default(false)
+  hreflang      Json      @default("[]")
   jsonldTypes   String[]
-  jsonldErrors  Int      @default(0)
-  wordCount     Int      @default(0)
-  imgNoAlt      Int      @default(0)
-  inlinks       Int      @default(0)
-  outlinks      Int      @default(0)
+  jsonldErrors  Int       @default(0)
+  wordCount     Int       @default(0)
+  imgNoAlt      Int       @default(0)
+  inlinks       Int       @default(0)
+  outlinks      Int       @default(0)
   links         String[]
-  responseMs    Int      @default(0)
-  depth         Int      @default(0)
+  responseMs    Int       @default(0)
+  depth         Int       @default(0)
   contentHash   String?
-  inSitemap     Boolean  @default(false)
-  orphan        Boolean  @default(false)
-  blocked       Boolean  @default(false)
+  inSitemap     Boolean   @default(false)
+  orphan        Boolean   @default(false)
+  blocked       Boolean   @default(false)
   /// blocked_by_waf | ssrf_blocked | fetch_failed (la página no es válida)
   error         String?
   /// solo con render JS: links que aparecen al ejecutar JavaScript y no están en el HTML inicial
-  jsLinks       Int      @default(0)
+  jsLinks       Int       @default(0)
   /// solo con render JS: palabras en el HTML inicial (antes de ejecutar JavaScript)
   rawWordCount  Int?
   /// diferencias entre los datos estructurados (Product/Offer/Rating) y lo visible en la página
   schemaIssues  String[]
+  /// meta robots/googlebot tal como viene en el HTML
+  robotsMeta    String?
+  /// cabecera X-Robots-Tag tal como la envía el servidor
+  xRobots       String?
+  /// motivo de una falla de red: timeout | dns | refused | reset | tls | other
+  fetchError    String?
+  /// cabeceras relevantes de la respuesta (evidencia)
+  headers       Json      @default("{}")
+  /// primeros bytes del <head> (evidencia)
+  htmlSnippet   String?
+  fetchedAt     DateTime  @default(now())
+  /// con render JS: diferencias entre el HTML recibido y el DOM renderizado (title, robots, canonical, H1, links, texto)
+  renderDiff    Json      @default("[]")
+  /// plantilla detectada o configurada: home | product | category | article | filter | pagination | legal | search | other
+  template      String?
+  /// hash del contenido principal (sin menú/footer) y simhash para duplicados aproximados
+  mainHash      String?
+  simhash       String?
+  /// extracción personalizada (CSS / XPath / regex): { nombre: valores }
+  extracted     Json      @default("{}")
+  /// enlaces internos con contexto: [{ to, anchor, zone: nav|header|footer|breadcrumb|content|aside, nofollow }]
+  linkDetails   Json      @default("[]")
+  /// datos estructurados por formato: { jsonld: [...], microdata: [...], rdfa: [...] } (entidades resumidas)
+  structured    Json      @default("{}")
+  /// imágenes de la página (muestra): [{ src, alt, width, height, loading, format }]
+  images        Json      @default("[]")
+  /// lastmod del sitemap para esta URL
+  lastmod       DateTime?
+  /// señales de ecommerce: { price, currency, availability, sku, productLinks, pagination: { next, prev, infinite } }
+  commerce      Json      @default("{}")
 
   @@unique([crawlId, url])
 }
 
 model Issue {
-  id       String @id @default(cuid())
+  id       String  @id @default(cuid())
   crawlId  String
-  crawl    Crawl  @relation(fields: [crawlId], references: [id], onDelete: Cascade)
+  crawl    Crawl   @relation(fields: [crawlId], references: [id], onDelete: Cascade)
   url      String
   code     String
   severity String // critical | warning | info
@@ -398,9 +448,9 @@ model PsiResult {
 }
 
 model UrlInspection {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   projectId       String
-  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   url             String
   verdict         String?
   coverageState   String?
@@ -408,7 +458,7 @@ model UrlInspection {
   userCanonical   String?
   lastCrawl       DateTime?
   raw             Json
-  createdAt       DateTime @default(now())
+  createdAt       DateTime  @default(now())
 }
 
 model TrackedKeyword {
@@ -470,7 +520,7 @@ model Alert {
   id        String   @id @default(cuid())
   projectId String
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  type      String   // drop | cannibal | lowctr
+  type      String // drop | cannibal | lowctr
   key       String
   data      Json
   seen      Boolean  @default(false)
@@ -480,20 +530,20 @@ model Alert {
 }
 
 model ContentAnalysis {
-  id        String   @id @default(cuid())
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  url       String
-  keyword   String
-  status    String   @default("queued")
-  score     Int?
-  result    Json     @default("{}")
-  brief     Json     @default("{}")
-  createdAt DateTime @default(now())
-  versions BriefVersion[]
-  pageKind String?
+  id            String         @id @default(cuid())
+  projectId     String
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  url           String
+  keyword       String
+  status        String         @default("queued")
+  score         Int?
+  result        Json           @default("{}")
+  brief         Json           @default("{}")
+  createdAt     DateTime       @default(now())
+  versions      BriefVersion[]
+  pageKind      String?
   /// el cupo de brief que consumió ya se devolvió (el análisis falló)
-  quotaRefunded Boolean @default(false)
+  quotaRefunded Boolean        @default(false)
 }
 
 model CorpusTerm {
@@ -536,7 +586,7 @@ model VolumeCache {
   country     String
   language    String
   keyword     String
-  source      String   // dataforseo | apify | csv
+  source      String // dataforseo | apify | csv
   volume      Int?
   volumeMin   Int?
   volumeMax   Int?
@@ -570,13 +620,13 @@ model VolumeRequest {
 
 /// Estado de proveedores externos (sin saldo, credenciales inválidas) para fallback automático y aviso en la UI.
 model ProviderState {
-  provider  String   @id
-  status    String   // ok | no_balance | auth_error
+  provider  String    @id
+  status    String // ok | no_balance | auth_error
   message   String?
-  since     DateTime @default(now())
+  since     DateTime  @default(now())
   /// Hasta cuándo se salta este proveedor antes de reintentar
   until     DateTime?
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime  @updatedAt
 }
 
 /// Pulso de procesos de fondo (worker): si deja de latir, la UI avisa y los trabajos colgados se marcan.
@@ -618,6 +668,10 @@ model ProjectTask {
   resolvedAt  DateTime?
   /// email del miembro responsable
   assignee    String?
+  /// notas del equipo (texto libre)
+  notes       String?
+  /// motivo cuando se marca falso positivo o intencional
+  resolution  String?
   /// fecha límite
   dueAt       DateTime?
   updatedAt   DateTime    @updatedAt
@@ -641,13 +695,19 @@ model TaskEvent {
 }
 
 model BriefVersion {
-  id        String          @id @default(cuid())
-  contentId String
-  content   ContentAnalysis @relation(fields: [contentId], references: [id], onDelete: Cascade)
-  brief     Json
-  source    String
-  actor     String?
-  createdAt DateTime        @default(now())
+  id           String          @id @default(cuid())
+  contentId    String
+  content      ContentAnalysis @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  brief        Json
+  source       String
+  actor        String?
+  /// draft | in_review | approved | rejected | published | verified
+  status       String          @default("draft")
+  reviewer     String?
+  reviewNote   String?
+  /// resultado de la verificación tras publicar: { at, checks: [{ what, ok, found }] }
+  verification Json?
+  createdAt    DateTime        @default(now())
 
   @@index([contentId, createdAt])
 }
@@ -676,11 +736,11 @@ model ReportSnapshot {
 }
 
 model ReportSchedule {
-  projectId String   @id
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  frequency String
-  nextAt    DateTime
-  enabled   Boolean  @default(true)
+  projectId  String   @id
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  frequency  String
+  nextAt     DateTime
+  enabled    Boolean  @default(true)
   /// correos que reciben el resumen de resultados al guardarse cada versión
   recipients String[] @default([])
 
@@ -852,25 +912,25 @@ model Annotation {
 
 /// Backlinks del sitio y sus competidores (DataForSEO, con la cuenta del servidor).
 model BacklinkSnapshot {
-  id          String   @id @default(cuid())
-  projectId   String
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  target      String
-  competitors String[]
-  summary     Json
+  id                  String   @id @default(cuid())
+  projectId           String
+  project             Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  target              String
+  competitors         String[]
+  summary             Json
   /// resumen de cada competidor: [{ target, backlinks, referringDomains, rank }]
-  competitorSummaries Json @default("[]")
+  competitorSummaries Json     @default("[]")
   /// dominios de referencia del sitio (los de mayor rank)
-  referring   Json     @default("[]")
+  referring           Json     @default("[]")
   /// dominios perdidos recientemente
-  lost        Json     @default("[]")
+  lost                Json     @default("[]")
   /// backlinks que apuntan a páginas con error
-  broken      Json     @default("[]")
+  broken              Json     @default("[]")
   /// dominios que enlazan a los competidores y no al sitio
-  gap         Json     @default("[]")
-  errors      String[]
-  costUsd     Float?
-  createdAt   DateTime @default(now())
+  gap                 Json     @default("[]")
+  errors              String[]
+  costUsd             Float?
+  createdAt           DateTime @default(now())
 
   @@index([projectId, createdAt])
 }
@@ -907,17 +967,17 @@ model AiCheck {
 
 /// Posición en Google Maps para una keyword local (Serpent Maps)
 model LocalRank {
-  id          String   @id @default(cuid())
-  projectId   String
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  keyword     String
-  location    String
-  position    Int?
-  rating      Float?
-  name        String?
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  keyword   String
+  location  String
+  position  Int?
+  rating    Float?
+  name      String?
   /// los 3 primeros: [{ name, rating, website }]
-  top         Json     @default("[]")
-  checkedAt   DateTime @default(now())
+  top       Json     @default("[]")
+  checkedAt DateTime @default(now())
 
   @@index([projectId, checkedAt])
 }
@@ -934,4 +994,169 @@ model KeywordGap {
   createdAt   DateTime @default(now())
 
   @@index([projectId, createdAt])
+}
+
+/// Resultado guardado de un análisis experto (matriz de indexación, CrUX, embudo GA4, grafo, sitemap, feed…).
+/// Una fila por ejecución: se conserva el histórico y se puede exportar.
+model ProSnapshot {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind      String
+  /// crawl, período, propiedad y filtros con que se calculó
+  source    Json     @default("{}")
+  data      Json
+  createdAt DateTime @default(now())
+
+  @@index([projectId, kind, createdAt])
+}
+
+/// Core Web Vitals medidos en el sitio con web-vitals (RUM). Se reciben con un token público del proyecto.
+model RumMetric {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// ruta sin query
+  path      String
+  template  String?
+  /// LCP | INP | CLS | FCP | TTFB
+  metric    String
+  value     Float
+  /// good | needs-improvement | poor
+  rating    String?
+  device    String   @default("mobile")
+  /// selector del elemento (LCP/CLS) o del objetivo de la interacción (INP), si web-vitals/attribution lo envía
+  target    String?
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([projectId, metric, path])
+}
+
+/// Logs del servidor subidos por el usuario (resumen; las líneas no se guardan).
+model LogUpload {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fileName  String
+  lines     Int
+  /// { bots, verified, statuses, topUrls, wasted, errors, firstAt, lastAt, … }
+  stats     Json
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+/// Migración: mapeo de URLs antiguas → nuevas y su verificación.
+model Migration {
+  id              String    @id @default(cuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name            String
+  /// [{ from, to }]
+  mapping         Json
+  /// [{ from, to, status, finalUrl, hops, ok, problem }]
+  results         Json?
+  baselineCrawlId String?
+  checkedAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([projectId])
+}
+
+/// Registro de modificaciones (quién cambió qué y cuándo).
+model ActivityLog {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actor     String?
+  action    String
+  target    String?
+  detail    Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+/// Token de API por proyecto (se guarda el hash).
+model ApiToken {
+  id         String    @id @default(cuid())
+  projectId  String
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name       String
+  tokenHash  String    @unique
+  /// read | write
+  scope      String    @default("read")
+  createdBy  String?
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+/// Webhook saliente: se firma con HMAC-SHA256 (cabecera X-Seocheck-Signature).
+model Webhook {
+  id         String    @id @default(cuid())
+  projectId  String
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  url        String
+  /// crawl.completed | alert.created | task.created | task.updated | report.ready | * (todos)
+  events     String[]
+  secret     String
+  active     Boolean   @default(true)
+  lastStatus Int?
+  lastError  String?
+  lastAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([projectId])
+}
+
+/// Vista guardada: filtros, columnas y segmento reutilizables por pantalla.
+model SavedView {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// pantalla: audit | pages | gsc | tasks | keywords
+  scope     String
+  name      String
+  filters   Json     @default("{}")
+  columns   String[]
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  @@index([projectId, scope])
+}
+
+/// Excepción de una regla: falso positivo, comportamiento intencional o regla desactivada para una plantilla,
+/// directorio o URL. No borra el hallazgo del histórico: lo marca y lo saca de la prioridad.
+model IssueOverride {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// código del issue o * (todos)
+  code       String
+  /// url | prefix | template | domain
+  scopeType  String
+  scopeValue String
+  /// false_positive | intentional | exception
+  kind       String
+  reason     String
+  createdBy  String?
+  createdAt  DateTime @default(now())
+
+  @@index([projectId, code])
+}
+
+/// Acceso restringido a un proyecto: si un proyecto tiene filas aquí, los miembros del workspace sin rol de
+/// admin solo lo ven si están en la lista (clientes y agencias).
+model ProjectAccess {
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  /// viewer | editor
+  role      String   @default("editor")
+  createdAt DateTime @default(now())
+
+  @@id([projectId, userId])
 }

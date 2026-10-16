@@ -1,3 +1,4 @@
+import { EXTRA_ISSUE_FIX, EXTRA_ISSUE_VERIFY, EXTRA_ISSUE_WHY } from "./issues-extra";
 /** Cómo se corrige cada issue: instrucción corta para quien edita el código del sitio. */
 export const ISSUE_FIX: Record<string, string> = {
   http_4xx: "Primero confirmar la URL y su origen (detalle = estado, sitemap y páginas que la enlazan). Si la página debe existir, restaurarla; si se reemplazó, 301 a la equivalente; si ya no existe, quitarla del sitemap y corregir los links de las páginas origen.",
@@ -38,6 +39,7 @@ export const ISSUE_FIX: Record<string, string> = {
   hreflang_no_self: "Agregar el hreflang autorreferente.",
   noindex: "Página con noindex: confirmar que sea intencional (filtros, búsquedas, cuenta). Si debe aparecer en Google, quitarlo.",
   nofollow: "Meta robots con nofollow y hay URLs que solo se enlazan desde páginas así (detalle). Si son filtros que no deben indexarse, usar \"noindex, follow\" o enlazar esas URLs desde otra página.",
+  ...EXTRA_ISSUE_FIX,
 };
 
 /** Qué significa cada issue y por qué importa, en una frase. */
@@ -80,6 +82,7 @@ export const ISSUE_WHY: Record<string, string> = {
   hreflang_no_self: "Las versiones por idioma deben incluirse a sí mismas en el hreflang.",
   noindex: "Tiene noindex: Google no la va a mostrar. Bien si es intencional (login, filtros).",
   nofollow: "Con meta nofollow Google en general no usa los links de esa página para descubrir URLs. Solo importa cuando es la única vía hacia otras URLs, como en este caso.",
+  ...EXTRA_ISSUE_WHY,
 };
 
 /**
@@ -125,5 +128,6 @@ export const ISSUE_VERIFY: Record<string, string> = {
   sitemap_missing: "El sitemap responde 200, está declarado en robots.txt y Search Console lo lee sin errores.",
   hreflang_no_self: "Cada versión de idioma se incluye a sí misma en su hreflang y las demás versiones la referencian de vuelta.",
   blocked_robots: "Si es privada (cuenta, carrito, checkout), se conserva el bloqueo. Si debe indexarse, robots.txt la permite.",
+  ...EXTRA_ISSUE_VERIFY,
 };
 export const DEFAULT_VERIFY = "En el próximo crawl, el valor del detalle de cada URL cambió al esperado (ver «Corrección»). Revisar a mano 2–3 URLs del ejemplo.";
