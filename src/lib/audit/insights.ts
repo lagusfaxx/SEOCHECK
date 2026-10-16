@@ -299,9 +299,9 @@ function finding(code: string, severity: string, template: string, scope: Findin
     scope === "site"
       ? `${label}: afecta a todo el sitio.`
       : scope === "layout"
-        ? `Viene de la plantilla base del sitio (head, menú o footer): afecta ${f0(urls.length)} de ${f0(size)} URLs. Corrígelo una vez ahí.`
+        ? `Aparece en ${f0(urls.length)} de ${f0(size)} URLs de todas las secciones: probablemente viene de la plantilla base (head, menú o footer). Confirma dónde se genera y qué páginas deben quedar igual antes de cambiarla.`
         : rootCause
-          ? `Posible problema de plantilla ${template}: afecta ${f0(urls.length)} de ${f0(size)} URLs. Corrige la plantilla una vez.`
+          ? `Coincide en ${f0(urls.length)} de ${f0(size)} URLs de ${template}: puede venir de la plantilla. Antes de cambiarla, confirma qué condición lo produce (campo vacío, dato largo, variante) y qué páginas son excepción.`
           : scope === "scattered"
             ? `${plural(urls.length, "URL")} sueltas en distintas secciones: revisar caso a caso.`
             : share >= 0.25 && urls.length >= 5

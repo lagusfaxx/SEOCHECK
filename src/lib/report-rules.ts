@@ -1,6 +1,9 @@
 /** Reglas del informe: puntaje de impacto, falsos positivos, variantes ortográficas, PageSpeed lab vs campo. */
 import { strip } from "./text";
 
+/** Versión de las reglas del informe: queda escrita en cada informe para saber con qué criterio se generó. */
+export const RULES_VERSION = "2026.10.16";
+
 /** Distancia de edición (con transposición), cortando apenas supera `max`. */
 export function editDistance(a: string, b: string, max = 2): number {
   if (a === b) return 0;

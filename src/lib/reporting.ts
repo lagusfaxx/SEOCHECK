@@ -5,7 +5,7 @@ import { buildReport } from "./report";
 import { projectActions } from "./tasks";
 import { withProjectQuota, projectPlan } from "./plans";
 import { issueIdentity } from "./task-rules";
-import { ISSUE_LABELS } from "./audit/issues";
+import { detailText, ISSUE_LABELS } from "./audit/issues";
 import { DEFAULT_VERIFY, ISSUE_FIX, ISSUE_VERIFY, ISSUE_WHY } from "./audit/fixes";
 import { coverage } from "./coverage";
 import { gscPeriod, isoDay, periodLabel, SOURCE_NOTE } from "./gsc-period";
@@ -138,17 +138,30 @@ export async function executiveReport(projectId: string) {
     // evidencia = URL + valor observado, juntos: un "4xx" sin su URL no se puede corregir
     if (g.urls.length < 5 && !g.urls.includes(i.url)) {
       g.urls.push(i.url);
-      g.evidence.push(i.detail ? `${i.url} — ${i.detail}` : i.url);
+      g.evidence.push(i.detail ? `${i.url} — ${detailText(i.code, i.detail)}` : i.url);
     }
     grouped.set(i.code, g);
   }
   const weight: Record<string, number> = { critical: 3, warning: 2, info: 1 };
+  const KIND_ORDER = [KIND_LABEL.confirmed, KIND_LABEL.possible, KIND_LABEL.opportunity];
   return {
     project: p.name,
     domain: p.domain,
     generatedAt: new Date().toISOString(),
     comparison,
+    // acciones de la MISMA auditoría que las tablas: con su evidencia actual (URL + valor observado)
     actions: actions.actions.map((t) => ({
+      kind: t.source === "crawl" && t.code ? KIND_LABEL[kindOf(t.code)] : null,
+      evidence:
+        t.source === "crawl"
+          ? (t.members ?? [])
+              .filter((m: any) => m.lastCrawlId === comparison?.currentId && !["resolved", "ignored"].includes(m.status))
+              .slice(0, 3)
+              .map((m: any) => {
+                const d = allIssues.find((i) => i.code === m.code && i.url === m.url)?.detail;
+                return `${m.url}${d ? ` — ${detailText(m.code ?? "", d)}` : ""}`;
+              })
+          : [],
       title: t.title,
       reason: t.reason,
       affected: t.affected,
@@ -170,6 +183,8 @@ export async function executiveReport(projectId: string) {
     branding,
     findings: [...grouped.values()].sort(
       (a, b) =>
+        // primero lo confirmado, después hipótesis y al final mejoras opcionales; dentro, por severidad
+        KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) ||
         (weight[b.severity] ?? 0) - (weight[a.severity] ?? 0) ||
         b.count - a.count,
     ),
@@ -278,9 +293,12 @@ export function executivePdf(
     doc.fontSize(11);
     doc.text(
       c
-        ? `Salud técnica: ${c.health ?? "sin datos"}/100${c.previousId ? ` (anterior: ${c.previousHealth ?? "sin datos"})` : " (primera auditoría)"}. ${c.pages} ${c.pages === 1 ? "URL auditada" : "URLs auditadas"}.`
+        ? `Salud técnica del rastreo: ${c.health ?? "sin datos"}/100${c.previousId ? ` (anterior: ${c.previousHealth ?? "sin datos"})` : " (primera auditoría)"}. ${c.pages} ${c.pages === 1 ? "URL auditada" : "URLs auditadas"}.`
         : "Todavía no hay una auditoría terminada.",
     );
+    // la salud solo mide el rastreo: decir qué quedó sin medir para no presentar 100/100 como "todo bien"
+    const unmeasured = (r.sources ?? []).filter((s) => s.state !== "ok").map((s) => s.label);
+    if (c && unmeasured.length) doc.fillColor("#9a3412").text(`Sin medir en esta versión: ${unmeasured.join(", ")}. La salud no incluye esas áreas.`).fillColor("#222222");
     if (c?.previousId)
       doc.text(
         `${c.new ?? "—"} incidencias nuevas. ${c.resolved ?? "No confirmado"} solucionadas.${c.partial ? " Auditoría parcial: no se confirma la desaparición de problemas." : ""}`,
@@ -302,9 +320,10 @@ export function executivePdf(
         .fillColor("#222222")
         .fontSize(10)
         .text(
-          `${a.affected} incidencias agrupadas · ${({ detected: "detectado", pending: "pendiente", reappeared: "reapareció", resolved: "solucionado", ignored: "ignorado" } as Record<string, string>)[a.status] ?? a.status}`,
+          `${a.kind ? `${a.kind} · ` : ""}${a.affected} ${a.affected === 1 ? "URL" : "URLs"} · ${({ detected: "detectado", pending: "pendiente", reappeared: "reapareció", resolved: "solucionado", ignored: "ignorado" } as Record<string, string>)[a.status] ?? a.status}`,
         )
-        .text(technicalMarkdown ? a.reason : a.reason.split(" Prioridad:")[0]);
+        .text(technicalMarkdown ? a.reason : a.reason.split(" Prioridad:")[0].split(" Evidencia (")[0]);
+      if (a.evidence?.length) doc.fillColor("#666666").fontSize(9).text(`Evidencia${r.crawledAt ? ` (crawl del ${r.crawledAt.slice(0, 10)})` : ""}:\n${a.evidence.join("\n")}`).fillColor("#222222");
     }
     if (!r.actions.length)
       doc
@@ -326,7 +345,7 @@ export function executivePdf(
     const findings = r.findings ?? [];
     doc.text(
       findings.length
-        ? `${findings.length} tipos de problema detectados. Se agrupan las incidencias para corregir su causa, en lugar de tratar cada URL como un trabajo independiente.`
+        ? `${[[KIND_LABEL.confirmed, "error confirmado", "errores confirmados"], [KIND_LABEL.possible, "hipótesis por verificar", "hipótesis por verificar"], [KIND_LABEL.opportunity, "mejora opcional", "mejoras opcionales"]].map(([k, one, many]) => { const n = findings.filter((f) => f.kind === k).length; return n ? `${n} ${n === 1 ? one : many}` : ""; }).filter(Boolean).join(", ")}. Las mejoras opcionales no son errores: el sitio funciona sin ellas.`
         : "No hay incidencias registradas en la auditoría disponible.",
     );
     for (const [index, f] of findings.slice(0, 8).entries()) {

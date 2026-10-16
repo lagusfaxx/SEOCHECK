@@ -111,6 +111,19 @@ export const ISSUE_VERIFY: Record<string, string> = {
   jsonld_mismatch: "El precio, la disponibilidad y las reseñas del JSON-LD coinciden con lo visible en la página (revisar con la prueba de resultados enriquecidos).",
   js_dependent: "Los links y el texto principal están en el HTML inicial, o se confirma que lo que depende de JS no necesita posicionar.",
   jsonld_invalid: "El JSON-LD parsea y valida en la prueba de resultados enriquecidos; precios, stock y variantes coinciden con lo visible.",
+  blocked_by_waf: "Un crawl con el mismo User-Agent recibe 200 en las URLs del ejemplo y Search Console no muestra errores de rastreo por 403/429.",
+  ssrf_blocked: "El link apunta a una URL pública del sitio, o se quita.",
+  title_short: "Opcional: el title describe qué ofrece la página. No hay un largo mínimo que cumplir.",
+  meta_long: "Opcional: lo importante de la descripción está al inicio. No es obligatorio que desaparezca el aviso.",
+  meta_short: "Opcional: la descripción resume la página con información real. No hay un largo mínimo que cumplir.",
+  canonical_missing: "La página declara un canonical absoluto a sí misma (o a la versión principal si es una variante).",
+  img_no_alt: "Las imágenes con información (productos, gráficos) tienen alt descriptivo; las decorativas pueden quedar con alt=\"\".",
+  deep_page: "La URL queda a 3 clics o menos de la home en el próximo crawl, sin quitar links que ya funcionan.",
+  slow: "El tiempo de respuesta del servidor (TTFB) de las URLs del ejemplo baja de 1,5 s en dos crawls seguidos.",
+  no_inlinks: "Al menos una página indexable la enlaza con un <a href> rastreable, o se confirma que no debe estar publicada.",
+  robots_missing: "https://dominio/robots.txt responde 200 con texto plano y declara el sitemap.",
+  sitemap_missing: "El sitemap responde 200, está declarado en robots.txt y Search Console lo lee sin errores.",
+  hreflang_no_self: "Cada versión de idioma se incluye a sí misma en su hreflang y las demás versiones la referencian de vuelta.",
   blocked_robots: "Si es privada (cuenta, carrito, checkout), se conserva el bloqueo. Si debe indexarse, robots.txt la permite.",
 };
-export const DEFAULT_VERIFY = "Repetir el crawl y revisar la URL: el valor observado cambió como se esperaba y no se rompió nada que funcionaba.";
+export const DEFAULT_VERIFY = "En el próximo crawl, el valor del detalle de cada URL cambió al esperado (ver «Corrección»). Revisar a mano 2–3 URLs del ejemplo.";

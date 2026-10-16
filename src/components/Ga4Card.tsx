@@ -6,7 +6,7 @@ import { api, cx, DataTable, Empty, fmt, pct, Stat, useAction, useApi, type Col 
 type Sums = { sessions: number; keyEvents: number; revenue: number };
 export type Ga4Data = null | { property: string; currency: string | null; empty: true } | {
   property: string; currency: string | null; empty: false; period: { start: string; end: string };
-  current: Sums; previous: Sums; note: string;
+  current: Sums; previous: Sums; note: string; checks: string[];
   landings: { landing: string; sessions: number; keyEvents: number; revenue: number; conversionRate: number }[];
 };
 type Status = { connected: boolean; hasScope: boolean; email: string | null; property?: string; displayName?: string; lastDate: string | null };
@@ -118,6 +118,7 @@ export function Ga4Card({ data, onChange }: { data: Ga4Data; onChange: () => voi
             <Stat label="Tasa de conversión" value={pct(data.current.sessions ? data.current.keyEvents / data.current.sessions : null)} />
           </div>
           <p className={cx("text-xs text-ink-500")}>{data.period.start} a {data.period.end}. {data.note}</p>
+          {data.checks?.map((c) => <p key={c} className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">{c}</p>)}
           <DataTable rows={data.landings} cols={cols} rowKey={(r) => r.landing} initial={{ key: "r", dir: -1 }} />
         </>
       )}

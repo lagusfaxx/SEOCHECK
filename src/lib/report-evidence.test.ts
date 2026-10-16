@@ -122,6 +122,8 @@ test("brief: descarta links a rutas inexistentes, filtros ya presentes y avisa a
   });
   assert.deepEqual(out.links, [{ anchor: "Líneas", to: "/lineas" }]);
   assert.deepEqual(out.filters, ["Nivel de compresión"]);
+  assert.deepEqual(out.metas, [], "la meta con afirmaciones sin respaldo se quita, no solo se avisa");
+  assert.deepEqual(out.titles, ["Trajes de natación | Taupoc"]);
   const w = out.warnings!.join("\n");
   assert.match(w, /trajes-bano\/mujer/);
   assert.match(w, /rendimiento óptimo/);

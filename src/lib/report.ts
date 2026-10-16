@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { env } from "./env";
-import { ISSUE_LABELS } from "./audit/issues";
+import { detailText, ISSUE_LABELS } from "./audit/issues";
 import { DEFAULT_VERIFY, ISSUE_VERIFY } from "./audit/fixes";
 import { gscPeriod, isoDay, periodLabel, SOURCE_NOTE } from "./gsc-period";
 import { marketingOverview } from "./marketing";
@@ -8,11 +8,13 @@ import { backlinksOverview } from "./backlinks";
 import { FIELD_LABEL, latestCrawlChanges } from "./watch";
 import { aiLocalOverview } from "./ai-local";
 import { gapOverview } from "./keyword-gap";
+import { ownEvidence } from "./content/analyze";
+import { verifyBrief } from "./content/claims";
 import { hostOf, urlKey } from "./util";
 import { coverage, emptyText, STATE_LABEL } from "./coverage";
 import { buildFindings, KIND_LABEL, kindOf, urlSection, type Pattern } from "./audit/insights";
 import type { Cms } from "./audit/cms";
-import { brandFromDomain, CONFIDENCE_FACTOR, DISCREPANCY_HINT, EASE_LABEL, expectedCtrAt, isBrandQuery, ISSUE_RISK, makeTask, MINOR_FACTOR, psiVerdict, SEV_WEIGHT, byPriority, MINOR_ONPAGE, LOW_GSC_IMPRESSIONS, MIN_TREND_BASE, spellingVariants, type Confidence, type PsiField, type Task } from "./report-rules";
+import { RULES_VERSION, brandFromDomain, CONFIDENCE_FACTOR, DISCREPANCY_HINT, EASE_LABEL, expectedCtrAt, isBrandQuery, ISSUE_RISK, makeTask, MINOR_FACTOR, psiVerdict, SEV_WEIGHT, byPriority, MINOR_ONPAGE, LOW_GSC_IMPRESSIONS, MIN_TREND_BASE, spellingVariants, type Confidence, type PsiField, type Task } from "./report-rules";
 
 const SEV_ORDER = ["critical", "warning", "info"] as const;
 const SEV_LABEL: Record<string, string> = { critical: "Error", warning: "Advertencia", info: "Observación" };
@@ -49,10 +51,12 @@ export async function buildReport(projectId: string): Promise<string> {
   const cov = await coverage(projectId);
   const mod = (k: string) => cov.find((m) => m.key === k);
   const tasks: Task[] = [];
+  /** chequeos de consistencia del propio informe: [qué se comprobó, ok, detalle si falla] */
+  const checks: [string, boolean, string?][] = [];
+  let httpCounts: { c4xx: number; c5xx: number } | null = null;
   const notes: string[] = [];
   const intentional: string[] = [];
   const trends: string[] = [];
-  const rootCauses: string[] = [];
   const patterns: Pattern[] = [];
 
   // ---------- Tráfico por URL (GSC 28 días) y peso de plantilla (sin GSC) ----------
@@ -88,6 +92,15 @@ export async function buildReport(projectId: string): Promise<string> {
     }
     const v = Math.round(urls.reduce((s, u) => s + weight(u), 0) * 10) / 10;
     return { traffic: v, label: `peso ${f1(v)} (${imprByUrl.size ? "pocas impresiones GSC" : "sin GSC"}: links entrantes y home)` };
+  };
+  /**
+   * Mejoras cosméticas: el tráfico NO se suma por cada variante (100 fichas por color con el mismo aviso no valen
+   * 100 veces más). Cuenta la URL con más tráfico y crece apenas con la cantidad.
+   */
+  const trafficMinor = (urls: string[]) => {
+    const per = urls.map((u) => (hasGsc ? (imprByUrl.get(urlKey(u)) ?? 0) + 1 : weight(u)));
+    const v = Math.round(Math.max(0, ...per) * (1 + Math.log2(Math.max(1, urls.length))) * 10) / 10;
+    return { traffic: v, label: `${hasGsc ? `${f0(Math.max(0, ...per))} impr` : `peso ${f1(Math.max(0, ...per))}`} (URL principal) × ${f1(1 + Math.log2(Math.max(1, urls.length)))} por ${urls.length} URLs` };
   };
   /** tráfico de toda una plantilla (sección) */
   const sectionTraffic = (section: string) => trafficOf(pages.filter((x) => urlSection(x.url) === section).map((x) => x.url).concat(hasGsc ? [...imprByUrl.keys()].filter((k) => urlSection(`https://${k}`) === section && !pageByKey.has(k)).map((k) => `https://${k}`) : []));
@@ -157,6 +170,7 @@ export async function buildReport(projectId: string): Promise<string> {
     // conteos HTTP desde los mismos issues que la tabla de abajo: los números siempre cuadran entre secciones
     const byIssue = (code: string) => issues.filter((i) => i.code === code);
     const http = { c4xx: byIssue("http_4xx"), c5xx: byIssue("http_5xx"), none: byIssue("fetch_failed"), waf: byIssue("blocked_by_waf"), robots: byIssue("blocked_robots") };
+    httpCounts = { c4xx: http.c4xx.length, c5xx: http.c5xx.length };
     const crawledAt = isoDay(crawl.startedAt);
     auditOut.push(
       `Crawl del ${date(crawl.startedAt)} · máx ${opts.maxPages ?? "–"} páginas${opts.render ? " · render JS" : " · HTML sin render JS"}${crawl.status === "partial" ? ` · **parcial**: ${crawl.reason ?? ""}` : ""}\n`,
@@ -195,11 +209,10 @@ export async function buildReport(projectId: string): Promise<string> {
     );
     // hallazgos: un problema por plantilla (causa raíz), no uno por URL; misma lógica que la pantalla de Auditoría
     patterns.push(...ins.patterns);
-    const detailOf = new Map(issues.map((i) => [`${i.code}|${i.url}`, i.detail]));
+    const detailOf = new Map(issues.map((i) => [`${i.code}|${i.url}`, detailText(i.code, i.detail)]));
     for (const f of ins.findings) {
       const where = f.scope === "site" || f.scope === "layout" ? "todo el sitio" : f.scope === "scattered" ? "varias secciones" : `\`${f.template}\``;
-      const tr = f.scope === "site" ? siteTraffic() : trafficOf(f.urls);
-      if (f.rootCause) rootCauses.push(`- **${f.label}** — ${f.summary}`);
+      const tr = f.scope === "site" ? siteTraffic() : MINOR_ONPAGE.has(f.code) || kindOf(f.code) === "opportunity" ? trafficMinor(f.urls) : trafficOf(f.urls);
       const conf: Confidence = f.kind === "confirmed" ? "alta" : f.kind === "opportunity" ? "media" : "baja";
       // la evidencia va en la tarea: URL, valor observado y fecha
       const examples = f.urls.slice(0, 3).map((u) => `${u}${detailOf.get(`${f.code}|${u}`) ? ` — ${detailOf.get(`${f.code}|${u}`)}` : ""}`);
@@ -224,7 +237,7 @@ export async function buildReport(projectId: string): Promise<string> {
     for (const [code, list] of codes)
       appendix.push(
         `### ${ISSUE_LABELS[code] ?? code} (${list.length})\n`,
-        ...list.slice(0, MAX_URLS).map((i) => `- ${i.url}${i.detail ? ` — ${i.detail}` : ""}`),
+        ...list.slice(0, MAX_URLS).map((i) => `- ${i.url}${i.detail ? ` — ${detailText(i.code, i.detail)}` : ""}`),
         ...(list.length > MAX_URLS ? [`- … y ${list.length - MAX_URLS} más`] : []),
         ""
       );
@@ -392,6 +405,7 @@ export async function buildReport(projectId: string): Promise<string> {
             ease: 0.9,
             confidence: gscConf(s.impr),
             evidence: gscEv(s.impr),
+            verify: "Las variantes aparecen en el texto visible de la página y, en el período siguiente, la página mantiene o sube impresiones para ellas.",
           })
         );
       }
@@ -430,6 +444,7 @@ export async function buildReport(projectId: string): Promise<string> {
           ease: 0.6,
           confidence: lost >= 30 ? "alta" : lost >= 10 ? "media" : "baja",
           evidence: `clics ${isoDay(d28)} a ${isoDay(gscEnd)} contra los 28 días anteriores`,
+          verify: "Se identificó la causa (cambio en la página, indexación, estacionalidad o competencia) y los clics del período siguiente vuelven al nivel anterior o se explica por qué no.",
         })
       );
     }
@@ -471,6 +486,7 @@ export async function buildReport(projectId: string): Promise<string> {
         confidence: "media",
         evidence: "varias URLs reciben impresiones por la misma consulta en Search Console",
         risk: "consolidar con 301 o canonical sin revisar la intención puede perder la página que mejor convierte",
+        verify: "Para cada consulta, una sola URL concentra las impresiones durante 4 semanas seguidas, sin perder clics totales.",
       })
     );
   }
@@ -525,23 +541,45 @@ export async function buildReport(projectId: string): Promise<string> {
   // ---------- Contenido (entra en la priorización como cualquier tarea) ----------
   const contents = await db.contentAnalysis.findMany({ where: { projectId, status: "done" }, orderBy: { createdAt: "desc" }, take: 10 });
   const contentOut: string[] = [];
+  // verificación al mostrar: los briefs guardados antes de una regla nueva también se revisan con el crawl actual
+  const crawlPages = crawl ? await db.page.findMany({ where: { crawlId: crawl.id }, select: { url: true, status: true, finalUrl: true, title: true, h1: true } }) : [];
+  const okUrls = crawlPages.filter((x) => x.status === 200 && (!x.finalUrl || x.finalUrl === x.url)).map((x) => x.url);
+  const pageAt = new Map(crawlPages.map((x) => [urlKey(x.url), x]));
+  // vocabulario del sitio (títulos y H1 de todas sus páginas): un término que no aparece en ninguna puede no ser del catálogo
+  const siteVocab = crawlPages.map((x) => `${x.title ?? ""} ${x.h1.join(" ")}`).join(" ").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const inCatalog = (t: string) => siteVocab.includes(t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase());
   for (const c of contents) {
     const r = c.result as any;
-    const b = c.brief as any;
-    const missing = (r.terms ?? []).filter((t: any) => t.missing).slice(0, 12).map((t: any) => t.term);
+    const b = c.brief && (c.brief as any).titles ? verifyBrief(c.brief as any, { ownText: ownEvidence(r), knownUrls: okUrls.length ? okUrls : r.knownUrls ?? [], base: c.url }) : (c.brief as any);
+    const missingAll: string[] = (r.terms ?? []).filter((t: any) => t.missing).slice(0, 20).map((t: any) => String(t.term));
+    const missing = missingAll.filter(inCatalog).slice(0, 12);
+    const foreign = missingAll.filter((t) => !inCatalog(t)).slice(0, 8);
+    const bd = r.breakdown as Record<string, number> | undefined;
+    const listing = r.pageType === "listing";
+    const linkCheck = (to: string) => {
+      const pg = (() => { try { return pageAt.get(urlKey(new URL(to, c.url).toString())); } catch { return undefined; } })();
+      return pg ? `HTTP ${pg.status}${pg.finalUrl && pg.finalUrl !== pg.url ? ` → ${pg.finalUrl}` : ""}` : "no rastreada";
+    };
     const unanswered = (r.paa ?? []).filter((x: any) => !x.answered).map((x: any) => x.q);
     const typeLabel: Record<string, string> = { listing: "listado", detail: "ficha", article: "artículo", home: "home" };
     contentOut.push(
       `### ${c.keyword} → ${c.url} · score ${c.score ?? "–"}/100\n`,
       r.pageType ? `- Google muestra: ${typeLabel[r.pageType] ?? r.pageType}s${r.mine?.type && r.mine.type !== r.pageType ? ` (la página es ${typeLabel[r.mine.type]})` : ""}` : "",
-      `- Palabras editoriales: ${r.mine?.editorial ?? r.mine?.words ?? "–"} (objetivo ~${r.targetWords ?? "–"})`,
+      bd ? `- Cómo se calcula el score (${c.score ?? "–"}/100, comparación con el top 10 del ${isoDay(c.createdAt)}): términos ${bd.terms}/${listing ? 50 : 40} · secciones ${bd.sections}/${listing ? 10 : 20} · preguntas ${bd.paa}/15 · extensión ${bd.length}/15 · datos estructurados ${bd.schema}/10. Es una medida de cobertura frente a los competidores, no de calidad ni de posición.` : "",
+      `- Palabras editoriales: ${r.mine?.editorial ?? r.mine?.words ?? "–"} (mediana del top 10: ~${r.targetWords ?? "–"}; referencia, no un mínimo)`,
       r.target?.mismatch ? `- ⚠ Para «${c.keyword}» Google ya muestra ${r.target.gscUrl}: optimizar esa o diferenciar (riesgo de canibalización)` : "",
-      missing.length ? `- Términos faltantes: ${missing.join(", ")}` : "",
+      missing.length ? `- Términos que usa la competencia y tu sitio tiene en otras páginas: ${missing.join(", ")}` : "",
+      foreign.length ? `- Términos de la competencia que tu sitio no menciona en ninguna página (usar solo si los ofreces): ${foreign.join(", ")}` : "",
       unanswered.length ? `- Preguntas sin responder: ${unanswered.join(" · ")}` : "",
       b?.titles?.length ? `- Titles sugeridos: ${b.titles.slice(0, 3).map((t: string) => `"${t}"`).join(" · ")}` : "",
       b?.kind === "listing" && b?.intro ? `- Intro del listado: ${b.intro}` : "",
       b?.kind === "listing" && b?.filters?.length ? `- Filtros: ${b.filters.join(", ")}` : "",
-      b?.kind === "listing" && b?.links?.length ? `- Links internos (rutas verificadas en el crawl): ${b.links.map((l: any) => `«${l.anchor}» → ${l.to}`).join(" · ")}` : "",
+      ((): string => {
+        const bad = (b?.links ?? []).filter((l: any) => !/^HTTP 200$/.test(linkCheck(l.to)));
+        if (b?.links?.length) checks.push([`links del brief de «${c.keyword}» responden 200 en el crawl`, !bad.length, bad.map((l: any) => `${l.to} (${linkCheck(l.to)})`).join(", ")]);
+        return "";
+      })(),
+      b?.kind === "listing" && b?.links?.length ? `- Links internos (estado en el crawl del ${crawl ? isoDay(crawl.startedAt) : "–"}; confirmar contra el código): ${b.links.map((l: any) => `«${l.anchor}» → ${l.to} (${linkCheck(l.to)})`).join(" · ")}` : "",
       b?.warnings?.length ? `- ⚠ Verificar antes de publicar:\n${b.warnings.map((w: string) => `  - ${w}`).join("\n")}` : "",
       b?.kind !== "listing" && b?.outline?.length ? `- Outline sugerido:\n${b.outline.map((o: any) => `  ${o.tag === "h3" ? "  " : ""}- ${o.tag.toUpperCase()} ${o.text}`).join("\n")}` : "",
       ""
@@ -555,7 +593,7 @@ export async function buildReport(projectId: string): Promise<string> {
       tasks.push(
         makeTask({
           title: `Contenido de ${c.url} para «${c.keyword}» (score ${score}/100)`,
-          fix: `Aplicar el brief de la sección Contenido${r.pageType === "listing" ? " (página de listado: intro corta, filtros y links internos)" : ""}${missing.length ? `; cubrir ${missing.slice(0, 5).join(", ")}` : ""}.`,
+          fix: `Aplicar el brief de la sección Contenido${r.pageType === "listing" ? " (página de listado: intro corta, filtros y links internos)" : ""}${missing.length ? `; cubrir ${missing.slice(0, 5).join(", ")}` : ""}. Usar solo productos, atributos y rutas que existen en el sitio.`,
           traffic,
           trafficLabel: traffic === kwVol && kwVol > urlTr.traffic ? `${f0(kwVol)} búsquedas/mes` : traffic === kwImpr && kwImpr > 0 ? `${f0(kwImpr)} impr de la keyword` : urlTr.label,
           sev: score < 40 ? 3 : score < 60 ? 2 : 1,
@@ -575,6 +613,8 @@ export async function buildReport(projectId: string): Promise<string> {
     const withLinks = await db.page.findMany({ where: { crawlId: crawl.id }, select: { url: true, links: true } });
     const from = new Map<string, string[]>();
     for (const x of withLinks) for (const l of new Set(x.links)) if (l !== x.url) from.set(urlKey(l), [...(from.get(urlKey(l)) ?? []), x.url]);
+    // páginas de origen ÚNICAS (sin parámetros): /catalogo?talla=m y /catalogo?color=rojo son la misma página
+    const uniquePaths = (urls: string[]) => [...new Set(urls.map((u) => { try { return new URL(u).pathname; } catch { return u; } }))];
     const key = pages
       .filter((x) => x.status === 200 && !x.noindex && x.depth !== 0)
       .map((x) => ({ x, impr: imprByUrl.get(urlKey(x.url)) ?? 0 }))
@@ -584,10 +624,11 @@ export async function buildReport(projectId: string): Promise<string> {
       linkOut.push(
         `_Las ${key.length} páginas con más impresiones${imprByUrl.size ? "" : " (sin Search Console: las más enlazadas)"}: a qué profundidad están y desde dónde se enlazan en el HTML rastreado. Una página importante a 3+ clics o con pocos links entrantes merece links desde la home, el menú o categorías._\n`,
         table(
-          ["Página", "Impr.", "Profundidad", "Links entrantes", "Enlazada desde"],
+          ["Página", "Impr.", "Profundidad", "Páginas de origen (enlaces)", "Enlazada desde"],
           key.map(({ x, impr }) => {
             const src = from.get(urlKey(x.url)) ?? [];
-            return [x.url, imprByUrl.size ? f0(impr) : "–", x.depth < 0 ? "solo sitemap" : x.depth, x.inlinks, src.length ? `${src.slice(0, 3).map((u) => { try { return new URL(u).pathname; } catch { return u; } }).join(", ")}${src.length > 3 ? ` (+${src.length - 3})` : ""}` : "ninguna en el HTML"];
+            const uniq = uniquePaths(src);
+            return [x.url, imprByUrl.size ? f0(impr) : "–", x.depth < 0 ? "solo sitemap" : x.depth, `${uniq.length} (${src.length})`, uniq.length ? `${uniq.slice(0, 3).join(", ")}${uniq.length > 3 ? ` (+${uniq.length - 3})` : ""}` : "ninguna en el HTML"];
           })
         )
       );
@@ -600,7 +641,8 @@ export async function buildReport(projectId: string): Promise<string> {
     const k = mk.kpis;
     resultsOut.push(
       `_${k.period.label}._\n`,
-      `- **Clics sin marca:** ${f0(k.nonBrand.now)} (${pctChange(k.nonBrand.now, k.nonBrand.before)}) · **de marca:** ${f0(k.brand.now)} (${pctChange(k.brand.now, k.brand.before)}). Lo que trae el SEO se mide en los clics sin marca.`
+      `- **Clics:** ${f0(k.clicks.now)} en total = ${f0(k.brand.now)} de marca + ${f0(k.nonBrand.now)} sin marca + ${f0(k.unclassified.now)} no clasificables (consultas que Google anonimiza: no se sabe si son de marca).`,
+      `- El aporte del SEO se lee en conjunto: clics sin marca (demanda nueva), clics de marca (notoriedad) y, si Analytics está conectado, conversiones e ingresos.${k.unclassified.now > k.brand.now + k.nonBrand.now ? " Con más clics no clasificables que clasificados, la división marca / sin marca es poco representativa." : ""}`
     );
     for (const [label, g] of [["Clics", mk.goalProgress!.clicks], ["Clics sin marca", mk.goalProgress!.nonBrandClicks]] as const)
       if (g.target != null) resultsOut.push(`- **Objetivo ${label.toLowerCase()} ${mk.goalProgress!.month}:** ${f0(g.mtd)} de ${f0(g.target)} con ${g.daysWithData}/${g.daysInMonth} días; proyección ${f0(g.projected)} (${g.status}).`);
@@ -625,14 +667,15 @@ export async function buildReport(projectId: string): Promise<string> {
       "",
       `**Conversiones del tráfico orgánico** (${g.note} ${g.period.start} a ${g.period.end}): ${f0(g.current.sessions)} sesiones (${pctChange(g.current.sessions, g.previous.sessions)}), ${f0(g.current.keyEvents)} conversiones (${pctChange(g.current.keyEvents, g.previous.keyEvents)}), ingresos ${money(g.current.revenue)} (${pctChange(g.current.revenue, g.previous.revenue)}).`,
       "",
-      table(["Landing", "Sesiones", "Conversiones", "Tasa", "Ingresos"], g.landings.slice(0, 10).map((l) => [l.landing, f0(l.sessions), f0(l.keyEvents), pctS(l.conversionRate), money(l.revenue)]))
+      table(["Landing", "Sesiones", "Conversiones", "Tasa", "Ingresos"], g.landings.slice(0, 10).map((l) => [l.landing, f0(l.sessions), f0(l.keyEvents), pctS(l.conversionRate), money(l.revenue)])),
+      ...(g.checks.length ? ["", ...g.checks.map((x) => `- ⚠ ${x}`)] : [])
     );
   } else if (mk && !mk.ga4) resultsOut.push("", "- Sin Google Analytics: no se miden conversiones ni ingresos del SEO. Conectarlo en Resultados.");
   if (mk?.competitors) {
     const c = mk.competitors;
     resultsOut.push(
       "",
-      `**Competencia** (${c.keywords} keywords, ${c.basis}): tu cuota de visibilidad ${pctS(c.ownShare)}. Primeros: ${c.top.slice(0, 5).map((x) => `${x.domain}${x.own ? " (tú)" : ""} ${pctS(x.share)}`).join(" · ")}. AI Overview en ${c.aiOverview.keywords} keywords; te cita en ${c.aiOverview.cited}.`
+      `**Competencia** (${c.keywords} keyword${c.keywords === 1 ? "" : "s"}, ${c.basis}${c.representative ? "" : `: vale solo para ${c.keywords === 1 ? "esa consulta" : "esas consultas"}, no describe el mercado`}): tu cuota de visibilidad ${pctS(c.ownShare)}. Primeros: ${c.top.slice(0, 5).map((x) => `${x.domain}${x.own ? " (tú)" : ""} ${pctS(x.share)}`).join(" · ")}. AI Overview en ${c.aiOverview.keywords} keywords; te cita en ${c.aiOverview.cited}.`
     );
   }
 
@@ -788,6 +831,23 @@ export async function buildReport(projectId: string): Promise<string> {
   if (kg.upcoming.length)
     gapOut.push("", `**Se viene la temporada** (pico en los próximos 2 meses: publicar o actualizar ahora): ${kg.upcoming.slice(0, 10).map((u) => `«${u.keyword}» (${u.peaks})`).join(" · ")}`);
 
+  // ---------- Validación del informe ----------
+  // el resumen no puede contradecir sus tablas: se comprueba antes de entregar
+  if (httpCounts) {
+    const t4 = tasks.filter((t) => t.title.startsWith(ISSUE_LABELS.http_4xx)).length;
+    const t5 = tasks.filter((t) => t.title.startsWith(ISSUE_LABELS.http_5xx)).length;
+    checks.push(["tareas de 4xx/5xx coinciden con la tabla HTTP de la auditoría", (t4 > 0) === (httpCounts.c4xx > 0) && (t5 > 0) === (httpCounts.c5xx > 0), `tareas 4xx: ${t4}, tabla: ${httpCounts.c4xx}; tareas 5xx: ${t5}, tabla: ${httpCounts.c5xx}`]);
+  }
+  const auditTasks = tasks.filter((t) => / · .*\(\d+ URLs?\)$/.test(t.title));
+  checks.push(["cada tarea de auditoría trae evidencia (URL y valor observado)", auditTasks.every((t) => t.detail?.length), auditTasks.filter((t) => !t.detail?.length).map((t) => t.title).join(", ")]);
+  checks.push(["cada tarea trae una verificación concreta", tasks.every((t) => t.verify && t.verify !== DEFAULT_VERIFY), tasks.filter((t) => !t.verify || t.verify === DEFAULT_VERIFY).map((t) => t.title).slice(0, 5).join(", ")]);
+  if (mk?.connected && mk.kpis) {
+    const k = mk.kpis;
+    const sum = k.brand.now + k.nonBrand.now + k.unclassified.now;
+    checks.push(["clics de marca + sin marca + no clasificables = total", !k.unclassified.now || sum === k.clicks.now, `${sum} vs ${k.clicks.now}`]);
+  }
+  if (!inspLatest.size) checks.push(["indexación sin inspecciones se informa como «no medido» (no como 0)", true]);
+
   // ---------- Armado ----------
   tasks.sort(byPriority);
   const top = tasks.slice(0, MAX_TASKS);
@@ -796,11 +856,14 @@ export async function buildReport(projectId: string): Promise<string> {
   out.push(
     `# Informe SEO · ${site}`,
     "",
-    `Generado ${date(new Date())} · país ${p.country.toUpperCase()} · idioma ${p.language}`,
+    `Generado ${date(new Date())} · país ${p.country.toUpperCase()} · idioma ${p.language} · reglas v${RULES_VERSION}`,
+    "",
+    `**Fuentes de esta versión:** ${[crawl ? `crawl del ${date(crawl.startedAt)} (id ${crawl.id.slice(-8)}${crawl.status === "partial" ? ", parcial" : ""})` : "sin crawl", period ? `Search Console ${isoDay(period.start)} a ${isoDay(period.end)}, propiedad ${p.gscProperty ?? "–"}, todos los países y dispositivos, búsqueda web` : "sin Search Console"].join(" · ")}. Todas las tablas y tareas salen de estas mismas fuentes.`,
     "",
     "> **Para el agente que edita el código:** este informe viene de un análisis externo del sitio en producción. Las tareas están ordenadas por impacto (tráfico afectado × severidad × facilidad × confianza). Cada una trae su evidencia (URL, valor observado, fecha): compruébala contra el código antes de cambiar, porque una hipótesis puede ser un comportamiento intencional del sitio (variantes, filtros, links condicionales). Para cada una, ubica en el repositorio la ruta/plantilla indicada (p. ej. `/perfil/*`) y corrige ahí, no URL por URL. No inventes datos de negocio; si un texto depende de datos reales, genéralo desde los campos existentes. Antes de cambiar redirects, canonicals o robots.txt, confirma que no se pierdan páginas indexadas.",
     ""
   );
+  if (checks.some(([, ok]) => !ok)) out.push(`> ⚠ **Este informe tiene inconsistencias internas** (ver «Validación del informe» al final). No entregarlo sin revisarlas.`, "");
   // qué datos respaldan este informe: "sin datos" no es lo mismo que "falló"
   out.push(
     "## Cobertura de datos",
@@ -832,8 +895,9 @@ export async function buildReport(projectId: string): Promise<string> {
           ["  · con noindex", f0(ok200.filter((x) => x.noindex).length), "crawl"],
           ["Con impresiones pero no rastreadas", f0(gscOnly), "Search Console vs crawl"],
           ["Inspeccionadas (URL Inspection)", f0(inspLatest.size), "Search Console"],
-          ["  · indexadas", f0(passed), "Search Console"],
-          ["  · no indexadas o excluidas", f0(inspLatest.size - passed), "Search Console"],
+          // sin inspecciones no hay "0 indexadas": hay estado no medido
+          ["  · indexadas", inspLatest.size ? f0(passed) : "no medido", "Search Console"],
+          ["  · no indexadas o excluidas", inspLatest.size ? f0(inspLatest.size - passed) : "no medido", "Search Console"],
         ]
       ),
       "",
@@ -870,16 +934,8 @@ export async function buildReport(projectId: string): Promise<string> {
     ""
   );
   if (rest.length) out.push("### Tareas menores", "", table(["Tarea", "Impacto", "Confianza"], rest.map((t) => [t.title, f0(t.score), t.confidence ?? "media"])), "");
-  if (rootCauses.length || patterns.length)
-    out.push(
-      "## Causas raíz y patrones",
-      "",
-      "_Problemas que vienen de una plantilla o del layout: se corrigen una vez y arreglan todas sus URLs (el listado completo va en el anexo)._",
-      "",
-      ...rootCauses,
-      ...patterns.map((x) => `- ${x.text}`),
-      ""
-    );
+  // cada problema se describe una sola vez (en su tarea); acá solo patrones que cruzan varias tareas
+  if (patterns.length) out.push("## Patrones", "", "_Coincidencias entre tareas; no son tareas nuevas. El detalle de cada problema está en su tarea y las URLs en el anexo._", "", ...patterns.map((x) => `- ${x.text}`), "");
   if (intentional.length) out.push("## Revisado, parece intencional", "", "_Comportamiento esperado del sitio: no se generan tareas y no hay que «corregirlo». Confirmar solo si no corresponde a lo que el sitio quiere._", "", ...intentional, "");
   out.push("## Search Console", "", ...gscOut, "");
   if (aiOut.length) out.push("## Visibilidad en IA y SEO local", "", ...aiOut, "");
@@ -920,6 +976,15 @@ export async function buildReport(projectId: string): Promise<string> {
   );
   out.push("## Keywords y clusters", "", ...kwOut, "");
   if (contentOut.length) out.push("## Contenido", "", ...contentOut.filter((l) => l !== ""), "");
+  const failed = checks.filter(([, ok]) => !ok);
+  out.push(
+    "## Validación del informe",
+    "",
+    failed.length
+      ? `⚠ ${failed.length} de ${checks.length} chequeos de consistencia fallaron: revisar antes de entregar.\n\n${failed.map(([what, , why]) => `- ✗ ${what}${why ? `: ${why}` : ""}`).join("\n")}`
+      : `✓ ${checks.length} chequeos de consistencia pasaron: ${checks.map(([what]) => what).join("; ")}.`,
+    ""
+  );
   if (appendix.length) out.push("## Anexo: URLs por issue", "", `Hasta ${MAX_URLS} URLs por issue.`, "", ...appendix);
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
 }

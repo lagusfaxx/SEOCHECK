@@ -130,7 +130,7 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
     else if (serpWidthPx(p.metaDesc, 14) > META_MAX_PX) add(p.url, "meta_long", "info", `${p.metaLen} caracteres, ~${serpWidthPx(p.metaDesc, 14)} px estimados`);
     else if (p.metaLen < 70) add(p.url, "meta_short", "info", `${p.metaLen}`);
     if (!p.h1.length) add(p.url, "h1_missing", "warning");
-    else if (p.h1.length > 1) add(p.url, "h1_multiple", "info", `${p.h1.length}`);
+    else if (p.h1.length > 1) add(p.url, "h1_multiple", "info", `${p.h1.length} H1: ${p.h1.slice(0, 3).map((h) => `«${h.slice(0, 60)}»`).join(", ")}`);
     if (p.canonicalType === "none") add(p.url, "canonical_missing", "info");
     // canonical de una URL con parámetros hacia su versión sin parámetros (filtros, ?variant=…): es lo correcto
     if (p.canonicalType === "other" && !isParamCanonical(p.url, p.canonical)) {
@@ -139,15 +139,15 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
       if (bad) add(p.url, "canonical_bad_target", "warning", `${p.canonical} · ${bad}`);
       else add(p.url, "canonical_other", "info", p.canonical ?? "");
     }
-    if (p.jsonldErrors) add(p.url, "jsonld_invalid", "warning", `${p.jsonldErrors}`);
+    if (p.jsonldErrors) add(p.url, "jsonld_invalid", "warning", `${p.jsonldErrors} bloque${p.jsonldErrors === 1 ? "" : "s"} JSON-LD que no se pueden leer`);
     if (p.schemaIssues?.length) add(p.url, "jsonld_mismatch", "warning", p.schemaIssues.join("; "));
     // solo se sabe con render JS: el HTML inicial no trae links o la mitad del texto
     const jsWords = p.rawWordCount != null && p.wordCount >= 100 && p.rawWordCount < p.wordCount * 0.5;
     if (p.jsLinks > 0 || jsWords) add(p.url, "js_dependent", "info", [p.jsLinks ? `${p.jsLinks} links solo aparecen al ejecutar JavaScript` : "", jsWords ? `${p.rawWordCount} de ${p.wordCount} palabras en el HTML inicial` : ""].filter(Boolean).join(" · "));
     // poco texto no es baja calidad por sí solo (fichas, listados): solo se anota casi sin texto, como hipótesis
     if (p.wordCount < THIN_WORDS && !p.noindex) add(p.url, "thin_content", "info", `${p.wordCount} palabras visibles`);
-    if (p.imgNoAlt) add(p.url, "img_no_alt", "info", `${p.imgNoAlt}`);
-    if (p.depth > 3) add(p.url, "deep_page", "warning", `${p.depth}`);
+    if (p.imgNoAlt) add(p.url, "img_no_alt", "info", `${p.imgNoAlt} imagen${p.imgNoAlt === 1 ? "" : "es"} sin atributo alt`);
+    if (p.depth > 3) add(p.url, "deep_page", "warning", `a ${p.depth} clics de la home`);
     if (p.responseMs > 1500) add(p.url, "slow", p.responseMs > 3000 ? "warning" : "info", `${p.responseMs} ms`);
     if (!p.inlinks && p.depth !== 0 && !p.orphan) add(p.url, "no_inlinks", "warning");
     const hl = p.hreflang as { lang: string; href: string }[];
@@ -159,8 +159,23 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
       if (s != null && s >= 400 && s < 500 && ![401, 403, 429].includes(s) && !blockedSet.has(l)) add(p.url, "broken_link", "critical", l);
     }
   }
-  for (const g of group((p) => p.title)) for (const p of g) add(p.url, "title_dup", "warning", `${g.length}`);
-  for (const g of group((p) => p.metaDesc)) for (const p of g) add(p.url, "meta_dup", "info", `${g.length}`);
+  for (const g of group((p) => p.title)) for (const p of g) add(p.url, "title_dup", "warning", `mismo title en ${g.length} páginas: «${(p.title ?? "").slice(0, 80)}»`);
+  for (const g of group((p) => p.metaDesc)) for (const p of g) add(p.url, "meta_dup", "info", `misma descripción en ${g.length} páginas: «${(p.metaDesc ?? "").slice(0, 80)}…»`);
   for (const g of group((p) => (p.wordCount > 50 ? p.contentHash : null))) for (const p of g) add(p.url, "dup_content", "warning", g.filter((x) => x !== p).map((x) => x.url).slice(0, 3).join(" "));
   return out;
+}
+
+
+/** Detalle con unidad para mostrar. Los crawls anteriores guardaban solo el número ("2", "23"). */
+export function detailText(code: string, detail: string | null | undefined): string {
+  if (!detail) return "";
+  if (!/^\d+$/.test(detail.trim())) return detail;
+  const n = Number(detail);
+  const unit: Record<string, string> = {
+    title_dup: `mismo title en ${n} páginas`, meta_dup: `misma descripción en ${n} páginas`, img_no_alt: `${n} imágenes sin alt`,
+    jsonld_invalid: `${n} bloques JSON-LD con error`, h1_multiple: `${n} H1`, deep_page: `a ${n} clics de la home`,
+    title_long: `${n} caracteres`, title_short: `${n} caracteres`, meta_long: `${n} caracteres`, meta_short: `${n} caracteres`,
+    thin_content: `${n} palabras visibles`, http_4xx: `HTTP ${n}`, http_5xx: `HTTP ${n}`,
+  };
+  return unit[code] ?? detail;
 }

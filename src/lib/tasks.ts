@@ -154,11 +154,18 @@ export async function projectActions(projectId: string) {
   const rankedUrls = new Set(tracked.flatMap(t => t.checks.filter(c => c.url && c.position != null).map(c => c.url!)));
   const period = await gscPeriod(projectId);
   const traffic = period ? await db.gscRow.groupBy({ by: ["page"], where: { projectId, date: { gte: period.start, lt: period.endExclusive } }, _sum: { impressions: true } }) : [];
-  const groups = groupTasks(rows, rankedUrls, new Map(traffic.map(t=>[t.page,t._sum.impressions ?? 0])));
+  // tareas de auditoría con la etiqueta vigente; las que la última auditoría ya no observó quedan marcadas
+  // (no se presentan como acciones actuales: su evidencia es de una ejecución anterior)
+  const groups = groupTasks(rows, rankedUrls, new Map(traffic.map(t=>[t.page,t._sum.impressions ?? 0]))).map((g) => ({
+    ...g,
+    title: g.source === "crawl" && g.code ? ISSUE_LABELS[g.code] ?? g.title : g.title,
+    stale: g.source === "crawl" && Boolean(latest) && !g.members.some((m) => m.lastCrawlId === latest!.id),
+  }));
   return {
     tasks: rows,
     groups,
-    actions: groups.filter(t => !["resolved", "ignored"].includes(t.status)).slice(0, 5),
+    latestCrawlId: latest?.id ?? null,
+    actions: groups.filter(t => !["resolved", "ignored"].includes(t.status) && !t.stale).slice(0, 5),
     improved: groups.filter(t => t.status === "resolved").slice(0, 5),
   };
 }

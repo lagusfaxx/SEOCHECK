@@ -7,6 +7,7 @@ import { db } from "./db";
 import { projectClient } from "./gsc-oauth";
 import { jobLog } from "./jobctx";
 import { bareHost, sameSite } from "./util";
+import { PRIVATE_PATH } from "./report-rules";
 
 export const GA4_SCOPE = "https://www.googleapis.com/auth/analytics.readonly";
 const DAY = 864e5;
@@ -202,8 +203,13 @@ export async function ga4Overview(projectId: string, period: { start: Date; endE
     sum(prevStart, start),
     db.ga4Row.groupBy({ by: ["landing"], where: { projectId, date: { gte: start, lt: end } }, _sum: { sessions: true, keyEvents: true, revenue: true } }),
   ]);
-  const landings = byLanding
-    .map((r) => ({ landing: r.landing, sessions: r._sum.sessions ?? 0, keyEvents: r._sum.keyEvents ?? 0, revenue: r._sum.revenue ?? 0 }))
+  const all = byLanding.map((r) => ({ landing: r.landing, sessions: r._sum.sessions ?? 0, keyEvents: r._sum.keyEvents ?? 0, revenue: r._sum.revenue ?? 0 }));
+  // páginas privadas (admin, cuenta, checkout) no se buscan en Google: si aparecen como landing orgánica es tráfico
+  // interno o atribución de sesión, no un resultado del SEO
+  const isPrivate = (l: string) => PRIVATE_PATH.test(`${l}/`);
+  const priv = all.filter((r) => isPrivate(r.landing));
+  const landings = all
+    .filter((r) => !isPrivate(r.landing))
     .map((r) => ({ ...r, conversionRate: r.sessions ? r.keyEvents / r.sessions : 0 }))
     .sort((a, b) => b.revenue - a.revenue || b.keyEvents - a.keyEvents || b.sessions - a.sessions)
     .slice(0, 20);
@@ -215,6 +221,13 @@ export async function ga4Overview(projectId: string, period: { start: Date; endE
     current: cur,
     previous: prev,
     landings,
-    note: "Google Analytics, canal Organic Search (todos los buscadores, no solo Google). Eventos clave = las conversiones configuradas en GA4.",
+    privateLandings: { count: priv.length, sessions: priv.reduce((s, r) => s + r.sessions, 0), examples: priv.slice(0, 3).map((r) => r.landing) },
+    // la medición se valida antes de interpretar ceros
+    checks: [
+      ...(cur.sessions > 0 && cur.keyEvents === 0 ? ["No hay eventos clave en el período: antes de leer «0 conversiones», confirma en GA4 que las compras o contactos estén marcados como eventos clave."] : []),
+      ...(cur.keyEvents > 0 && cur.revenue === 0 ? ["Hay conversiones pero ingresos 0: si el sitio vende en línea, revisa que el evento purchase envíe value y currency."] : []),
+      ...(priv.length ? [`${priv.length} landing(s) privadas con ${priv.reduce((s, r) => s + r.sessions, 0)} sesiones «orgánicas» (${priv.slice(0, 3).map((r) => r.landing).join(", ")}): suele ser tráfico interno o del equipo. Excluye tu tráfico interno en GA4; no se muestran en la tabla.`] : []),
+    ],
+    note: "Google Analytics, canal Organic Search (todos los buscadores, no solo Google; no es lo mismo que los clics de Search Console). Eventos clave = las conversiones configuradas en GA4. Depende del consentimiento de cookies y del modelo de atribución de GA4.",
   };
 }
