@@ -57,7 +57,12 @@ export function parseRobots(txt: string, bot = "googlebot"): Robots {
       }
     }
   const star = groups.filter((g) => g.agents.includes("*"));
-  const chosen = best ? [best] : star;
+  const chosen = best ? groups.filter((g) =>
+        g.agents.some(
+          (a) => a !== "*" && b.includes(a) && a.length === bestLen,
+        ),
+      )
+    : star;
   return {
     disallow: chosen.flatMap((g) => g.disallow),
     allow: chosen.flatMap((g) => g.allow),
@@ -91,37 +96,23 @@ export function robotsAllows(r: Robots, url: string): boolean {
     target = url;
   }
   // precedencia: la regla que coincide con más caracteres; en empate gana Allow
-  let bestAllow = -1, bestDis = -1;
-  for (const a of r.allow) if (ruleRe(a).test(target)) bestAllow = Math.max(bestAllow, a.length);
-  for (const d of r.disallow) if (ruleRe(d).test(target)) bestDis = Math.max(bestDis, d.length);
+  let bestAllow = -1,
+    bestDis = -1;
+  for (const a of r.allow)
+    if (ruleRe(a).test(target)) bestAllow = Math.max(bestAllow, a.length);
+  for (const d of r.disallow)
+    if (ruleRe(d).test(target)) bestDis = Math.max(bestDis, d.length);
   return bestDis < 0 || bestAllow >= bestDis;
 }
 
 /** `maxSitemaps`/`timeoutMs` permiten una lectura rápida (sugerencias en vivo) sin cambiar el uso del crawler. */
-export async function fetchSitemapUrls(sitemaps: string[], max = 20000, o: { maxSitemaps?: number; timeoutMs?: number } = {}): Promise<string[]> {
-  const { maxSitemaps = 200, timeoutMs = 30000 } = o;
-  const urls = new Set<string>();
-  const queue = [...sitemaps];
-  const visited = new Set<string>();
-  while (queue.length && urls.size < max && visited.size < maxSitemaps) {
-    const sm = queue.shift()!;
-    if (visited.has(sm)) continue;
-    visited.add(sm);
-    try {
-      const { res } = await safeFetch(sm, { headers: { "User-Agent": env.userAgent }, timeoutMs });
-      if (!res.ok) continue;
-      let xml: string;
-      if (sm.endsWith(".gz")) {
-        const { gunzipSync } = await import("node:zlib");
-        xml = gunzipSync(Buffer.from(await res.arrayBuffer())).toString("utf8");
-      } else xml = await res.text();
-      const isIndex = /<sitemapindex/i.test(xml);
-      for (const m of xml.matchAll(/<loc>\s*(?:<!\[CDATA\[)?\s*([^<\]]+?)\s*(?:\]\]>)?\s*<\/loc>/gi)) {
-        const loc = m[1].replace(/&amp;/g, "&");
-        if (isIndex) queue.push(loc);
-        else urls.add(loc);
-      }
-    } catch {}
-  }
-  return [...urls].slice(0, max);
+export async function fetchSitemapUrls(
+  sitemaps: string[],
+  max = 20000,
+  o: { maxSitemaps?: number; timeoutMs?: number } = {},
+): Promise<string[]> {
+  const { fetchSitemapEvidence } = await import("./sitemap");
+  return (await fetchSitemapEvidence(sitemaps, max, o)).entries.map(
+    (e) => e.url,
+  );
 }

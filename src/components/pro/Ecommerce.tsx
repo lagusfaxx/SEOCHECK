@@ -1,5 +1,5 @@
 "use client";
-
+import ExpertPanel from "./ExpertPanel";
 export default function Ecommerce() {
-  return null;
+  return <ExpertPanel kind="shop" links={[]} />;
 }

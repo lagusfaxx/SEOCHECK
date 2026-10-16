@@ -1,3 +1,5 @@
+import { adviceReport } from "./advice/service";
+import { fieldCls } from "./web-vitals";
 import { db } from "./db";
 import { env } from "./env";
 import { detailText, ISSUE_LABELS } from "./audit/issues";
@@ -260,9 +262,11 @@ export async function buildReport(projectId: string): Promise<string> {
     const tr = sectionTraffic(sec);
     const mobile = r.strategy === "mobile";
     const what = v.fieldBad
-      ? `usuarios reales: LCP ${f0(fld?.lcp?.p75)} ms, INP ${f0(fld?.inp?.p75)} ms, CLS ${fld?.cls?.p75 ?? "–"}`
-      : v.hasField
-        ? `laboratorio ${r.score}/100 pero los usuarios reales están bien`
+      ? `usuarios reales: LCP ${f0(fld?.lcp?.p75)} ms, INP ${f0(fld?.inp?.p75)} ms, CLS ${fieldCls(fld) ?? "–"}`
+      : v.fieldComplete
+        ? `laboratorio ${r.score}/100 pero los usuarios reales están dentro de los umbrales`
+        : v.hasField
+          ? `laboratorio ${r.score}/100; datos de campo incompletos, sin evaluación global`
         : `laboratorio ${r.score}/100 (sin datos de campo), LCP ${f0(lab.lcp)} ms`;
     tasks.push(
       makeTask({
@@ -278,7 +282,7 @@ export async function buildReport(projectId: string): Promise<string> {
         ease: 0.5,
         // datos de usuarios reales (CrUX) pesan más que una prueba de laboratorio
         confidence: v.fieldBad ? "alta" : v.discrepancy ? "baja" : "media",
-        evidence: `PageSpeed ${r.strategy} del ${isoDay(r.createdAt)}: ${v.fieldBad ? `datos de usuarios reales (CrUX, ${fld?.source === "origin" ? "origen" : "URL"}, 28 días)` : v.hasField ? "laboratorio malo, pero los usuarios reales (CrUX) están bien" : "solo laboratorio (una carga simulada), sin datos de usuarios reales"}`,
+        evidence: `PageSpeed ${r.strategy} del ${isoDay(r.createdAt)}: ${v.fieldBad ? `datos de usuarios reales (CrUX, ${fld?.source === "origin" ? "origen" : "URL"}, 28 días)` : v.fieldComplete ? "laboratorio malo, pero las tres métricas de campo (CrUX) están dentro de los umbrales" : v.hasField ? "datos de campo incompletos; no se puede concluir la evaluación de Core Web Vitals" : "solo laboratorio (una carga simulada), sin datos de usuarios reales"}`,
         verify: v.fieldBad ? "El p75 de campo baja de LCP 2,5 s / INP 200 ms / CLS 0,1 (tarda ~28 días en reflejarse)." : "La prueba de laboratorio mejora y, cuando haya datos de campo, se confirman ahí.",
       })
     );
@@ -950,7 +954,7 @@ export async function buildReport(projectId: string): Promise<string> {
       psiRows.map((r) => {
         const lab = r.lab as Record<string, number | null>;
         const fld = r.field as Record<string, any>;
-        return [r.url, r.strategy, r.score ?? "–", f0(lab.lcp), fld?.source ? `${fld.source === "origin" ? "origen" : "URL"} · LCP ${f0(fld.lcp?.p75)} · INP ${f0(fld.inp?.p75)} · CLS ${fld.cls?.p75 ?? "–"}` : "sin datos"];
+        return [r.url, r.strategy, r.score ?? "–", f0(lab.lcp), fld?.source ? `${fld.source === "origin" ? "origen" : "URL"} · LCP ${f0(fld.lcp?.p75)} · INP ${f0(fld.inp?.p75)} · CLS ${fieldCls(fld) ?? "–"}` : "sin datos"];
       })
     ),
     ""
@@ -985,6 +989,16 @@ export async function buildReport(projectId: string): Promise<string> {
       : `✓ ${checks.length} chequeos de consistencia pasaron: ${checks.map(([what]) => what).join("; ")}.`,
     ""
   );
+  const advice = await adviceReport(projectId);
+  const prose = (text: string) => text.replace(/[\\`*_{}\[\]<>#]/g, "\\$&");
+  out.push("## Próximos pasos para el negocio", "", `Objetivo: ${advice.goalLabel}. Las explicaciones son propuestas y no cambian los hallazgos medidos.`, "");
+  for (const action of advice.actions.slice(0, 5)) {
+    out.push(`### ${prose(action.title)}`, "", `Prioridad ${action.priority.toLowerCase()} · ${action.confidence}.`, prose(action.ai?.explanation ?? action.why));
+    if (action.ai) out.push("Explicación sugerida con IA, validada contra las referencias del hallazgo.");
+    out.push(...(action.ai?.steps ?? action.steps).map(s => `- ${prose(s)}`), `Comprobar: ${prose(action.ai?.verify ?? action.verify)}`);
+    out.push(...action.evidence.map(e => `- Evidencia (${e.source}${e.at ? `, ${e.at}` : ""}): ${prose(e.observation)}`), "");
+  }
+  out.push("Revisiones pendientes:", ...advice.checks.filter(c => c.status !== "available").map(c => `- ${prose(c.title)}: ${prose(c.detail)}`), "");
   if (appendix.length) out.push("## Anexo: URLs por issue", "", `Hasta ${MAX_URLS} URLs por issue.`, "", ...appendix);
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
 }

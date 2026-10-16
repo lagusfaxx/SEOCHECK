@@ -92,5 +92,6 @@ test("GA4: landings normalizadas (sin query ni barra) y sumadas por día", () =>
     { dimensionValues: [{ value: "20260915" }, { value: "(not set)" }], metricValues: [{ value: "2" }, { value: "0" }, { value: "0" }] },
   ]);
   assert.deepEqual(rows.find((r) => r.landing === "/catalogo"), { date: "2026-09-15", landing: "/catalogo", sessions: 15, keyEvents: 1, revenue: 59990 });
-  assert.ok(rows.some((r) => r.landing === "/"));
+  assert.ok(rows.some((r) => r.landing === "(not set)"));
+  assert.ok(!rows.some((r) => r.landing === "/"));
 });

@@ -44,7 +44,7 @@ test("variantes ortográficas con tráfico en la misma página", () => {
 });
 
 test("PageSpeed: campo primero; laboratorio solo sin campo; discrepancia lab vs campo", () => {
-  const good = { source: "url" as const, lcp: { p75: 1900, cat: "FAST" }, inp: { p75: 100, cat: "FAST" }, cls: { p75: 0.01, cat: "FAST" } };
+  const good = { source: "url" as const, lcp: { p75: 1900, cat: "FAST" }, inp: { p75: 100, cat: "FAST" }, clsUnit: "ratio" as const, cls: { p75: 0.01, cat: "FAST" } };
   const v1 = psiVerdict(31, { lcp: 9000 }, good);
   assert.deepEqual([v1.hasField, v1.fieldBad, v1.discrepancy, v1.actionable], [true, false, true, false]);
   const v2 = psiVerdict(22, { lcp: 7000 }, { source: null });

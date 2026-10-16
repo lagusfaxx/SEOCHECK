@@ -14,7 +14,7 @@ import {
 
 export async function syncCrawlTasks(crawlId: string) {
   const crawl = await db.crawl.findUniqueOrThrow({ where: { id: crawlId } });
-  if (!["completed", "partial"].includes(crawl.status)) return;
+  if (crawl.private || !["completed", "partial"].includes(crawl.status)) return;
   const period = await gscPeriod(crawl.projectId);
   const [issues, pages, traffic] = await Promise.all([
     db.issue.findMany({ where: { crawlId } }),
@@ -128,7 +128,7 @@ export async function setTaskStatus(
 ) {
   if (!TASK_STATUSES.includes(status))
     throw new Error("Estado de tarea inválido");
-  return db.$transaction(async (tx) => {
+  const result = await db.$transaction(async (tx) => {
     const t = await tx.projectTask.findFirstOrThrow({
       where: { projectId, id: taskId },
     });
@@ -138,12 +138,14 @@ export async function setTaskStatus(
     });
     if (t.status !== status)
       await tx.taskEvent.create({ data: { taskId, status, actor } });
-    return next;
+    return { next, changed: t.status !== status };
   });
+  if (result.changed) await import("./pro/notifications").then(n => n.queueNotice(projectId, "task.updated", `task:${result.next.id}:${result.next.updatedAt.toISOString()}`, { message: `${result.next.title}: ${status}`, taskId: result.next.id, status })).catch(e => console.warn("[notifications]", e));
+  return result.next;
 }
 export async function projectActions(projectId: string) {
   // Existing audits also populate tasks after upgrading; preserve manually edited states.
-  const latest = await db.crawl.findFirst({ where: { projectId, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" }, select: { id: true } });
+  const latest = await db.crawl.findFirst({ where: { projectId, private: false, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" }, select: { id: true } });
   if (latest && !(await db.projectTask.findFirst({ where: { projectId, source: "crawl", lastCrawlId: latest.id }, select: { id: true } }))) await syncCrawlTasks(latest.id);
   const rows = await db.projectTask.findMany({
     where: { projectId },

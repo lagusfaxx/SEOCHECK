@@ -16,7 +16,9 @@ async function upsertAlert(projectId: string, type: string, key: string, data: R
   const since = new Date(Date.now() - 7 * 864e5);
   const exists = await db.alert.findFirst({ where: { projectId, type, key, createdAt: { gte: since } } });
   if (exists) return db.alert.update({ where: { id: exists.id }, data: { data: data as any } });
-  return db.alert.create({ data: { projectId, type, key, data: data as any } });
+  const alert = await db.alert.create({ data: { projectId, type, key, data: data as any } });
+  await import("../pro/notifications").then(n => n.queueNotice(projectId, "alert.created", `alert:${alert.id}`, { message: `${label}: ${key}`, detail: reason })).catch(e => console.warn("[notifications]", e));
+  return alert;
 }
 
 export async function computeAlerts(projectId: string) {

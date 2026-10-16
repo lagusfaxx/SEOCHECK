@@ -86,7 +86,7 @@ export const decrypt = (blob: string) => decryptToken(blob).plain;
 const oauthClient = (origin: string) => new OAuth2Client(process.env.GOOGLE_OAUTH_CLIENT_ID, process.env.GOOGLE_OAUTH_CLIENT_SECRET, redirectUri(origin));
 
 /** URL de consentimiento de Google para conectar el proyecto. */
-export async function startUrl(projectId: string, userId: string, origin: string): Promise<string> {
+export async function startUrl(projectId: string, userId: string, origin: string, business = false): Promise<string> {
   if (!oauthConfigured()) throw new Error("Falta configurar GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET y TOKEN_ENC_KEY");
   const state = newToken();
   const codeVerifier = randomBytes(48).toString("base64url");
@@ -97,7 +97,7 @@ export async function startUrl(projectId: string, userId: string, origin: string
     access_type: "offline",
     prompt: "consent", // asegura refresh token aunque ya haya autorizado antes
     include_granted_scopes: true,
-    scope: GSC_SCOPES,
+    scope: business ? [...GSC_SCOPES, "https://www.googleapis.com/auth/business.manage"] : GSC_SCOPES,
     state,
     code_challenge_method: "S256" as never,
     code_challenge: challenge,

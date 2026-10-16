@@ -2,6 +2,8 @@ import PgBoss from "pg-boss";
 import { db } from "./db";
 
 export const QUEUES = {
+  advice: "advice.explain",
+  proDeliver: "pro.deliver",
   keywords: "keywords.run",
   crawl: "audit.crawl",
   psi: "audit.psi",

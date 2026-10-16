@@ -78,7 +78,7 @@ before(async () => {
 
   // PageSpeed: laboratorio malo pero usuarios reales bien (interstitial típico)
   await db.psiResult.create({
-    data: { projectId, url: `${S}/perfil/ana`, strategy: "mobile", score: 31, lab: { lcp: 9000 }, field: { source: "url", lcp: { p75: 1900, cat: "FAST" }, inp: { p75: 120, cat: "FAST" }, cls: { p75: 0.02, cat: "FAST" } } },
+    data: { projectId, url: `${S}/perfil/ana`, strategy: "mobile", score: 31, lab: { lcp: 9000 }, field: { source: "url", lcp: { p75: 1900, cat: "FAST" }, inp: { p75: 120, cat: "FAST" }, clsUnit: "ratio", cls: { p75: 0.02, cat: "FAST" } } },
   });
   // PageSpeed móvil < 50 sin datos de campo: va arriba
   await db.psiResult.create({ data: { projectId, url: `${S}/blog/post`, strategy: "mobile", score: 22, lab: { lcp: 7000 }, field: { source: null } } });

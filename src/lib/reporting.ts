@@ -1,3 +1,5 @@
+import { adviceReport } from "./advice/service";
+import { fieldCls } from "./web-vitals";
 import path from "node:path";
 import PDFDocument from "pdfkit";
 import { db } from "./db";
@@ -62,13 +64,14 @@ export async function executiveReport(projectId: string) {
   // mismo período que el informe técnico: 28 días hasta el último día con datos de Search Console
   const period = await gscPeriod(projectId);
   const inPeriod = period ? { gte: period.start, lt: period.endExclusive } : undefined;
-  const [p, comparison, actions, plan, gscDays, gscRows] = await Promise.all([
+  const [p, comparison, actions, plan, gscDays, gscRows, advice] = await Promise.all([
     db.project.findUniqueOrThrow({ where: { id: projectId } }),
     auditComparison(projectId),
     projectActions(projectId),
     projectPlan(projectId),
     period ? db.gscDay.aggregate({ where: { projectId, date: inPeriod }, _sum: { clicks: true, impressions: true }, _count: true }) : null,
     period ? db.gscRow.aggregate({ where: { projectId, date: inPeriod }, _sum: { clicks: true, impressions: true } }) : null,
+    adviceReport(projectId),
   ]);
   // totales del sitio si están; si no, la suma de filas (que excluye consultas anonimizadas), y se dice cuál es
   const totals = Boolean(gscDays?._count);
@@ -172,6 +175,7 @@ export async function executiveReport(projectId: string) {
       url: t.url,
       status: t.status,
     })),
+    guidance: { goal: advice.goalLabel, actions: advice.actions.slice(0, 3), checks: advice.checks.filter(c => c.status !== "available") },
     improved: actions.improved.length,
     traffic: {
       clicks: gsc?._sum.clicks ?? null,
@@ -210,17 +214,21 @@ export async function executiveReport(projectId: string) {
     })),
   };
 }
-export type ExecutiveReport = Awaited<ReturnType<typeof executiveReport>>;
+type CurrentExecutiveReport = Awaited<ReturnType<typeof executiveReport>>;
+/** Snapshots anteriores no contienen el plan guiado. */
+export type ExecutiveReport = Omit<CurrentExecutiveReport,"guidance"> & Partial<Pick<CurrentExecutiveReport,"guidance">>;
 export async function saveReport(projectId: string) {
   const [executive, markdown] = await Promise.all([
     executiveReport(projectId),
     buildReport(projectId),
   ]);
-  return withProjectQuota(projectId, "reports", 1, (tx) =>
+  const saved = await withProjectQuota(projectId, "reports", 1, (tx) =>
     tx.reportSnapshot.create({
       data: { projectId, executive: executive as any, markdown },
     }),
   );
+  await import("./pro/notifications").then(n => n.queueNotice(projectId, "report.ready", `report:${saved.id}`, { message: "Informe SEO actualizado", reportId: saved.id })).catch(e => console.warn("[notifications]", e));
+  return saved;
 }
 export function executivePdf(
   r: ExecutiveReport,
@@ -341,6 +349,19 @@ export function executivePdf(
         .text(title);
       doc.fillColor("#222222").font("ReportRegular").fontSize(10);
     };
+    if (r.guidance) {
+      heading("Pasos sugeridos para el negocio");
+      doc.text(`Objetivo: ${r.guidance.goal}.`);
+      for (const action of r.guidance.actions) {
+        if (doc.y > 600) doc.addPage();
+        doc.moveDown().font("ReportBold").text(action.title).font("ReportRegular");
+        doc.text(action.ai?.explanation ?? action.why);
+        if (action.ai) doc.fontSize(9).text("Explicación sugerida con IA · confirmar con la evidencia").fontSize(10);
+        for (const step of action.ai?.steps ?? action.steps) doc.text(`• ${step}`);
+        doc.text(`Comprobar: ${action.ai?.verify ?? action.verify}`);
+      }
+      for (const check of r.guidance.checks.slice(0, 4)) doc.moveDown(.4).text(`Pendiente: ${check.title}. ${check.detail}`);
+    }
     heading("Diagnóstico y plan de corrección");
     const findings = r.findings ?? [];
     doc.text(
@@ -399,7 +420,7 @@ export function executivePdf(
         const fld = s.field as Record<string, any> | null;
         doc.text(
           fld?.source
-            ? `Usuarios reales (CrUX, ${fld.source === "origin" ? "todo el origen" : "esta URL"}): LCP ${fld.lcp?.p75 ?? "–"} ms · INP ${fld.inp?.p75 ?? "–"} ms · CLS ${fld.cls?.p75 ?? "–"}.`
+            ? `Usuarios reales (CrUX, ${fld.source === "origin" ? "todo el origen" : "esta URL"}): LCP ${fld.lcp?.p75 ?? "–"} ms · INP ${fld.inp?.p75 ?? "–"} ms · CLS ${fieldCls(fld) ?? "–"}.`
             : "Sin datos de usuarios reales (Core Web Vitals de campo) para esta URL.",
         );
       }

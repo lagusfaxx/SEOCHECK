@@ -246,7 +246,8 @@ export function parsePsi(j: any) {
   const field = {
     lcp: f("LARGEST_CONTENTFUL_PAINT_MS"),
     inp: f("INTERACTION_TO_NEXT_PAINT"),
-    cls: f("CUMULATIVE_LAYOUT_SHIFT_SCORE"),
+    cls: m["CUMULATIVE_LAYOUT_SHIFT_SCORE"] && typeof m["CUMULATIVE_LAYOUT_SHIFT_SCORE"].percentile === "number" ? { p75: m["CUMULATIVE_LAYOUT_SHIFT_SCORE"].percentile / 100, cat: m["CUMULATIVE_LAYOUT_SHIFT_SCORE"].category ?? null } : null,
+    clsUnit: "ratio" as const,
     fcp: f("FIRST_CONTENTFUL_PAINT_MS"),
     ttfb: f("EXPERIMENTAL_TIME_TO_FIRST_BYTE"),
     overall: le.overall_category ?? null,

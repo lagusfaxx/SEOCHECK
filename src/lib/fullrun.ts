@@ -34,6 +34,8 @@ export type FullRunOpts = {
   local?: boolean;
   /** Keywords de la competencia que el sitio no tiene (DataForSEO Labs, una vez al mes) */
   gap?: boolean;
+  /** Explicaciones de acciones con IA, si está configurada y habilitada. */
+  advice?: boolean;
 };
 
 export type StepResult = { step: string; status: "ok" | "skipped" | "error"; detail?: string };
@@ -45,7 +47,7 @@ export type StepResult = { step: string; status: "ok" | "skipped" | "error"; det
 export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: string): Promise<StepResult[]> {
   const p = await db.project.findUniqueOrThrow({ where: { id: projectId } });
   const results: StepResult[] = [];
-  const steps = 12;
+  const steps = 13;
   let n = 0;
   const step = async (name: string, label: string, fn: () => Promise<string | void | null>) => {
     await jobProgress(jobRunId, (n / steps) * 100, label);
@@ -185,6 +187,16 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
     const a = await computeAlerts(projectId);
     const w = await import("./watch").then((m) => m.runWatch(projectId));
     return `${a} alertas${w.length ? ` · ${w.length} aviso(s) enviado(s)` : ""}`;
+  });
+
+  // Las vistas que dependen de GSC/GA4/PageSpeed deben reflejar el final del trabajo, no solo el crawl inicial.
+  const { refresh } = await import("./pro/data");
+  for (const kind of ["index", "perf", "analytics", "content", "serp"]) await refresh(kind, projectId).catch(e => jobLog("warn", `Actualizar ${kind}: ${e instanceof Error ? e.message : String(e)}`));
+  await step("advice", "explicación de próximas acciones", async () => {
+    if (opts.advice === false) return skip("advice", "desactivado");
+    const result = await (await import("./advice/service")).generateAdvice(projectId);
+    if (result.status === "skipped") return skip("advice", result.reason ?? "sin acciones");
+    return result.status === "fallback" ? "Se conservan las recomendaciones por reglas: la explicación de IA no se pudo validar" : "Recomendaciones explicadas con evidencia";
   });
 
   await jobLog("info", "informe completo", results);

@@ -1,5 +1,5 @@
 "use client";
-
+import ExpertPanel from "./ExpertPanel";
 export default function Structured() {
-  return null;
+  return <ExpertPanel kind="structure" links={[]} />;
 }

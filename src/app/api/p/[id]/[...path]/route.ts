@@ -10,7 +10,7 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { cancelJob, enqueue, QUEUES } from "@/lib/queue";
 import { autoSyncGsc } from "@/lib/gsc-autosync";
-import { AuthError, isInstanceAdmin, memLimit, rateLimit, requireProject, requireUser } from "@/lib/auth";
+import { AuthError, isInstanceAdmin, memLimit, rateLimit, requireProject, requireProjectWrite, requireUser } from "@/lib/auth";
 import { clientMessage, GENERIC_ERROR } from "@/lib/redact";
 import { sweepStale, workerAlive } from "@/lib/jobs";
 import { refreshCluster } from "@/lib/keywords/pipeline";
@@ -497,9 +497,9 @@ const POSTS: Record<string, H> = {
   alerts: async ({ id }) => enqueue(id, QUEUES.alerts, {}),
 
   /** Empieza la conexión OAuth con Google: devuelve la URL de consentimiento */
-  "gsc/connect": async ({ id, url, user }) => {
+  "gsc/connect": async ({ id, url, user, body }) => {
     if (!oauthConfigured()) throw new HttpError(400, "La conexión con Google no está configurada en el servidor (GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, TOKEN_ENC_KEY)");
-    return { url: await startUrl(id, user.id, url.origin) };
+    return { url: await startUrl(id, user.id, url.origin, body.business === true) };
   },
 
   "jobs/cancel": async ({ id, body }) => {
@@ -666,6 +666,7 @@ function make(table: Record<string, H>) {
       user = await requireUser(req);
       if (!memLimit(`api:${user.id}`, 600, 60_000)) return bad("Demasiadas solicitudes: espera un minuto", 429);
       await requireProject(user.id, params.id, "member");
+      if (req.method !== "GET" && req.method !== "HEAD") await requireProjectWrite(user.id, params.id);
       admin = await isInstanceAdmin(user.id);
     } catch (e) {
       if (e instanceof AuthError) return bad(e.message, e.status);

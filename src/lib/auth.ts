@@ -120,6 +120,10 @@ export async function projectRole(userId: string, projectId: string): Promise<Ro
 export async function requireProject(userId: string, projectId: string, min: Role = "member"): Promise<Role> {
   const role = await projectRole(userId, projectId);
   if (!role) throw new AuthError(404, "no existe");
+  if (role === "member") {
+    const restrictions = await db.projectAccess.findMany({ where: { projectId }, select: { userId: true } });
+    if (restrictions.length && !restrictions.some(a => a.userId === userId)) throw new AuthError(404, "no existe");
+  }
   if (RANK[role] < RANK[min]) throw new AuthError(403, "Tu rol no permite esta acción");
   return role;
 }
@@ -225,4 +229,11 @@ export async function consumeVerification(token: string) {
     db.user.update({ where: { id: v.userId }, data: { emailVerifiedAt: new Date() } }),
   ]);
   return v.userId;
+}
+
+export async function requireProjectWrite(userId: string, projectId: string) {
+  const role = await requireProject(userId, projectId);
+  if (role !== "member") return;
+  const access = await db.projectAccess.findUnique({ where: { projectId_userId: { projectId, userId } } });
+  if (access?.role === "viewer") throw new AuthError(403, "Solo puedes consultar este proyecto");
 }

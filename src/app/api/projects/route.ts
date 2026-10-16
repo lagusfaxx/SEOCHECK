@@ -13,7 +13,7 @@ const fail = (msg: string, status = 400) => Response.json({ error: msg }, { stat
 export async function GET(req: Request) {
   try {
     const u = await requireUser(req);
-    const projects = await db.project.findMany({ where: { workspaceId: { in: await userWorkspaceIds(u.id) } }, orderBy: { createdAt: "asc" } });
+    const projects = await db.project.findMany({ where: { workspaceId: { in: await userWorkspaceIds(u.id) }, OR: [{ workspace: { members: { some: { userId: u.id, role: { in: ["owner", "admin"] } } } } }, { access: { none: {} } }, { access: { some: { userId: u.id } } }] }, orderBy: { createdAt: "asc" } });
     return Response.json(projects);
   } catch (e) {
     return e instanceof AuthError || e instanceof PlanLimitError ? fail(e.message, e.status) : fail("Error interno", 500);

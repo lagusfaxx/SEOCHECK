@@ -162,7 +162,8 @@ export async function runWatch(projectId: string) {
   for (const a of alerts) {
     const exists = await db.alert.findFirst({ where: { projectId, type: "watch", key: a.key, createdAt: { gte: new Date(Date.now() - 7 * DAY) } } });
     if (exists) continue;
-    await db.alert.create({ data: { projectId, type: "watch", key: a.key, data: { severity: a.severity, title: a.title, detail: a.detail, urls: a.urls.slice(0, 20) } } });
+    const notice = await db.alert.create({ data: { projectId, type: "watch", key: a.key, data: { severity: a.severity, title: a.title, detail: a.detail, urls: a.urls.slice(0, 20) } } });
+    await import("./pro/notifications").then(n => n.queueNotice(projectId, "alert.created", `alert:${notice.id}`, { message: a.title, detail: a.detail })).catch(e => console.warn("[notifications]", e));
     fresh.push(a);
   }
   if (fresh.length) {

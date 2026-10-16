@@ -1,5 +1,5 @@
 "use client";
-
+import ExpertPanel from "./ExpertPanel";
 export default function Templates() {
-  return null;
+  return <ExpertPanel kind="templates" links={[]} />;
 }
