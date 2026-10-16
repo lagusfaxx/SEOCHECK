@@ -65,6 +65,36 @@ export function upcomingPeaks<T extends { monthly?: Monthly | null }>(items: T[]
   return items.map((x) => ({ x, peaks: peakMonths(x.monthly) })).filter((r) => r.peaks.some((m) => next.includes(m)));
 }
 
+/**
+ * Palabras que no definen el tema (público, lugar, compra, colores, tallas): «zapatillas nike mujer» no es relevante
+ * para una tienda de trajes de baño solo porque el sitio también dice «mujer».
+ */
+const GENERIC = new Set(
+  "para con sin los las del una uno unos unas que como mas muy por sus este esta mujer mujeres hombre hombres nino nina ninos ninas infantil adulto unisex chile santiago online tienda comprar compra precio precios oferta ofertas barato barata baratos venta ventas mejor mejores nuevo nueva nuevos envio gratis original originales marca marcas talla tallas color colores negro negra blanco blanca azul rojo roja rosado verde gris morado purpura amarillo modelo modelos new"
+    .split(" "),
+);
+const fold = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+/** Raíz simple: plural en -es/-s fuera (trajes → traje, zapatillas → zapatilla). */
+const stem = (w: string) => (w.length > 5 && w.endsWith("es") ? w.slice(0, -2) : w.length > 4 && w.endsWith("s") ? w.slice(0, -1) : w);
+export const topicWords = (text: string) =>
+  fold(text)
+    .split(/[^a-z0-9ñ]+/)
+    .filter((w) => w.length >= 4 && !/^\d+$/.test(w) && !GENERIC.has(w))
+    .map(stem);
+
+/**
+ * Solo keywords del tema del sitio: al menos una palabra que define el tema (no genérica) tiene que aparecer en el
+ * vocabulario propio (titles y H1 del crawl, consultas de Search Console, keywords investigadas). Competidores
+ * generalistas (multitiendas, marketplaces) rankean en miles de cosas que el negocio no vende.
+ */
+export function relevantGap<T extends { keyword: string }>(items: T[], vocab: Iterable<string>) {
+  const own = new Set<string>();
+  for (const t of vocab) for (const w of topicWords(t)) own.add(w);
+  const relevant: T[] = [], discarded: T[] = [];
+  for (const i of items) (topicWords(i.keyword).some((w) => own.has(w)) ? relevant : discarded).push(i);
+  return { relevant, discarded };
+}
+
 // ---------- llamadas ----------
 
 export async function runKeywordGap(projectId: string, opts: { force?: boolean } = {}) {
@@ -110,9 +140,29 @@ export async function gapOverview(projectId: string) {
   const own = await db.keyword.findMany({ where: { projectId, excluded: false }, select: { term: true, volume: true, monthly: true }, orderBy: { volume: "desc" }, take: 300 });
   const now = new Date();
   const ownWithMonthly = own.filter((k) => Array.isArray(k.monthly)).map((k) => ({ keyword: k.term, volume: k.volume ?? 0, monthly: k.monthly as Monthly }));
-  const items = (g?.items as GapItem[] | undefined) ?? [];
+  // vocabulario propio: titles/H1 del último crawl público, consultas de Search Console y keywords investigadas
+  const crawl = await db.crawl.findFirst({ where: { projectId, private: false, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" }, select: { id: true } });
+  const [pages, queries] = await Promise.all([
+    crawl ? db.page.findMany({ where: { crawlId: crawl.id, status: 200 }, select: { title: true, h1: true }, take: 3000 }) : [],
+    db.gscRow.groupBy({ by: ["query"], where: { projectId }, _sum: { impressions: true }, orderBy: { _sum: { impressions: "desc" } }, take: 500 }),
+  ]);
+  const vocab = [...pages.map((p) => `${p.title ?? ""} ${p.h1.join(" ")}`), ...queries.map((q) => q.query), ...own.map((k) => k.term)];
+  const all = (g?.items as GapItem[] | undefined) ?? [];
+  // sin vocabulario propio no se puede juzgar: se muestra todo con la advertencia de siempre
+  const { relevant, discarded } = vocab.length ? relevantGap(all, vocab) : { relevant: all, discarded: [] as GapItem[] };
+  const items = relevant;
   return {
-    gap: g ? { at: g.createdAt.toISOString(), competitors: g.competitors, total: items.length, items: items.slice(0, 50).map((i) => ({ ...i, peaks: peakMonths(i.monthly) })), errors: g.errors } : null,
+    gap: g
+      ? {
+          at: g.createdAt.toISOString(),
+          competitors: g.competitors,
+          total: items.length,
+          items: items.slice(0, 50).map((i) => ({ ...i, peaks: peakMonths(i.monthly) })),
+          errors: g.errors,
+          discarded: discarded.length,
+          discardedExamples: discarded.slice(0, 5).map((i) => i.keyword),
+        }
+      : null,
     // estacionalidad: keywords propias y del gap que suben en los próximos 2 meses
     upcoming: upcomingPeaks([...ownWithMonthly, ...items], now)
       .sort((a, b) => (b.x as any).volume - (a.x as any).volume)

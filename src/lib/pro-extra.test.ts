@@ -48,7 +48,8 @@ test("canonicals en bucle y contradicciones de robots", () => {
   const base = { noindex: false, canonicalType: "self", canonical: "https://x.cl/a" };
   assert.match(robotsConflict({ ...base, robotsMeta: "index, follow", xRobots: "noindex", noindex: true })!, /se contradicen/);
   assert.equal(robotsConflict({ ...base, robotsMeta: "index, follow", xRobots: "bingbot: noindex" }), null);
-  assert.match(robotsConflict({ ...base, robotsMeta: "noindex", xRobots: null, noindex: true, canonicalType: "other", canonical: "https://x.cl/b" })!, /señales opuestas/);
+  // noindex + canonical a otra URL ya no es «contradicción confirmada»: va como hipótesis aparte
+  assert.equal(robotsConflict({ ...base, robotsMeta: "noindex", xRobots: null, noindex: true, canonicalType: "other", canonical: "https://x.cl/b" }), null);
   assert.equal(robotsConflict({ ...base, robotsMeta: "noindex, follow", xRobots: null, noindex: true }), null);
 });
 
@@ -105,4 +106,30 @@ test("safeFetch detecta bucles de redirección y no reenvía credenciales a otro
   await safeFetch("https://93.184.216.34/inicio", { fetchImpl: ok, headers: { Authorization: "Basic x" } });
   assert.equal(seenAuth["https://93.184.216.34/inicio"], "Basic x");
   assert.equal(seenAuth["https://8.8.8.8/fin"], null);
+});
+
+test("keyword gap: descarta keywords de otro rubro aunque compartan «mujer» u «hombre»", async () => {
+  const { relevantGap } = await import("./keyword-gap");
+  const vocab = ["Traje de Natación R-Skin Jammer | Taupoc", "Trajes de baño de competencia para mujer", "taupoc swimwear"];
+  const items = ["new balance", "zapatillas nike mujer", "polerones hombre", "trajes de baño mujer", "traje de natacion competencia", "jammer natacion"].map((keyword) => ({ keyword }));
+  const { relevant, discarded } = relevantGap(items, vocab);
+  assert.deepEqual(relevant.map((i) => i.keyword), ["trajes de baño mujer", "traje de natacion competencia", "jammer natacion"]);
+  assert.equal(discarded.length, 3);
+});
+
+test("informe ejecutivo: el mismo problema en dos secciones se distingue por sección", async () => {
+  const { withSection } = await import("./reporting");
+  const out = withSection([
+    { title: "Título que puede cortarse", pattern: "/producto/*" },
+    { title: "Título que puede cortarse", pattern: null },
+    { title: "Sin H1", pattern: null },
+  ]);
+  assert.deepEqual(out.map((a) => a.title), ["Título que puede cortarse · /producto/*", "Título que puede cortarse · varias secciones", "Sin H1"]);
+});
+
+test("pasos sugeridos: la evidencia es URL + valor observado, no el texto completo de la tarea", async () => {
+  const { evidenceOf } = await import("./advice/plan");
+  const reason = "Directivas contradictorias: Google aplica la más restrictiva. Evidencia (2026-10-16): noindex y canonical a https://taupoc.cl/catalogo: señales opuestas. Dejar una sola directiva. Prioridad: 38 enlaces internos (sin datos GSC) × severidad warning.";
+  assert.equal(evidenceOf({ url: "https://taupoc.cl/x", reason }), "https://taupoc.cl/x — noindex y canonical a https://taupoc.cl/catalogo: señales opuestas");
+  assert.equal(evidenceOf({ url: "https://taupoc.cl/y", reason: "Sin evidencia." }), "https://taupoc.cl/y");
 });

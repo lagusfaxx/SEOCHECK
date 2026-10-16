@@ -60,6 +60,13 @@ export async function auditComparison(projectId: string) {
     pages: now.pages.length,
   };
 }
+/** Dos acciones con el mismo título (mismo problema en secciones distintas) se distinguen por su sección. */
+export function withSection<T extends { title: string; pattern: string | null }>(actions: T[]): T[] {
+  const n = new Map<string, number>();
+  for (const a of actions) n.set(a.title, (n.get(a.title) ?? 0) + 1);
+  return actions.map((a) => ((n.get(a.title) ?? 0) > 1 ? { ...a, title: `${a.title} · ${a.pattern ?? "varias secciones"}` } : a));
+}
+
 export async function executiveReport(projectId: string) {
   // mismo período que el informe técnico: 28 días hasta el último día con datos de Search Console
   const period = await gscPeriod(projectId);
@@ -147,13 +154,36 @@ export async function executiveReport(projectId: string) {
   }
   const weight: Record<string, number> = { critical: 3, warning: 2, info: 1 };
   const KIND_ORDER = [KIND_LABEL.confirmed, KIND_LABEL.possible, KIND_LABEL.opportunity];
+  // indexación según Google (URL Inspection): si las páginas principales no están en el índice, es lo primero a
+  // resolver, aunque el crawl no muestre errores; no sale de las tareas del crawl, así que se agrega aparte
+  const inspections = await db.urlInspection.findMany({ where: { projectId }, orderBy: { createdAt: "desc" }, take: 2000, select: { url: true, verdict: true, coverageState: true, createdAt: true } });
+  const lastInspection = new Map<string, (typeof inspections)[number]>();
+  for (const i of inspections) if (!lastInspection.has(i.url)) lastInspection.set(i.url, i);
+  const notIndexed = [...lastInspection.values()].filter((i) => i.verdict !== "PASS");
+  const indexAction =
+    lastInspection.size >= 3 && notIndexed.length >= 2
+      ? {
+          kind: KIND_LABEL.confirmed,
+          evidence: notIndexed.slice(0, 5).map((i) => `${i.url} — ${i.coverageState ?? i.verdict ?? "sin indexar"} (inspección del ${i.createdAt.toISOString().slice(0, 10)})`),
+          title: `Google no indexa ${notIndexed.length} de ${lastInspection.size} páginas inspeccionadas`,
+          reason:
+            "Según la inspección de URLs de Search Console, estas páginas no están en el índice de Google y no pueden aparecer en los resultados. «Descubierta: actualmente sin indexar» = Google la conoce pero aún no la rastrea o no le asigna valor; «Google no reconoce esta URL» = no la ha encontrado. Enlazarlas desde páginas indexadas (home, menú, categorías), incluirlas en el sitemap y pedir la indexación en Search Console; si alguna no debe indexarse, confirmar que tenga noindex o canonical.",
+          affected: notIndexed.length,
+          category: "error",
+          priorityLabel: "Alta",
+          pattern: null,
+          fix: "Enlazar desde páginas indexadas, sitemap y solicitar indexación en Search Console.",
+          url: null,
+          status: "detected",
+        }
+      : null;
   return {
     project: p.name,
     domain: p.domain,
     generatedAt: new Date().toISOString(),
     comparison,
     // acciones de la MISMA auditoría que las tablas: con su evidencia actual (URL + valor observado)
-    actions: actions.actions.map((t) => ({
+    actions: withSection([...(indexAction ? [indexAction] : []), ...actions.actions.map((t) => ({
       kind: t.source === "crawl" && t.code ? KIND_LABEL[kindOf(t.code)] : null,
       evidence:
         t.source === "crawl"
@@ -174,7 +204,7 @@ export async function executiveReport(projectId: string) {
       fix: t.fix,
       url: t.url,
       status: t.status,
-    })),
+    }))]),
     guidance: { goal: advice.goalLabel, actions: advice.actions.slice(0, 3), checks: advice.checks.filter(c => c.status !== "available") },
     improved: actions.improved.length,
     traffic: {
@@ -288,7 +318,7 @@ export function executivePdf(
       );
     doc
       .fontSize(12)
-      .text(`${r.project} · ${r.domain}`)
+      .text(r.project.trim().toLowerCase() === r.domain.trim().toLowerCase() ? r.domain : `${r.project} · ${r.domain}`)
       .text(
         new Date(r.generatedAt).toLocaleDateString("es-CL", {
           timeZone: "America/Santiago",
@@ -415,7 +445,7 @@ export function executivePdf(
         doc
           .text(`${s.url} (${s.strategy}, ${s.date.slice(0, 10)})`)
           .text(
-            `PageSpeed ${s.score ?? "sin puntuación"}/100 · LCP ${lab.lcp != null ? (lab.lcp / 1000).toFixed(2) + " s" : "sin datos"} · CLS ${lab.cls ?? "sin datos"}. Medición de laboratorio (una carga simulada).`,
+            `PageSpeed ${s.score ?? "sin puntuación"}/100 · LCP ${lab.lcp != null ? (lab.lcp / 1000).toFixed(2) + " s" : "sin datos"} · CLS ${lab.cls != null ? Number(lab.cls).toFixed(2) : "sin datos"}. Medición de laboratorio (una carga simulada).`,
           );
         const fld = s.field as Record<string, any> | null;
         doc.text(

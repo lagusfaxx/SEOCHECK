@@ -46,6 +46,8 @@ export const ISSUE_LABELS: Record<string, string> = {
   redirect_loop: "Bucle de redirecciones",
   canonical_loop: "Canonicals en bucle",
   robots_conflict: "Directivas de robots contradictorias",
+  noindex_canonical: "noindex y canonical a otra URL a la vez",
+  not_in_sitemap: "Página indexable que no está en el sitemap",
   render_mismatch: "El HTML y la página con JavaScript no coinciden",
   ...EXTRA_ISSUE_LABELS,
 };
@@ -90,7 +92,7 @@ export function canonicalLoop(url: string, pageOf: Map<string, Pick<Page, "canon
 
 /**
  * Directivas que se contradicen: meta robots vs cabecera X-Robots-Tag (Google aplica la más restrictiva, así que
- * una de las dos sobra o está mal), y noindex junto a un canonical a otra URL (dos señales opuestas).
+ * una de las dos sobra o está mal). noindex + canonical a otra URL va aparte (noindex_canonical): es una hipótesis.
  */
 export function robotsConflict(p: Pick<Page, "robotsMeta" | "xRobots" | "noindex" | "canonicalType" | "canonical">): string | null {
   const has = (s: string | null | undefined, re: RegExp) => Boolean(s && re.test(s));
@@ -106,7 +108,6 @@ export function robotsConflict(p: Pick<Page, "robotsMeta" | "xRobots" | "noindex
   const metaNofollow = has(p.robotsMeta, /(^|[\s,])(nofollow|none)([\s,]|$)/i), headNofollow = has(xGoogle, /(nofollow|none)/i);
   const metaFollow = has(p.robotsMeta, /(^|[\s,])follow([\s,]|$)/i), headFollow = has(xGoogle, /(^|[\s,:])follow([\s,]|$)/i);
   if ((metaNofollow && headFollow) || (headNofollow && metaFollow)) out.push(`follow/nofollow distinto entre meta robots «${p.robotsMeta}» y X-Robots-Tag «${p.xRobots}»`);
-  if (p.noindex && p.canonicalType === "other") out.push(`noindex y canonical a otra URL (${p.canonical}) a la vez: señales opuestas`);
   return out.length ? out.join(" · ") : null;
 }
 
@@ -159,6 +160,13 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
     if (p.noindex) add(p.url, p.inSitemap ? "noindex_in_sitemap" : "noindex", p.inSitemap ? "critical" : "info");
     const conflict = robotsConflict(p);
     if (conflict) add(p.url, "robots_conflict", "warning", conflict);
+    // noindex + canonical a otra URL: Google recomienda no mezclarlos, pero en filtros con parámetros que apuntan a
+    // su categoría es un patrón habitual e inofensivo; solo se anota (como hipótesis) fuera de ese caso
+    // el sitemap existe pero no lista esta página indexable (sin parámetros, canonical a sí misma)
+    if (ctx.sitemapCount > 0 && !p.inSitemap && !p.noindex && p.canonicalType !== "other" && !new URL(p.url).search)
+      add(p.url, "not_in_sitemap", "warning", `responde 200, es indexable y no figura entre las ${ctx.sitemapCount} URLs del sitemap`);
+    if (p.noindex && p.canonicalType === "other" && !isParamCanonical(p.url, p.canonical))
+      add(p.url, "noindex_canonical", "info", `noindex y canonical a ${p.canonical}: señales opuestas`);
     const diffs = (Array.isArray(p.renderDiff) ? p.renderDiff : []) as { field: string; html: string; rendered: string }[];
     if (diffs.length) {
       // robots o canonical distintos cambian qué indexa Google; título/H1/links/texto son señal de dependencia de JS

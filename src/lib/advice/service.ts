@@ -3,6 +3,7 @@ import { db } from "../db";
 import { pagesOf, project } from "../pro/data";
 import { gscPeriod } from "../gsc-period";
 import { groupTasks } from "../task-groups";
+import { ISSUE_VERIFY } from "../audit/fixes";
 import { buildPlan, profileOf, type Plan } from "./plan";
 import {
   ADVICE_SCHEMA,
@@ -83,6 +84,7 @@ export async function measuredPlan(id: string): Promise<Plan> {
       ? `${period.start.toISOString().slice(0, 10)} a ${period.end.toISOString().slice(0, 10)}`
       : null,
     taskSampleLimited: tasks.length === 3000,
+    verify: ISSUE_VERIFY,
   });
   if (crawl && Date.now() - crawl.startedAt.getTime() > 28 * 864e5)
     plan.notes.push(

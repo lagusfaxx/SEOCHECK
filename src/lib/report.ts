@@ -58,6 +58,8 @@ export async function buildReport(projectId: string): Promise<string> {
   let httpCounts: { c4xx: number; c5xx: number } | null = null;
   const notes: string[] = [];
   const intentional: string[] = [];
+  /** URLs que el informe da por intencionales y a la vez como error confirmado (debe quedar vacío) */
+  let intentOverlap: string[] | null = null;
   const trends: string[] = [];
   const patterns: Pattern[] = [];
 
@@ -197,6 +199,8 @@ export async function buildReport(projectId: string): Promise<string> {
     const pagesFull = await db.page.findMany({ where: { crawlId: crawl.id }, select: { url: true, status: true, depth: true, inlinks: true, jsonldTypes: true, error: true, canonical: true } });
     const ins = buildFindings(pagesFull, issues, { cms: (st.cms as Cms) ?? null, hitLimit, impr: hasGsc ? imprByUrl : undefined });
     for (const it of ins.intentional) intentional.push(`- **${it.text}.** Ej.: ${it.examples.join(" · ")}`);
+    const intentionalUrls = new Set(ins.intentional.flatMap((it) => it.examples.map((e) => e.split(" → ")[0])));
+    intentOverlap = [...new Set(ins.findings.filter((f) => kindOf(f.code) === "confirmed").flatMap((f) => f.urls).filter((u) => intentionalUrls.has(u)))];
     const covered = new Set(ins.findings.flatMap((f) => f.urls.map((u) => `${f.code}|${u}`)));
     const real = issues.filter((i) => covered.has(`${i.code}|${i.url}`) || ["robots_missing", "sitemap_missing"].includes(i.code));
     const byCode = new Map<string, typeof real>();
@@ -711,6 +715,8 @@ export async function buildReport(projectId: string): Promise<string> {
         [s, ...bl.competitorSummaries].map((x) => [x.target === bl.target ? `${x.target} (tú)` : x.target, f0(x.referringDomains), f0(x.backlinks), f0(x.rank), f0(x.brokenBacklinks)])
       )
     );
+    const zeros = [s, ...bl.competitorSummaries].filter((x) => !x.referringDomains && !x.backlinks).map((x) => x.target);
+    if (zeros.length) blOut.push("", `_${zeros.join(", ")}: 0 = DataForSEO no tiene links registrados hacia ese dominio en su índice. En un sitio nuevo puede ser real; no prueba que no existan links._`);
     if (bl.previous) blOut.push("", `Variación desde la foto anterior: ${f0(s.referringDomains - bl.previous.referringDomains)} dominios de referencia.`);
     if (bl.newDomains.length) blOut.push("", `**Nuevos (30 días):** ${bl.newDomains.slice(0, 10).map((d) => `${d.domain} (rank ${d.rank})`).join(" · ")}`);
     if (bl.lost.length) blOut.push("", `**Perdidos:** ${bl.lost.slice(0, 10).map((d) => `${d.domain} (rank ${d.rank}${d.lostDate ? `, ${String(d.lostDate).slice(0, 10)}` : ""})`).join(" · ")}`);
@@ -810,6 +816,8 @@ export async function buildReport(projectId: string): Promise<string> {
   // ---------- Keyword gap y estacionalidad ----------
   const gapOut: string[] = [];
   const kg = await gapOverview(projectId);
+  if (kg.gap?.discarded)
+    gapOut.push(`_Se descartaron ${kg.gap.discarded} keywords de los competidores que no tienen relación con el vocabulario del sitio (titles, H1, consultas de Search Console), p. ej. ${kg.gap.discardedExamples.map((k) => `«${k}»`).join(", ")}. Si el competidor es una multitienda, conviene configurar competidores del mismo rubro en Resultados._\n`);
   if (kg.gap?.items.length) {
     const g = kg.gap;
     gapOut.push(
@@ -850,6 +858,7 @@ export async function buildReport(projectId: string): Promise<string> {
     const sum = k.brand.now + k.nonBrand.now + k.unclassified.now;
     checks.push(["clics de marca + sin marca + no clasificables = total", !k.unclassified.now || sum === k.clicks.now, `${sum} vs ${k.clicks.now}`]);
   }
+  if (intentOverlap) checks.push(["ninguna URL figura a la vez como error confirmado y como comportamiento intencional", !intentOverlap.length, intentOverlap.slice(0, 5).join(", ")]);
   if (!inspLatest.size) checks.push(["indexación sin inspecciones se informa como «no medido» (no como 0)", true]);
 
   // ---------- Armado ----------

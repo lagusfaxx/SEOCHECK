@@ -107,6 +107,8 @@ export type Input = {
   performance: boolean;
   period: string | null;
   taskSampleLimited?: boolean;
+  /** cómo verificar cada código de issue (ISSUE_VERIFY), para no caer en un texto genérico */
+  verify?: Record<string, string>;
 };
 export const RULES_VERSION = "advice-2026-10-16-v1";
 export const SITE_LABELS: Record<SiteType, string> = {
@@ -202,10 +204,10 @@ const plain: Record<
       "Confirma que la ayuda es visible y propia de esa categoría. Si usa JavaScript, contrasta con un crawl renderizado.",
   },
   jsonld_mismatch: {
-    title: "Hacer coincidir la información de producto con lo visible",
-    why: "La auditoría encontró diferencias entre los datos que leen los buscadores y la página.",
+    title: "Hacer coincidir los datos estructurados con lo visible",
+    why: "La auditoría encontró diferencias entre los datos que leen los buscadores (JSON-LD) y lo que muestra la página.",
     steps: [
-      "Revisa el dato señalado: precio, stock, reseñas u otro atributo.",
+      "Revisa el dato señalado en la evidencia: precio, stock, reseñas, o preguntas y respuestas de FAQ.",
       "Genera ambas versiones desde la misma fuente de datos y comprueba posibles cachés antiguas.",
     ],
     verify:
@@ -222,6 +224,13 @@ const plain: Record<
       "Repite el rastreo con cobertura suficiente; revisa los enlaces generados con JavaScript antes de confirmar que es huérfana.",
   },
 };
+/** «URL — valor observado» desde el motivo de la tarea («… Evidencia (fecha): X. …»); si no lo trae, la URL. */
+export function evidenceOf(t: Pick<AdviceTask, "url" | "reason">): string {
+  const m = /Evidencia \(\d{4}-\d{2}-\d{2}\): (.*?)\.(?: [A-ZÁÉÍÓÚ¿]|$)/.exec(t.reason);
+  const detail = m?.[1]?.trim();
+  if (t.url) return detail ? `${t.url} — ${detail}`.slice(0, 700) : t.url;
+  return (detail ?? t.reason).slice(0, 700);
+}
 export function buildPlan(input: Input): Plan {
   const profile = profileOf(input.profile),
     live = input.pages.filter(
@@ -278,6 +287,7 @@ export function buildPlan(input: Input): Plan {
         ],
         verify:
           copy?.verify ??
+          (g.code && input.verify?.[g.code]) ??
           "Comprueba las URLs afectadas y ejecuta una nueva revisión; no marques una corrección solo por haberla planificado.",
         href: `tasks?task=${encodeURIComponent(g.id)}`,
         taskId: g.id,
@@ -297,7 +307,8 @@ export function buildPlan(input: Input): Plan {
               : t.source === "crawl"
                 ? (input.crawlAt ?? "")
                 : "",
-            observation: t.reason.slice(0, 700),
+            // solo la URL y el valor observado: el porqué y la corrección ya están en la acción
+            observation: evidenceOf(t),
           })),
       };
     });
