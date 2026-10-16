@@ -1,13 +1,16 @@
 import { db } from "../db";
 import { gscQuery, resolveGscProperty } from "../providers/google";
 import { jobLog } from "../jobctx";
+import { sameSite } from "../util";
 
 /**
  * Propiedad GSC del proyecto, corregida al formato real que ve la cuenta de servicio
  * (p. ej. guardada como sc-domain:dominio.cl pero en Search Console es https://dominio.cl/). Se guarda la corrección.
  */
-export async function projectGscProperty(p: { id: string; gscProperty: string | null }): Promise<string | null> {
+export async function projectGscProperty(p: { id: string; gscProperty: string | null; domain?: string }): Promise<string | null> {
   if (!p.gscProperty) return null;
+  // una propiedad guardada de otro dominio (anterior a la validación) no se sincroniza en este proyecto
+  if (p.domain && !sameSite(p.gscProperty, p.domain)) throw new Error(`La propiedad de Search Console ${p.gscProperty} no es de ${p.domain}: elige la del dominio del proyecto en Ajustes.`);
   const real = await resolveGscProperty(p.gscProperty, p.id);
   if (real !== p.gscProperty) {
     await db.project.update({ where: { id: p.id }, data: { gscProperty: real } });

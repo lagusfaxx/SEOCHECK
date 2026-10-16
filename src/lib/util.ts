@@ -84,3 +84,17 @@ export function urlKey(raw: string): string {
 
 /** URL pública de la app. APP_URL manda; vacía (docker-compose la pasa como "") cae al origen del request. */
 export const appBaseUrl = (origin?: string) => (process.env.APP_URL || origin || "").replace(/\/$/, "");
+
+/** Host sin protocolo, www, puerto ni ruta: "https://www.Taupoc.cl/x" → "taupoc.cl". */
+export const bareHost = (s: string) => s.trim().toLowerCase().replace(/^sc-domain:/, "").replace(/^[a-z]+:\/\//, "").replace(/[/?#].*$/, "").replace(/:\d+$/, "").replace(/^www\./, "").replace(/\.$/, "");
+
+/**
+ * ¿Una propiedad (Search Console / Analytics) corresponde al dominio del proyecto? Mismo host o subdominio del
+ * proyecto (tienda.taupoc.cl en un proyecto taupoc.cl). Una propiedad de dominio que cubre al proyecto también
+ * sirve (sc-domain:taupoc.cl en un proyecto www.taupoc.cl). Nunca otro dominio (tacos.cl).
+ */
+export function sameSite(property: string, projectDomain: string) {
+  const a = bareHost(property), b = bareHost(projectDomain);
+  if (!a || !b) return false;
+  return a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
+}

@@ -21,7 +21,7 @@ test("causa raíz: 76 de 80 productos con title largo = problema de plantilla, c
   assert.equal(f.rootCause, true);
   assert.equal(f.urls.length, 76);
   assert.equal(f.templateSize, 80);
-  assert.equal(f.summary, "Posible problema de plantilla /products/*: afecta 76 de 80 URLs. Corrige la plantilla una vez.");
+  assert.equal(f.summary, "Coincide en 76 de 80 URLs de /products/*: puede venir de la plantilla. Antes de cambiarla, confirma qué condición lo produce (campo vacío, dato largo, variante) y qué páginas son excepción.");
   assert.equal(f.kind, "opportunity");
   assert.equal(f.pageKind, "product");
   assert.match(f.reasons[0], /76 URLs afectadas \(95% de \/products\/\*\)/);
@@ -90,7 +90,7 @@ test("layout común: el mismo problema en casi todo el sitio es UN hallazgo del 
   const { findings } = buildFindings(pages, issues);
   assert.equal(findings.length, 1);
   assert.equal(findings[0].scope, "layout");
-  assert.match(findings[0].summary, /plantilla base del sitio .*afecta 92 de 92 URLs/);
+  assert.match(findings[0].summary, /Aparece en 92 de 92 URLs .*plantilla base/);
   // el mismo issue solo en productos (aunque sean el 87% del sitio) es de la plantilla de producto
   const onlyProducts = buildFindings(pages, issues.filter((i) => i.url.includes("/products/"))).findings;
   assert.equal(onlyProducts[0].template, "/products/*");

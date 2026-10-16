@@ -184,6 +184,10 @@ export async function marketingOverview(projectId: string) {
     brand: { now: sCur.brand.clicks, before: sPrev.brand.clicks },
     nonBrand: { now: sCur.nonBrand.clicks, before: sPrev.nonBrand.clicks },
     nonBrandImpressions: { now: sCur.nonBrand.impressions, before: sPrev.nonBrand.impressions },
+    // clics que Search Console no asigna a ninguna consulta (anonimizadas): no son de marca ni sin marca, son desconocidos
+    unclassified: totalsFromDays
+      ? { now: Math.max(0, (dayCur._sum.clicks ?? 0) - sCur.brand.clicks - sCur.nonBrand.clicks), before: Math.max(0, (dayPrev._sum.clicks ?? 0) - sPrev.brand.clicks - sPrev.nonBrand.clicks) }
+      : { now: 0, before: 0 },
     source: totalsFromDays ? "Totales: Search Console del sitio. Marca / sin marca: filas por consulta (sin consultas anonimizadas)." : "Filas por consulta y página de Search Console (sin consultas anonimizadas).",
   };
 
@@ -293,7 +297,9 @@ export async function competitorsOverview(projectId: string, own: string) {
   );
   const ai = [...latest.values()].filter((s) => s.aiOverview);
   return {
-    basis: terms.length ? "keywords monitoreadas en Rankings" : "keywords del research",
+    basis: terms.length ? "keywords monitoreadas en Rankings" : "SERPs guardadas por research, contenido o rankings",
+    // con pocas keywords la cuota describe esas consultas, no el mercado
+    representative: latest.size >= 10,
     keywords: latest.size,
     ownShare: sov.ownShare,
     top: sov.rows.slice(0, 12),

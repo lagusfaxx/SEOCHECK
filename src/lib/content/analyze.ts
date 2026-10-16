@@ -350,8 +350,9 @@ export async function analyzeContent(id: string, jobRunId?: string) {
   };
   // rutas reales del sitio para verificar los links que proponga el brief
   const lastCrawl = await db.crawl.findFirst({ where: { projectId: p.id, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" }, select: { id: true } });
-  const crawled = lastCrawl ? await db.page.findMany({ where: { crawlId: lastCrawl.id, status: 200, error: null }, select: { url: true }, take: 2000 }) : [];
-  result.knownUrls = [...new Set([...crawled.map((x) => x.url), ...(minePd?.links ?? []).filter((l) => hostOf(l) === own)])].slice(0, 2000);
+  const crawled = lastCrawl ? await db.page.findMany({ where: { crawlId: lastCrawl.id, status: 200, error: null }, select: { url: true, finalUrl: true }, take: 2000 }) : [];
+  // solo lo que el crawl comprobó que responde 200 sin redirigir: un link en la página no prueba que el destino exista
+  result.knownUrls = [...new Set(crawled.filter((x) => !x.finalUrl || x.finalUrl === x.url).map((x) => x.url))].slice(0, 2000);
   await db.contentAnalysis.update({ where: { id }, data: { result: result as unknown as Prisma.InputJsonValue, score, status: "brief" } });
 
   await jobProgress(jobRunId, 85, "brief");
@@ -404,7 +405,7 @@ export function fallbackBrief(r: ContentResult): Brief {
 }
 
 /** Texto propio con el que se contrastan las afirmaciones y filtros del brief. */
-export const ownEvidence = (r: ContentResult) => [r.mine.title ?? "", r.mine.meta ?? "", ...r.mine.h1, ...r.mine.headings.map((h) => h.text), r.mine.text ?? ""].join("\n");
+export const ownEvidence = (r: ContentResult) => [r.mine?.title ?? "", r.mine?.meta ?? "", ...(r.mine?.h1 ?? []), ...(r.mine?.headings ?? []).map((h) => h.text), r.mine?.text ?? ""].join("\n");
 
 /** Brief verificado contra el sitio real: links a rutas existentes, sin filtros repetidos ni afirmaciones sin respaldo. */
 export async function makeBrief(r: ContentResult, language: string, country: string): Promise<Brief> {

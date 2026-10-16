@@ -21,6 +21,7 @@ type Overview = {
     brand: { now: number; before: number };
     nonBrand: { now: number; before: number };
     nonBrandImpressions: { now: number; before: number };
+    unclassified: { now: number; before: number };
     source: string;
   };
   sections?: { section: string; clicks: number; impressions: number; before: number; pages: number }[];
@@ -32,6 +33,7 @@ type Overview = {
   competitors: null | {
     basis: string;
     keywords: number;
+    representative: boolean;
     ownShare: number;
     top: { domain: string; share: number; keywords: number; avgPosition: number; own: boolean }[];
     aiOverview: { keywords: number; cited: number; examples: { keyword: string; cited: boolean }[] };
@@ -133,7 +135,10 @@ export default function Results() {
             <Kpi label="Clics sin marca" now={k.nonBrand.now} before={k.nonBrand.before} hint="Consultas que no incluyen el nombre del sitio: es el tráfico que trae el SEO. Los clics de marca dependen más de la notoriedad." />
             <Kpi label="Clics de marca" now={k.brand.now} before={k.brand.before} />
           </div>
-          <p className="mt-3 text-xs text-ink-500">{k.source}</p>
+          <p className="mt-3 text-xs text-ink-500">
+            {k.unclassified.now > 0 && <><b>{fmt(k.unclassified.now)} clics no clasificables</b> (consultas que Google anonimiza: no se sabe si son de marca). </>}
+            {k.source}
+          </p>
         </section>
       )}
 
@@ -276,7 +281,8 @@ export default function Results() {
         <h2 className="text-base font-semibold">Competidores y visibilidad</h2>
         {data.competitors ? (
           <>
-            <p className="mb-3 text-xs text-ink-500">{data.competitors.keywords} keywords ({data.competitors.basis}). {data.competitors.note}</p>
+            <p className="mb-3 text-xs text-ink-500">{data.competitors.keywords} keyword{data.competitors.keywords === 1 ? "" : "s"} ({data.competitors.basis}). {data.competitors.note}</p>
+            {!data.competitors.representative && <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">Con {data.competitors.keywords} keyword{data.competitors.keywords === 1 ? "" : "s"} la cuota describe solo {data.competitors.keywords === 1 ? "esa consulta" : "esas consultas"}, no el mercado. Monitorea al menos 10 en Rankings para una comparación útil.</p>}
             <div className="mb-3 grid grid-cols-2 gap-4 md:grid-cols-3">
               <Stat label="Tu cuota de visibilidad" value={pct(data.competitors.ownShare)} />
               <Stat label="Keywords con AI Overview" value={fmt(data.competitors.aiOverview.keywords)} hint="Búsquedas donde Google muestra un resumen generado con IA arriba de los resultados: suele bajar el CTR orgánico." />

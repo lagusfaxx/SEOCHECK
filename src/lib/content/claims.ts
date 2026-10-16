@@ -130,17 +130,42 @@ export function verifyBrief(brief: Brief, input: BriefCheckInput): Brief {
     else filters.push(f);
   }
   // solo el texto que el brief propone publicar; las preguntas y encabezados pueden venir tal cual de Google
-  const text = [brief.intro ?? "", ...brief.titles, ...brief.metas, ...brief.faq.map((x) => x.a)].join("\n");
-  const seen = new Set<string>();
-  for (const { re, what } of SOFT_CLAIMS)
-    for (const m of text.matchAll(re)) {
-      const claim = m[0].trim();
-      if (seen.has(norm(claim)) || own.includes(norm(claim))) continue;
-      // el público o la línea cuenta como respaldado si la palabra clave aparece en la página
-      const key = norm(claim).replace(/^(para|el|la|los|las) /, "").split(" ")[0];
-      if (what === "público o línea de producto" && own.includes(key)) continue;
-      seen.add(norm(claim));
-      warnings.push(`Afirmación sin respaldo en la página (${what}): «${claim}». Verificar con datos reales del negocio o quitarla.`);
-    }
-  return { ...brief, links: brief.links ? links : brief.links, filters: brief.filters ? filters : brief.filters, warnings: [...new Set(warnings)] };
+  const unsupported = (text: string) => {
+    const found: { claim: string; what: string }[] = [];
+    for (const { re, what } of SOFT_CLAIMS)
+      for (const m of text.matchAll(new RegExp(re.source, re.flags))) {
+        const claim = m[0].trim();
+        if (own.includes(norm(claim))) continue;
+        // el público o la línea cuenta como respaldado si la palabra clave aparece en la página
+        const key = norm(claim).replace(/^(para|el|la|los|las) /, "").split(" ")[0];
+        if (what === "público o línea de producto" && own.includes(key)) continue;
+        found.push({ claim, what });
+      }
+    return found;
+  };
+  const removed = new Map<string, string>();
+  const note = (f: { claim: string; what: string }[]) => f.forEach((x) => removed.set(norm(x.claim), `«${x.claim}» (${x.what})`));
+  // se quita del texto, no solo se avisa: un brief no debe entregar afirmaciones que el negocio no respalda
+  const cleanText = (t: string) =>
+    t
+      .split(/(?<=[.!?])\s+/)
+      .filter((sentence) => {
+        const f = unsupported(sentence);
+        note(f);
+        return !f.length;
+      })
+      .join(" ");
+  const keep = (items: string[] | undefined) => (items ?? []).filter((t) => { const f = unsupported(t); note(f); return !f.length; });
+  const titles = keep(brief.titles), metas = keep(brief.metas);
+  const out: Brief = {
+    ...brief,
+    titles,
+    metas,
+    intro: brief.intro != null ? cleanText(brief.intro) : brief.intro,
+    faq: (brief.faq ?? []).map((x) => ({ ...x, a: cleanText(x.a) })),
+    links: brief.links ? links : brief.links,
+    filters: brief.filters ? filters : brief.filters,
+  };
+  if (removed.size) warnings.push(`Se quitó texto con afirmaciones sin respaldo en la página: ${[...removed.values()].join(", ")}. Agrégalas solo si el negocio las ofrece de verdad.`);
+  return { ...out, warnings: [...new Set(warnings)] };
 }

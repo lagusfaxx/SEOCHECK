@@ -182,10 +182,13 @@ test("informe: priorización por impacto, falsos positivos, tendencias, GSC agru
   // el 4xx trae su URL y los conteos cuadran con la tabla de issues
   assert.match(md, /### Errores HTTP con evidencia[\s\S]*\| https:\/\/mi-sitio\.cl\/viejo \| Error 4xx \| 404 \|/);
   assert.match(md, /_Errores HTTP: 1 \(1 con 4xx, 0 con 5xx, 0 sin respuesta\)/);
-  assert.match(tasks, /Error 4xx · `\/viejo`[^\n]*\n   - Evidencia: https:\/\/mi-sitio\.cl\/viejo — 404/);
+  assert.match(tasks, /Error 4xx · `\/viejo`[^\n]*\n   - Evidencia: https:\/\/mi-sitio\.cl\/viejo — HTTP 404/);
   assert.match(tasks, /Cómo se prioriza/);
-  assert.match(md, /## Resultados[\s\S]*\*\*Clics sin marca:\*\*/);
+  assert.match(md, /## Resultados[\s\S]*\*\*Clics:\*\* [^\n]* sin marca \+ [^\n]* no clasificables/);
   assert.match(md, /### Enlazado interno de páginas clave[\s\S]*\| https:\/\/mi-sitio\.cl\/perfil\/ana \|/);
+  // el informe se valida a sí mismo y este caso es consistente
+  assert.match(md, /## Validación del informe\n\n✓ \d+ chequeos de consistencia pasaron/);
+  assert.doesNotMatch(md, /inconsistencias internas/);
 });
 
 test("correr todo: sigue aunque un paso falle y salta lo que no tiene credenciales", { skip: !hasDb }, async () => {

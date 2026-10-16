@@ -38,12 +38,14 @@ import type { Brief, ContentResult } from "./content/analyze";
 import { assertBudget, est, releaseBudget } from "./budget";
 import { marketingOverview } from "./marketing";
 import { backlinksOverview, bareDomain } from "./backlinks";
-import { ga4Properties, ga4Status, setGa4Property, syncGa4 } from "./ga4";
+import { autoPickGa4, ga4Properties, ga4Status, matchingProperties, setGa4Property, syncGa4 } from "./ga4";
 import { alertRecipients, FIELD_LABEL, latestCrawlChanges } from "./watch";
 import { aiLocalOverview, MAX_LOCAL_KEYWORDS } from "./ai-local";
 import { gapOverview } from "./keyword-gap";
 import { FEEDS, revokeFeedToken, rotateFeedToken } from "./feed";
 import { appBaseUrl } from "./util";
+import { PRO_DELETES, PRO_GETS, PRO_PATCHS, PRO_POSTS } from "./pro";
+import { ProError } from "./pro/types";
 
 /** Fecha YYYY-MM-DD (no futura) para anotaciones. */
 function dayParam(v: unknown) {
@@ -76,6 +78,17 @@ export class ProductError extends Error {
   }
 }
 const invalid = (message: string) => new ProductError(400, message);
+/** Rutas de los módulos expertos: un ProError llega al cliente con su mensaje y status. */
+function wrapPro(t: Record<string, Handler>): Record<string, Handler> {
+  return Object.fromEntries(Object.entries(t).map(([k, h]) => [k, async (c: Ctx) => {
+    try {
+      return await h(c);
+    } catch (e) {
+      if (e instanceof ProError) throw new ProductError(e.status, e.message);
+      throw e;
+    }
+  }]));
+}
 async function ownContent(id: string, cid: unknown) {
   if (typeof cid !== "string") throw invalid("Falta el análisis");
   return db.contentAnalysis.findFirstOrThrow({
@@ -97,6 +110,7 @@ function boundedText(v: unknown, max = 200) {
   return v.trim();
 }
 export const PRODUCT_GETS: Record<string, Handler> = {
+  ...wrapPro(PRO_GETS),
   "billing/config": async () => billingConfig(),
   onboarding: async ({ id }) => {
     const [p, mode, crawl, keywords, rankings, report] = await Promise.all([
@@ -200,7 +214,11 @@ export const PRODUCT_GETS: Record<string, Handler> = {
       recipients,
     };
   },
-  "ga4/properties": async ({ id }) => ga4Properties(id),
+  /** Solo las propiedades del dominio del proyecto */
+  "ga4/properties": async ({ id }) => {
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { domain: true } });
+    return matchingProperties(await ga4Properties(id), p.domain);
+  },
   explorations: async ({ id }) =>
     db.exploration.findMany({
       where: { projectId: id },
@@ -303,6 +321,7 @@ export const PRODUCT_GETS: Record<string, Handler> = {
   },
 };
 export const PRODUCT_POSTS: Record<string, Handler> = {
+  ...wrapPro(PRO_POSTS),
   "marketing/annotations": async ({ id, body, user }) => {
     const scope = typeof body.scope === "string" && body.scope.trim() ? body.scope.trim().slice(0, 500) : null;
     if (scope && !/^(https?:\/\/|\/)/.test(scope)) throw invalid("Alcance: una URL completa, una ruta (/blog/*) o vacío para todo el sitio");
@@ -320,12 +339,26 @@ export const PRODUCT_POSTS: Record<string, Handler> = {
   },
   "ga4/property": async ({ id, body, user }) => {
     await admin(id, user.id);
-    const r = await setGa4Property(id, boundedText(body.property, 50));
+    let r;
+    try {
+      r = await setGa4Property(id, boundedText(body.property, 50));
+    } catch (e) {
+      // propiedad de otro dominio o sin acceso: es un error del pedido, con su explicación
+      if (e instanceof Error && /no es de|no tiene acceso|inválida/.test(e.message)) throw invalid(e.message);
+      throw e;
+    }
     // primera carga al tiro: 90 días de datos
     await runInlineJob(id, "ga4.sync", () => syncGa4(id));
     return r;
   },
   "ga4/sync": async ({ id }) => runInlineJob(id, "ga4.sync", () => syncGa4(id)),
+  /** Elige sola la propiedad del dominio (si hay una) y carga los datos */
+  "ga4/auto": async ({ id, user }) => {
+    await admin(id, user.id);
+    const r = await autoPickGa4(id);
+    if (r.chosen && !(await db.ga4Row.findFirst({ where: { projectId: id }, select: { date: true } }))) await runInlineJob(id, "ga4.sync", () => syncGa4(id));
+    return { chosen: r.chosen, candidates: r.candidates.map((c) => ({ property: c.property, displayName: c.displayName, account: c.account, sites: c.sites })), reason: r.reason };
+  },
   "marketing/alerts": async ({ id, body, user }) => {
     await admin(id, user.id);
     const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true, workspaceId: true } });
@@ -623,6 +656,7 @@ export const PRODUCT_POSTS: Record<string, Handler> = {
   },
 };
 export const PRODUCT_PATCHS: Record<string, Handler> = {
+  ...wrapPro(PRO_PATCHS),
   onboarding: async ({ id, body }) => {
     const p = await db.project.findUniqueOrThrow({ where: { id } }),
       s = p.settings as any;
@@ -730,6 +764,7 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
   },
 };
 export const PRODUCT_DELETES: Record<string, Handler> = {
+  ...wrapPro(PRO_DELETES),
   "marketing/annotations": async ({ id, body }) =>
     db.annotation.deleteMany({ where: { projectId: id, id: boundedText(body.annotationId) } }),
   explorations: async ({ id, body }) =>

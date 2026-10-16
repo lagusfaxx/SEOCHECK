@@ -28,7 +28,7 @@ import { importProjectVolumes, volumeChainStatus } from "@/lib/volume/broker";
 import { env } from "@/lib/env";
 import { llmStatus } from "@/lib/providers/llm";
 import { assertBudget, BudgetError, budgetLimits, est, monthStart, releaseBudget, spentThisMonth } from "@/lib/budget";
-import { hostOf, normTerm, normUrl } from "@/lib/util";
+import { hostOf, normTerm, normUrl, sameSite } from "@/lib/util";
 import { buildReport } from "@/lib/report";
 import { expand, graphSearch, siteNode } from "@/lib/graph";
 import { TRANSFORMS, type GType } from "@/lib/graph-types";
@@ -328,7 +328,12 @@ const GETS: Record<string, H> = {
     return { oauthConfigured: oauthConfigured(), mode, email: c?.googleEmail ?? null, lastError: clientMessage(c?.lastError, admin), connectedAt: c?.createdAt ?? null, property: p.gscProperty };
   },
   /** Propiedades que ve la cuenta conectada (para elegir) */
-  "gsc/sites": async ({ id }) => ((await gscAvailable(id)) ? gscSites(id) : []),
+  // solo las propiedades del dominio del proyecto: no se puede elegir la de otro sitio por error
+  "gsc/sites": async ({ id }) => {
+    if (!(await gscAvailable(id))) return [];
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { domain: true } });
+    return (await gscSites(id)).filter((s) => sameSite(s, p.domain));
+  },
   "report/last": async ({ id }) => db.jobRun.findFirst({ where: { projectId: id, kind: QUEUES.full }, orderBy: { createdAt: "desc" } }),
   /** Para el formulario de Contenido: qué URL ya rankea para la keyword en Search Console. */
   "content/target": async ({ id, url }) => gscTargetFor(id, url.searchParams.get("keyword") ?? "", url.searchParams.get("url") || undefined),
@@ -537,7 +542,13 @@ const PATCHS: Record<string, H> = {
   "": async ({ id, body }) => {
     const data: Prisma.ProjectUpdateInput = {};
     for (const k of ["name", "domain", "country", "language", "gscProperty"] as const) if (k in body) (data as any)[k] = body[k] || (k === "gscProperty" ? null : body[k]);
-    if (body.gscProperty) data.gscProperty = await resolveGscProperty(body.gscProperty, id);
+    if (body.gscProperty) {
+      const p = await db.project.findUniqueOrThrow({ where: { id }, select: { domain: true } });
+      const dom = "domain" in body && body.domain ? String(body.domain) : p.domain;
+      // un proyecto de taupoc.cl no puede usar datos de tacos.cl
+      if (!sameSite(String(body.gscProperty), dom)) throw new HttpError(400, `La propiedad ${body.gscProperty} no es del dominio del proyecto (${dom}). Elige una propiedad de ${dom}.`);
+      data.gscProperty = await resolveGscProperty(body.gscProperty, id);
+    }
     if ("locationCode" in body) data.locationCode = Number(body.locationCode);
     if (body.settings) {
       const p = await db.project.findUniqueOrThrow({ where: { id } });
