@@ -82,6 +82,11 @@ export function GscConnect({ compact, returnTo, hideWhenConnected }: { compact?:
           <button className="btn-p shrink-0" disabled={busy || !c.oauthConfigured} onClick={connect}>{busy ? <><Spinner className="h-4 w-4" />Conectando…</> : <><Icon name="globe" />Conectar con Google</>}</button>
         )}
       </div>
+      {c.mode && sites && sites.length === 0 && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
+          La cuenta {c.email ?? "conectada"} no tiene ninguna propiedad de Search Console de este dominio. Agrega el sitio en Search Console con esa cuenta, o conecta la cuenta que lo administra.
+        </p>
+      )}
       {c.mode && sites && sites.length > 0 && (
         <label className="flex items-center gap-2 text-sm">
           <span className="text-ink-500">Propiedad</span>

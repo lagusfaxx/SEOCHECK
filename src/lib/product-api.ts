@@ -38,7 +38,7 @@ import type { Brief, ContentResult } from "./content/analyze";
 import { assertBudget, est, releaseBudget } from "./budget";
 import { marketingOverview } from "./marketing";
 import { backlinksOverview, bareDomain } from "./backlinks";
-import { ga4Properties, ga4Status, setGa4Property, syncGa4 } from "./ga4";
+import { autoPickGa4, ga4Properties, ga4Status, matchingProperties, setGa4Property, syncGa4 } from "./ga4";
 import { alertRecipients, FIELD_LABEL, latestCrawlChanges } from "./watch";
 import { aiLocalOverview, MAX_LOCAL_KEYWORDS } from "./ai-local";
 import { gapOverview } from "./keyword-gap";
@@ -200,7 +200,11 @@ export const PRODUCT_GETS: Record<string, Handler> = {
       recipients,
     };
   },
-  "ga4/properties": async ({ id }) => ga4Properties(id),
+  /** Solo las propiedades del dominio del proyecto */
+  "ga4/properties": async ({ id }) => {
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { domain: true } });
+    return matchingProperties(await ga4Properties(id), p.domain);
+  },
   explorations: async ({ id }) =>
     db.exploration.findMany({
       where: { projectId: id },
@@ -320,12 +324,26 @@ export const PRODUCT_POSTS: Record<string, Handler> = {
   },
   "ga4/property": async ({ id, body, user }) => {
     await admin(id, user.id);
-    const r = await setGa4Property(id, boundedText(body.property, 50));
+    let r;
+    try {
+      r = await setGa4Property(id, boundedText(body.property, 50));
+    } catch (e) {
+      // propiedad de otro dominio o sin acceso: es un error del pedido, con su explicación
+      if (e instanceof Error && /no es de|no tiene acceso|inválida/.test(e.message)) throw invalid(e.message);
+      throw e;
+    }
     // primera carga al tiro: 90 días de datos
     await runInlineJob(id, "ga4.sync", () => syncGa4(id));
     return r;
   },
   "ga4/sync": async ({ id }) => runInlineJob(id, "ga4.sync", () => syncGa4(id)),
+  /** Elige sola la propiedad del dominio (si hay una) y carga los datos */
+  "ga4/auto": async ({ id, user }) => {
+    await admin(id, user.id);
+    const r = await autoPickGa4(id);
+    if (r.chosen && !(await db.ga4Row.findFirst({ where: { projectId: id }, select: { date: true } }))) await runInlineJob(id, "ga4.sync", () => syncGa4(id));
+    return { chosen: r.chosen, candidates: r.candidates.map((c) => ({ property: c.property, displayName: c.displayName, account: c.account, sites: c.sites })), reason: r.reason };
+  },
   "marketing/alerts": async ({ id, body, user }) => {
     await admin(id, user.id);
     const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true, workspaceId: true } });
