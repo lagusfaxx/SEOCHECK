@@ -24,7 +24,7 @@ export async function coverage(projectId: string): Promise<Module[]> {
   const out: Module[] = [];
 
   // Auditoría
-  const crawl = await db.crawl.findFirst({ where: { projectId, status: { notIn: ["queued", "running"] } }, orderBy: { startedAt: "desc" } });
+  const crawl = await db.crawl.findFirst({ where: { projectId, private: false, status: { notIn: ["queued", "running"] } }, orderBy: { startedAt: "desc" } });
   if (!crawl) out.push({ key: "crawl", label: "Auditoría (crawl)", state: "never", detail: "Todavía no se crawleó el sitio" });
   else {
     const st = crawl.stats as Record<string, any>;

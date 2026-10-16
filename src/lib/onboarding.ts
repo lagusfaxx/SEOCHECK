@@ -25,7 +25,7 @@ export async function onboarding(projectId: string) {
   const st = ((p.settings ?? {}) as Record<string, any>).onboarding ?? {};
   const brand = brandFromDomain(p.domain);
   const [crawl, run, tracked, gscMode] = await Promise.all([
-    db.crawl.findFirst({ where: { projectId }, orderBy: { startedAt: "desc" }, select: { id: true, status: true, reason: true, stats: true } }),
+    db.crawl.findFirst({ where: { projectId, private: false }, orderBy: { startedAt: "desc" }, select: { id: true, status: true, reason: true, stats: true } }),
     db.keywordRun.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { id: true, status: true, seeds: true } }),
     db.trackedKeyword.count({ where: { projectId, active: true } }),
     gscAvailable(projectId),

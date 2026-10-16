@@ -15,7 +15,7 @@ import { KIND_LABEL, kindOf, splitIntentional } from "./audit/insights";
 
 export async function auditComparison(projectId: string) {
   const crawls = await db.crawl.findMany({
-    where: { projectId, status: { in: ["completed", "partial"] } },
+    where: { projectId, private: false, status: { in: ["completed", "partial"] } },
     orderBy: { startedAt: "desc" },
     take: 2,
     include: {
@@ -481,7 +481,7 @@ export function csvCell(value: unknown) {
 }
 export async function issueCsv(projectId: string) {
   const c = await db.crawl.findFirst({
-    where: { projectId, status: { in: ["completed", "partial"] } },
+    where: { projectId, private: false, status: { in: ["completed", "partial"] } },
     orderBy: { startedAt: "desc" },
     include: { issues: true },
   });

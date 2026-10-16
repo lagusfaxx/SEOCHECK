@@ -114,7 +114,7 @@ test(
         kind,
       );
     const shop = s.find((s) => s.kind === "shop")!.data as any;
-    assert.ok(shop.rows.some((r: any) => r.tipo.includes("stock")));
+    assert.ok(shop.rows.some((r: any) => /agotado|descontinuado/i.test(r.tipo)));
   },
 );
 test(

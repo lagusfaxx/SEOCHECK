@@ -75,6 +75,7 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
     crawlId = crawl.id;
     try {
       const st = await runCrawl(crawl.id);
+      if (st.status === "paused") return `en pausa · ${st.pages} URLs leídas`;
       return `${st.status === "partial" ? "parcial · " : ""}${st.pages} URL${st.pages === 1 ? "" : "s"} · ${st.critical} críticos · ${st.warning} warnings`;
     } catch (e) {
       await db.crawl.updateMany({ where: { id: crawl.id, status: { in: ["queued", "running"] } }, data: { status: "failed", reason: e instanceof Error ? e.message : String(e), finishedAt: new Date() } });

@@ -9,6 +9,18 @@ export type StructuredSummary = {
   microdata: Entity[];
   rdfa: Entity[];
 };
+/** Copia acotada de un nodo: lo que la validación necesita, sin guardar árboles JSON-LD enormes por página. */
+function trim(v: unknown, depth = 0): unknown {
+  if (typeof v === "string") return v.slice(0, 300);
+  if (!v || typeof v !== "object") return v;
+  if (depth >= 5) return Array.isArray(v) ? `[${v.length}]` : { "@type": (v as any)["@type"] ?? null };
+  if (Array.isArray(v)) return v.slice(0, 50).map((x) => trim(x, depth + 1));
+  const out: Record<string, unknown> = {};
+  for (const [k, x] of Object.entries(v).slice(0, 60)) if (k !== "@graph" && k !== "@context") out[k] = trim(x, depth + 1);
+  return out;
+}
+const MAX_ENTITIES = 50;
+
 export function extractStructured(
   $: CheerioAPI,
   nodes: any[],
@@ -23,11 +35,12 @@ export function extractStructured(
       return;
     }
     for (const t of [n["@type"]].flat().filter(Boolean))
-      out.jsonld.push({
-        format: "jsonld",
-        type: String(t).split(/[/:]/).pop()!,
-        props: n,
-      });
+      if (out.jsonld.length < MAX_ENTITIES)
+        out.jsonld.push({
+          format: "jsonld",
+          type: String(t).split(/[/:]/).pop()!,
+          props: trim(n) as Record<string, unknown>,
+        });
     Object.values(n).forEach(walk);
   }
   nodes.forEach(walk);
@@ -48,7 +61,7 @@ export function extractStructured(
     };
     $(selector).slice(0,100).each((_,el)=>{
       const props=readProps(el);
-      for(const t of ($(el).attr(typeAttr)??"").split(/\s+/))out[format].push({format,type:t.split(/[/:]/).pop()!,props});
+      for(const t of ($(el).attr(typeAttr)??"").split(/\s+/).filter(Boolean))if(out[format].length<MAX_ENTITIES)out[format].push({format,type:t.split(/[/:]/).pop()!,props});
     });
   }
   return out;

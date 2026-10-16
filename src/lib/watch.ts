@@ -67,6 +67,52 @@ export function changeAlerts(changes: Change[], impr: Map<string, number>, opts:
   return out;
 }
 
+/** Líneas agregadas y quitadas entre dos robots.txt (sin comentarios ni espacios sobrantes). */
+export function robotsDiff(prev: string | null, cur: string | null) {
+  const lines = (t: string | null) => new Set((t ?? "").split(/\r?\n/).map((l) => l.replace(/#.*/, "").trim()).filter(Boolean));
+  const a = lines(prev), b = lines(cur);
+  return { added: [...b].filter((l) => !a.has(l)), removed: [...a].filter((l) => !b.has(l)) };
+}
+
+/**
+ * Avisos de monitorización del sitio: cambios en robots.txt, en la cantidad de URLs del sitemap (±20 %) y en
+ * cualquier campo de las páginas críticas (home y las que defina el equipo), tengan o no tráfico.
+ */
+export function siteMonitorAlerts(o: { prevRobots: string | null; curRobots: string | null; prevSitemap: number; curSitemap: number; changes: Change[]; critical: string[] }): WatchAlert[] {
+  const out: WatchAlert[] = [];
+  const rd = robotsDiff(o.prevRobots, o.curRobots);
+  if (o.prevRobots != null && (rd.added.length || rd.removed.length)) {
+    const disallowAdded = rd.added.some((l) => /^disallow\s*:\s*\S/i.test(l));
+    out.push({
+      key: "robots-changed",
+      severity: disallowAdded ? "critical" : "warning",
+      title: "robots.txt cambió",
+      detail: [rd.added.length ? `Agregado: ${rd.added.slice(0, 5).join(" | ")}` : "", rd.removed.length ? `Quitado: ${rd.removed.slice(0, 5).join(" | ")}` : ""].filter(Boolean).join(". ") + ". Confirmar que el cambio fue intencional.",
+      urls: [],
+    });
+  }
+  if (o.prevSitemap >= 10 && Math.abs(o.curSitemap - o.prevSitemap) / o.prevSitemap >= 0.2)
+    out.push({
+      key: "sitemap-size",
+      severity: o.curSitemap < o.prevSitemap ? "critical" : "warning",
+      title: `El sitemap pasó de ${o.prevSitemap} a ${o.curSitemap} URLs`,
+      detail: o.curSitemap < o.prevSitemap ? "Bajó más de 20 %: revisar si se quitaron páginas que deben indexarse o si el sitemap falla." : "Subió más de 20 %: revisar que las URLs nuevas sean indexables y no filtros o duplicados.",
+      urls: [],
+    });
+  const key = (u: string) => urlKey(u);
+  const crit = new Set(o.critical.map(key));
+  const touched = o.changes.filter((c) => crit.has(key(c.url)) && c.field !== "title");
+  if (touched.length)
+    out.push({
+      key: "critical-pages",
+      severity: touched.some((c) => c.field === "noindex" || c.field === "gone" || c.field === "status" || c.field === "canonical") ? "critical" : "warning",
+      title: `Cambios en ${new Set(touched.map((c) => c.url)).size} página(s) crítica(s)`,
+      detail: touched.slice(0, 5).map((c) => `${c.url}: ${FIELD_LABEL[c.field]} «${c.before}» → «${c.after}»`).join(" · "),
+      urls: touched.map((c) => c.url),
+    });
+  return out;
+}
+
 /** robots.txt que bloquea todo el sitio a Googlebot o a todos. */
 export function robotsBlocksAll(txt: string | null) {
   if (!txt) return false;
@@ -90,7 +136,8 @@ export function clickDrop(last7: number, prev7: number, minBase = 70, threshold 
 
 /** Cambios entre los dos últimos crawls terminados del proyecto. */
 export async function latestCrawlChanges(projectId: string) {
-  const [cur, prev] = await db.crawl.findMany({ where: { projectId, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" }, take: 2 });
+  // los crawls privados (staging) no se comparan con el sitio público
+  const [cur, prev] = await db.crawl.findMany({ where: { projectId, private: false, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" }, take: 2 });
   if (!cur || !prev) return null;
   const sel = { url: true, status: true, title: true, canonical: true, noindex: true, h1: true, error: true } as const;
   const [a, b] = await Promise.all([db.page.findMany({ where: { crawlId: prev.id }, select: sel }), db.page.findMany({ where: { crawlId: cur.id }, select: sel })]);
@@ -125,7 +172,7 @@ export async function runWatch(projectId: string) {
 
   // 1. crawl: home caída, robots que bloquea todo y cambios entre crawls
   const c = await latestCrawlChanges(projectId);
-  const latest = c?.current ?? (await db.crawl.findFirst({ where: { projectId, status: { in: ["completed", "partial", "failed"] } }, orderBy: { startedAt: "desc" } }));
+  const latest = c?.current ?? (await db.crawl.findFirst({ where: { projectId, private: false, status: { in: ["completed", "partial", "failed"] } }, orderBy: { startedAt: "desc" } }));
   if (latest) {
     const home = await db.page.findFirst({ where: { crawlId: latest.id, depth: 0 }, select: { url: true, status: true, error: true } });
     if (latest.status === "failed" || (home && (home.status !== 200 || home.error)))
@@ -133,6 +180,12 @@ export async function runWatch(projectId: string) {
     if (robotsBlocksAll(latest.robots)) alerts.push({ key: "robots-all", severity: "critical", title: "robots.txt bloquea todo el sitio", detail: "Hay un «Disallow: /» para todos o para Googlebot: Google deja de rastrear el sitio.", urls: [`https://${p.domain}/robots.txt`] });
   }
   if (c) for (const a of changeAlerts(c.changes, impr)) alerts.push({ ...a, key: `${a.key}-${c.current.id}` });
+  // monitorización del propio sitio: robots.txt, tamaño del sitemap y páginas críticas (con o sin tráfico)
+  if (c) {
+    const critical = [`https://${p.domain.replace(/^https?:\/\//, "").replace(/\/$/, "")}/`, ...((((p.settings ?? {}) as any).pro?.criticalUrls ?? []) as string[])];
+    for (const a of siteMonitorAlerts({ prevRobots: c.previous.robots, curRobots: c.current.robots, prevSitemap: c.previous.sitemapUrls, curSitemap: c.current.sitemapUrls, changes: c.changes, critical }))
+      alerts.push({ ...a, key: `${a.key}-${c.current.id}` });
+  }
 
   // 2. Search Console: caída fuerte de clics en la última semana
   const lastDay = await db.gscDay.findFirst({ where: { projectId }, orderBy: { date: "desc" }, select: { date: true } });

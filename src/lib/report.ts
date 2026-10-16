@@ -79,7 +79,7 @@ export async function buildReport(projectId: string): Promise<string> {
   }
   // con muy pocas impresiones el tráfico no ordena nada: se usa el peso de cada URL en el sitio
   const hasGsc = imprByUrl.size > 0 && siteImpr >= LOW_GSC_IMPRESSIONS;
-  const crawl = await db.crawl.findFirst({ where: { projectId, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" } });
+  const crawl = await db.crawl.findFirst({ where: { projectId, private: false, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" } });
   const pages = crawl ? await db.page.findMany({ where: { crawlId: crawl.id }, select: { url: true, inlinks: true, outlinks: true, depth: true, status: true, canonical: true, inSitemap: true, blocked: true, error: true, noindex: true, redirects: true, finalUrl: true } }) : [];
   const pageByKey = new Map(pages.map((x) => [urlKey(x.url), x]));
   const weight = (u: string) => {

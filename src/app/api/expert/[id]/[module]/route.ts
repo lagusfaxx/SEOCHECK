@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { tokenHash, memLimit } from "@/lib/auth";
 import { build } from "@/lib/pro/data";
+import { assertPlanActive, PlanLimitError } from "@/lib/plans";
+import { json } from "@/lib/pro/analysis";
 import { ProError } from "@/lib/pro/types";
 export const dynamic = "force-dynamic";
 export async function GET(
@@ -35,7 +37,13 @@ export async function GET(
       ].includes(params.module)
     )
       throw new ProError("Módulo no encontrado", 404);
-    const result = await build(params.module, params.id);
+    await assertPlanActive(params.id);
+    // se sirve el último análisis guardado (se recalcula tras cada crawl y a diario); solo se calcula si no hay ninguno
+    const snap = await db.proSnapshot.findFirst({
+      where: { projectId: params.id, kind: params.module },
+      orderBy: { createdAt: "desc" },
+    });
+    const result = snap ? { ...json(snap.data), at: snap.createdAt } : await build(params.module, params.id);
     await db.apiToken.update({
       where: { id: token.id },
       data: { lastUsedAt: new Date() },
@@ -43,6 +51,8 @@ export async function GET(
     return Response.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     if (e instanceof ProError)
+      return Response.json({ error: e.message }, { status: e.status });
+    if (e instanceof PlanLimitError)
       return Response.json({ error: e.message }, { status: e.status });
     console.error("expert API", e);
     return Response.json(

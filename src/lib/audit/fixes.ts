@@ -39,6 +39,10 @@ export const ISSUE_FIX: Record<string, string> = {
   hreflang_no_self: "Agregar el hreflang autorreferente.",
   noindex: "Página con noindex: confirmar que sea intencional (filtros, búsquedas, cuenta). Si debe aparecer en Google, quitarlo.",
   nofollow: "Meta robots con nofollow y hay URLs que solo se enlazan desde páginas así (detalle). Si son filtros que no deben indexarse, usar \"noindex, follow\" o enlazar esas URLs desde otra página.",
+  redirect_loop: "Corregir las reglas de redirección (servidor, CMS o CDN) para que la URL llegue a un destino final 200 en un solo salto. Revisar reglas que se pisan (http↔https, con/sin www, barra final).",
+  canonical_loop: "Elegir una sola versión principal: esa página lleva canonical a sí misma y las demás apuntan a ella. Nunca dos páginas apuntándose entre sí.",
+  robots_conflict: "Dejar una sola directiva coherente: si la página debe indexarse, quitar el noindex de donde sobre (HTML o cabecera); si es un duplicado, usar canonical sin noindex; si no debe indexarse, noindex sin canonical a otra URL.",
+  render_mismatch: "Entregar en el HTML del servidor lo mismo que muestra la página con JavaScript: title, meta robots, canonical, H1 y links principales. Si cambian por JavaScript, moverlos al render del servidor (SSR) o a la plantilla.",
   ...EXTRA_ISSUE_FIX,
 };
 
@@ -82,6 +86,10 @@ export const ISSUE_WHY: Record<string, string> = {
   hreflang_no_self: "Las versiones por idioma deben incluirse a sí mismas en el hreflang.",
   noindex: "Tiene noindex: Google no la va a mostrar. Bien si es intencional (login, filtros).",
   nofollow: "Con meta nofollow Google en general no usa los links de esa página para descubrir URLs. Solo importa cuando es la única vía hacia otras URLs, como en este caso.",
+  redirect_loop: "La URL redirige en círculo: ni usuarios ni Google llegan a una página. Es un error confirmado.",
+  canonical_loop: "Dos o más páginas se declaran mutuamente como versión principal: Google ignora esos canonicals y elige por su cuenta.",
+  robots_conflict: "Directivas contradictorias: Google aplica la más restrictiva o elige por su cuenta, y el resultado puede no ser el buscado.",
+  render_mismatch: "Google indexa la página con JavaScript, pero el HTML inicial puede aplicarse antes (sobre todo robots y canonical) y el render puede tardar o fallar.",
   ...EXTRA_ISSUE_WHY,
 };
 
@@ -128,6 +136,10 @@ export const ISSUE_VERIFY: Record<string, string> = {
   sitemap_missing: "El sitemap responde 200, está declarado en robots.txt y Search Console lo lee sin errores.",
   hreflang_no_self: "Cada versión de idioma se incluye a sí misma en su hreflang y las demás versiones la referencian de vuelta.",
   blocked_robots: "Si es privada (cuenta, carrito, checkout), se conserva el bloqueo. Si debe indexarse, robots.txt la permite.",
+  redirect_loop: "La URL termina en una respuesta 200 (o 404/410 si ya no existe) sin repetir ninguna URL de la cadena.",
+  canonical_loop: "Cada página del grupo declara el mismo canonical y esa página se declara a sí misma; Search Console muestra ese canonical como el elegido por Google.",
+  robots_conflict: "La meta robots y la cabecera X-Robots-Tag dicen lo mismo, y ninguna página combina noindex con canonical a otra URL. Conservar: un noindex intencional sin canonical.",
+  render_mismatch: "En el próximo crawl con render, el detalle ya no muestra diferencias de robots ni canonical. Las de título/H1/links pueden conservarse si Google las muestra bien en la inspección de URL.",
   ...EXTRA_ISSUE_VERIFY,
 };
 export const DEFAULT_VERIFY = "En el próximo crawl, el valor del detalle de cada URL cambió al esperado (ver «Corrección»). Revisar a mano 2–3 URLs del ejemplo.";

@@ -24,6 +24,13 @@ export default function Advanced() {
         links={[{ title: "SEO local y visibilidad en IA", path: "results" }]}
         forms={[
           {
+            title: "Páginas críticas a vigilar",
+            path: "critical",
+            method: "PATCH",
+            hint: "Además de la home: si cambia su estado HTTP, canonical o noindex, o desaparecen, llega un aviso inmediato. robots.txt y el tamaño del sitemap se vigilan solos.",
+            fields: [{ name: "criticalUrls", label: "URLs (una por línea)", type: "textarea", parse: "lines", required: true, placeholder: "https://tusitio.cl/categoria\nhttps://tusitio.cl/producto-estrella" }],
+          },
+          {
             title: "Importar logs del servidor",
             path: "logs",
             hint: "Apache/Nginx combined, hasta 5 MB. Se conserva el resumen sin IP ni líneas crudas.",
