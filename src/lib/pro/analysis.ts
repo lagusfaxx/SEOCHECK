@@ -9,6 +9,7 @@ import type {
   PsiResult,
 } from "@prisma/client";
 import { tokens } from "../text";
+import { normUrl } from "../util";
 import { hamming } from "../audit/parse/dup";
 
 export type Page = Omit<PrismaPage, "responseHtml" | "htmlSnippet"> &
@@ -36,7 +37,9 @@ const group = <T>(xs: T[], key: (x: T) => string) => {
   const m = new Map<string, T[]>();
   for (const x of xs) {
     const k = key(x);
-    m.set(k, [...(m.get(k) ?? []), x]);
+    const arr = m.get(k);
+    if (arr) arr.push(x);
+    else m.set(k, [x]);
   }
   return m;
 };
@@ -45,7 +48,7 @@ export function crawlAnalysis(pages: Page[]): Analysis {
     title: "Respuesta y rastreo por URL",
     source: "Último crawl público",
     notes: [
-      "El HTML recibido se conserva hasta 2 MiB por URL; las respuestas mayores se marcan como recortadas. No se guardan cookies de respuesta.",
+      "El HTML recibido se lee hasta 2 MiB y se guardan hasta 256 KB por URL como evidencia; si se guardó menos, la fila queda marcada como recortada. No se guardan cookies de respuesta.",
       "Soft 404 es una hipótesis basada en el contenido, no una confirmación de Google.",
     ],
     rows: pages.map((p) => ({
@@ -131,26 +134,31 @@ export function architectureAnalysis(pages: Page[], partial = false): Analysis {
   for (const q of pages)
     for (const l of Array.isArray(q.linkDetails) ? q.linkDetails : []) {
       const v = json(l);
-      if (typeof v.to === "string")
-        incomingByUrl.set(v.to, [
-          ...(incomingByUrl.get(v.to) ?? []),
-          { from: q.url, ...v },
-        ]);
+      if (typeof v.to !== "string") continue;
+      const arr = incomingByUrl.get(v.to);
+      if (arr) arr.push({ from: q.url, ...v });
+      else incomingByUrl.set(v.to, [{ from: q.url, ...v }]);
     }
   const valid = pages.filter(indexable),
     rows: Row[] = [];
-  const words = new Map(
-    valid.map((p) => [p.url, new Set(tokens([p.title, ...p.h1].join(" ")))]),
-  );
+  // palabras de title + H1 sin las que se repiten en casi todo el sitio (marca, «tienda», sufijo del title):
+  // si no, todas las páginas «comparten» términos y las propuestas de enlace serían arbitrarias
+  const raw = new Map(valid.map((p) => [p.url, new Set(tokens([p.title, ...p.h1].join(" ")))]));
+  const df = new Map<string, number>();
+  for (const ws of raw.values()) for (const w of ws) df.set(w, (df.get(w) ?? 0) + 1);
+  const common = Math.max(3, valid.length * 0.2);
+  const words = new Map([...raw].map(([u, ws]) => [u, new Set([...ws].filter((w) => (df.get(w) ?? 0) <= common))]));
+  const linksOf = new Map(valid.map((q) => [q.url, new Set(q.links)]));
   for (const p of valid) {
     const incoming = incomingByUrl.get(p.url) ?? [];
     if (
       p.orphan ||
       p.depth > 3 ||
-      incoming.some(
-        (l: any) =>
-          !l.anchor || /^(aqu[ií]|click|clic|ver m[aá]s)$/i.test(l.anchor),
-      )
+      // un enlace de imagen sin texto no es un anchor «poco descriptivo» si hay otros enlaces con texto
+      (incoming.length > 0 &&
+        incoming.every(
+          (l: any) => !l.anchor || /^(aqu[ií]|click|clic|ver m[aá]s|leer m[aá]s|m[aá]s info)$/i.test(String(l.anchor).trim()),
+        ))
     )
       rows.push({
         url: p.url,
@@ -167,8 +175,9 @@ export function architectureAnalysis(pages: Page[], partial = false): Analysis {
       });
     if (p.inlinks >= 3 && !p.orphan) continue;
     const target = words.get(p.url)!;
+    if (target.size < 2) continue;
     const suggestions = valid
-      .filter((q) => q.url !== p.url && !q.links.includes(p.url))
+      .filter((q) => q.url !== p.url && !linksOf.get(q.url)!.has(p.url))
       .map((q) => ({
         q,
         score: [...words.get(q.url)!].filter((w) => target.has(w)).length,
@@ -208,8 +217,10 @@ export function indexationAnalysis(
     if (!latest.has(i.url) || latest.get(i.url)!.createdAt < i.createdAt)
       latest.set(i.url, i);
   const clicks = new Map<string, number>();
+  // GSC y el crawl pueden escribir la misma URL distinto (barra final, mayúsculas del host): se comparan normalizadas
+  const key = (u: string) => normUrl(u) ?? u;
   for (const r of traffic)
-    clicks.set(r.page, (clicks.get(r.page) ?? 0) + r.clicks);
+    clicks.set(key(r.page), (clicks.get(key(r.page)) ?? 0) + r.clicks);
   const rows = pages
     .map((p) => {
       const i = latest.get(p.url),
@@ -232,7 +243,7 @@ export function indexationAnalysis(
       return {
         url: p.url,
         sitemap: p.inSitemap,
-        clics: clicks.get(p.url) ?? 0,
+        clics: clicks.get(key(p.url)) ?? 0,
         estadoGoogle: i
           ? indexed
             ? "Indexada según inspección"
@@ -263,17 +274,21 @@ export function ecommerceAnalysis(pages: Page[]): Analysis {
   );
   for (const p of pages.filter(live)) {
     const c = json(p.commerce);
-    if (
-      p.template === "product" &&
-      indexable(p) &&
-      /OutOfStock|SoldOut|Discontinued/i.test(c.availability ?? "")
-    )
+    if (p.template === "product" && indexable(p) && /Discontinued/i.test(c.availability ?? ""))
       rows.push({
         url: p.url,
-        tipo: "Producto sin stock indexable",
+        tipo: "Producto descontinuado indexable",
         evidencia: String(c.availability),
         accion:
-          "Verificar reposición; conservar ficha útil, alternativas y disponibilidad coherente",
+          "Si no vuelve: 301 al sustituto más cercano (o a su categoría) si tiene tráfico o enlaces; si no, 410 y quitarlo del sitemap",
+      });
+    else if (p.template === "product" && indexable(p) && /OutOfStock|SoldOut/i.test(c.availability ?? ""))
+      rows.push({
+        url: p.url,
+        tipo: "Producto agotado indexable",
+        evidencia: String(c.availability),
+        accion:
+          "Agotado temporal: mantener la ficha indexable con disponibilidad coherente y enlaces a alternativas; no redirigir",
       });
     if (p.template === "category" && indexable(p) && !p.mainHash)
       rows.push({
@@ -331,14 +346,20 @@ export function structuredAnalysis(pages: Page[]): Analysis {
     ]) {
       const props = json(e.props),
         missing: string[] = [];
+      // requisitos de Google para fragmentos de producto: name y al menos uno de offers, review o aggregateRating;
+      // image es obligatoria solo para fichas de comerciante, así que se informa como recomendada
+      const recommended: string[] = [];
       if (e.type === "Product") {
         if (!props.name) missing.push("name");
-        if (!props.offers) missing.push("offers");
-        if (!props.image) missing.push("image");
+        if (!props.offers && !props.review && !props.aggregateRating)
+          missing.push("offers, review o aggregateRating (al menos uno)");
+        if (!props.image) recommended.push("image");
       }
       if (e.type === "Offer") {
-        for (const k of ["price", "priceCurrency", "availability"])
-          if (props[k] == null) missing.push(k);
+        const spec = json(props.priceSpecification);
+        if (props.price == null && spec.price == null) missing.push("price");
+        if (props.priceCurrency == null && spec.priceCurrency == null) missing.push("priceCurrency");
+        if (props.availability == null) recommended.push("availability");
       }
       if (e.type === "BreadcrumbList") {
         const items = props.itemListElement == null ? [] : [props.itemListElement].flat();
@@ -363,7 +384,16 @@ export function structuredAnalysis(pages: Page[]): Analysis {
           url: p.url,
           tipo: e.type,
           formato: e.format,
+          nivel: "Requisito",
           detalle: `Falta / revisar: ${[...new Set(missing)].join(", ")}`,
+        });
+      if (recommended.length)
+        rows.push({
+          url: p.url,
+          tipo: e.type,
+          formato: e.format,
+          nivel: "Recomendado",
+          detalle: `Recomendado: ${recommended.join(", ")}`,
         });
     }
   }

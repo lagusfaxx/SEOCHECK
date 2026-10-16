@@ -612,11 +612,10 @@ export function parseHtml(html: string, url: string, options: FetchOpts = {}) {
     .map((_, el) => {
       const a = $(el),
         to = normUrl(a.attr("href")!, url);
-      const zone =
-        ["nav", "header", "footer", "aside"].find((z) => a.closest(z).length) ||
-        (a.closest('[aria-label*="breadcrumb" i],.breadcrumb').length
-          ? "breadcrumb"
-          : "content");
+      // la miga de pan suele ir dentro de <nav aria-label="breadcrumb">: se revisa antes que nav
+      const zone = a.closest('[aria-label*="breadcrumb" i],[aria-label*="miga" i],.breadcrumb,.breadcrumbs,[itemtype*="BreadcrumbList"]').length
+        ? "breadcrumb"
+        : ["nav", "header", "footer", "aside"].find((z) => a.closest(z).length) || "content";
       return to
         ? {
             to,
@@ -828,8 +827,11 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
       robotsFailure = `robots.txt respondió HTTP ${r.status}; se suspende el crawl para respetar el control de acceso`;
     if (r.ok) {
       robotsTxt = await r.text();
-      // reglas de Googlebot: «bloqueada» en la auditoría significa bloqueada para Google
-      robots = parseRobots(robotsTxt);
+      // «bloqueada» en la auditoría = bloqueada para Googlebot. Si robots.txt tiene un grupo propio para nuestro
+      // bot, se respeta ese (no se piden URLs que el sitio nos pidió no rastrear)
+      const botToken = (ua.match(/([a-z0-9_-]*bot)\b/i)?.[1] ?? "").toLowerCase();
+      const ownGroup = botToken && botToken !== "googlebot" && new RegExp(`^\\s*user-agent\\s*:\\s*${botToken.replace(/[^a-z0-9_-]/g, "")}\\s*$`, "im").test(robotsTxt);
+      robots = parseRobots(robotsTxt, ownGroup ? botToken : "googlebot");
     }
   } catch {}
   if (robotsFailure) {
@@ -1038,7 +1040,8 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     structured: JSON.parse(JSON.stringify(p.parsedExtra?.structured ?? {})),
     images: p.parsedExtra?.images ?? [],
     commerce: JSON.parse(JSON.stringify(p.parsedExtra?.commerce ?? {})),
-    linkDetails: p.parsedExtra?.linkDetails ?? [],
+    // solo enlaces internos y con tope, como `links`: es lo que usan arquitectura y evidencia
+    linkDetails: (p.parsedExtra?.linkDetails ?? []).filter((l) => isInternal(l.to)).slice(0, 500),
     extracted: p.parsedExtra?.extracted ?? {},
   }));
   for (let i = 0; i < rows.length; i += 200)

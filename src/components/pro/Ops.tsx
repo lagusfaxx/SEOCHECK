@@ -74,8 +74,8 @@ export default function Ops() {
             hint: "Al crear la lista de acceso, los miembros solo ven este proyecto si están incluidos. Dueños y administradores conservan acceso.",
             fields: [
               {
-                name: "userId",
-                label: "Identificador del miembro del espacio",
+                name: "email",
+                label: "Correo del miembro del espacio",
                 required: true,
               },
               {
@@ -128,7 +128,7 @@ export default function Ops() {
           <h3>Acceso restringido</h3>
           {access.map((a) => (
             <p key={a.userId}>
-              {a.userId} · {a.role}{" "}
+              {a.email ?? a.userId} · {a.role === "viewer" ? "solo lectura" : "edición"}{" "}
               <button
                 disabled={busy}
                 onClick={() => remove("access", { userId: a.userId })}

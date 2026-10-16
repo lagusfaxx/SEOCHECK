@@ -118,7 +118,10 @@ export const module: ProModule = {
       },
       access: async (c) => {
         await admin(c);
-        return db.projectAccess.findMany({ where: { projectId: c.id } });
+        const rows = await db.projectAccess.findMany({ where: { projectId: c.id } });
+        const users = await db.user.findMany({ where: { id: { in: rows.map((r) => r.userId) } }, select: { id: true, email: true } });
+        const email = new Map(users.map((u) => [u.id, u.email]));
+        return rows.map((r) => ({ ...r, email: email.get(r.userId) ?? null }));
       },
       tokens: async (c) => {
         await admin(c);
@@ -261,10 +264,17 @@ export const module: ProModule = {
       access: async (c) => {
         await admin(c);
         const p = await project(c.id),
-          userId = text(c.body.userId);
-        const member = await db.membership.findUnique({
-          where: { userId_workspaceId: { userId, workspaceId: p.workspaceId } },
-        });
+          email = text(c.body.email, 320).toLowerCase();
+        // se identifica al miembro por correo (nadie conoce los ids internos); userId se acepta por compatibilidad
+        const user = email
+          ? await db.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } }, select: { id: true } })
+          : null;
+        const userId = user?.id ?? text(c.body.userId);
+        const member = userId
+          ? await db.membership.findUnique({
+              where: { userId_workspaceId: { userId, workspaceId: p.workspaceId } },
+            })
+          : null;
         if (!member)
           throw new ProError(
             "El usuario debe pertenecer al espacio de trabajo",

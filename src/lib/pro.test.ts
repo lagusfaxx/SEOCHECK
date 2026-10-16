@@ -444,3 +444,27 @@ test("microdatos anidados conservan Offer y normalizan RDFa",()=>{
 });
 test("todos los módulos expertos montan una lectura funcional sin prefijos repetidos",()=>{const prefixes=PRO_MODULES.map(m=>m.prefix);assert.equal(new Set(prefixes).size,13);for(const prefix of prefixes)assert.equal(typeof PRO_GETS[`pro/${prefix}`],"function");});
 test("schema: Breadcrumb y FAQ permiten una entidad única y nombres dentro de item",()=>{const p=page({structured:{jsonld:[{format:"jsonld",type:"BreadcrumbList",props:{itemListElement:{position:1,item:{name:"Inicio", "@id":"https://taupoc.cl/"}}}},{format:"jsonld",type:"FAQPage",props:{mainEntity:{name:"¿Color?",acceptedAnswer:{text:"Azul"}}}}]}});assert.equal(structuredAnalysis([p]).rows.length,0);});
+
+test("schema: Product con aggregateRating no exige offers; image es recomendada, no requisito", () => {
+  const p = page({ structured: { jsonld: [{ format: "jsonld", type: "Product", props: { name: "Taza", aggregateRating: { ratingValue: 4.5 } } }] } as any });
+  const rows = structuredAnalysis([p]).rows;
+  assert.ok(!rows.some((r) => r.nivel === "Requisito"));
+  assert.ok(rows.some((r) => r.nivel === "Recomendado" && String(r.detalle).includes("image")));
+  const offer = page({ structured: { jsonld: [{ format: "jsonld", type: "Offer", props: { priceSpecification: { price: 9990, priceCurrency: "CLP" } } }] } as any });
+  assert.ok(!structuredAnalysis([offer]).rows.some((r) => r.nivel === "Requisito"));
+});
+
+test("arquitectura: las palabras de marca repetidas en todo el sitio no generan propuestas de enlace", () => {
+  const pages = ["a", "b", "c", "d", "e", "f"].map((s, i) =>
+    page({ url: `https://taupoc.cl/${s}`, title: `Producto ${s}${i} | Taupoc Tienda`, h1: [`Producto ${s}${i}`], inlinks: 0, links: [] }),
+  );
+  const rows = architectureAnalysis(pages).rows.filter((r) => r.tipo === "Propuesta de enlace interno");
+  assert.equal(rows.length, 0);
+});
+
+test("enlaces: la miga de pan dentro de <nav> se clasifica como breadcrumb", () => {
+  const r = parseHtml('<html><body><nav aria-label="breadcrumb"><a href="/cat">Categoría</a></nav><nav><a href="/menu">Menú</a></nav></body></html>', "https://taupoc.cl/p");
+  const zones = Object.fromEntries(r.parsedExtra.linkDetails.map((l) => [l.to, l.zone]));
+  assert.equal(zones["https://taupoc.cl/cat"], "breadcrumb");
+  assert.equal(zones["https://taupoc.cl/menu"], "nav");
+});

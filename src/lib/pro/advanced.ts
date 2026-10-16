@@ -5,7 +5,7 @@ import { parseServerLogs } from "./logs";
 import { pagesOf, project, admin, text, bounded } from "./data";
 import { json, type Analysis, type Row } from "./analysis";
 import { ProError, type ProModule } from "./types";
-import { sameSite } from "../util";
+import { normUrl, sameSite } from "../util";
 import { projectClient } from "../gsc-oauth";
 
 async function overview(id: string): Promise<Analysis> {
@@ -86,6 +86,9 @@ async function overview(id: string): Promise<Analysis> {
       fecha: s.createdAt.toISOString(),
     });
   }
+  // índice por URL normalizada: buscar con find() por cada hreflang era cuadrático en sitios grandes
+  const byUrl = new Map(pages.map((q) => [normUrl(q.url) ?? q.url, q]));
+  const imageRows = new Map<string, { sinAlt: number; sinDimensiones: number; ejemplo: string }>();
   for (const p of pages) {
     const langs = Array.isArray(p.hreflang) ? p.hreflang : [];
     for (const item of langs) {
@@ -97,7 +100,7 @@ async function overview(id: string): Promise<Analysis> {
           return "";
         }
       })();
-      const target = pages.find((q) => q.url === href);
+      const target = byUrl.get(normUrl(href) ?? href);
       if (
         !href ||
         !l.lang ||
@@ -113,7 +116,7 @@ async function overview(id: string): Promise<Analysis> {
         target &&
         !(target.hreflang as any[]).some((x: any) => {
           try {
-            return new URL(x.href, target.url).href === p.url;
+            return (normUrl(new URL(x.href, target.url).href) ?? "") === (normUrl(p.url) ?? p.url);
           } catch {
             return false;
           }
@@ -121,22 +124,27 @@ async function overview(id: string): Promise<Analysis> {
       )
         rows.push({ tipo: "Hreflang sin retorno", url: p.url, destino: href });
     }
+    // una fila por página con conteos (una por imagen inundaba la tabla con miles de filas)
     for (const i of Array.isArray(p.images) ? p.images : []) {
       const image = json(i);
-      if (image.alt === null || !image.width || !image.height)
-        rows.push({
-          tipo: "Imagen a revisar",
-          url: p.url,
-          imagen: image.src,
-          detalle: [
-            image.alt === null ? "Sin alt" : "",
-            !image.width || !image.height ? "Dimensiones ausentes" : "",
-          ]
-            .filter(Boolean)
-            .join(", "),
-        });
+      const noAlt = image.alt === null,
+        noDims = !image.width || !image.height;
+      if (!noAlt && !noDims) continue;
+      const r = imageRows.get(p.url) ?? { sinAlt: 0, sinDimensiones: 0, ejemplo: String(image.src ?? "") };
+      if (noAlt) r.sinAlt++;
+      if (noDims) r.sinDimensiones++;
+      imageRows.set(p.url, r);
     }
   }
+  for (const [url, r] of imageRows)
+    rows.push({
+      tipo: "Imágenes a revisar",
+      url,
+      detalle: [r.sinAlt ? `${r.sinAlt} sin atributo alt` : "", r.sinDimensiones ? `${r.sinDimensiones} sin width/height (pueden causar saltos de diseño)` : ""]
+        .filter(Boolean)
+        .join(", "),
+      imagen: r.ejemplo,
+    });
   for (const l of local)
     rows.push({
       tipo: "SEO local / Maps",
@@ -292,9 +300,11 @@ export const module: ProModule = {
           try {
             const r = await safeFetch(item.from, { timeoutMs: 10000 });
             await r.res.body?.cancel();
+            // se comparan normalizadas: una barra final o el host en mayúsculas no es un error de migración
+            const same = (normUrl(r.finalUrl) ?? r.finalUrl) === (normUrl(item.to) ?? item.to);
             const ok =
               r.res.status === 200 &&
-              r.finalUrl === item.to &&
+              same &&
               r.redirects.length === 1 &&
               [301, 308].includes(r.redirects[0].status);
             results.push({
@@ -305,7 +315,14 @@ export const module: ProModule = {
               ok,
               problem: ok
                 ? null
-                : "Revisar destino, estado final y redirección permanente directa",
+                : [
+                    r.res.status !== 200 ? `el destino final responde HTTP ${r.res.status}` : "",
+                    !same ? `termina en ${r.finalUrl}, no en ${item.to}` : "",
+                    r.redirects.length === 0 ? "no redirige" : r.redirects.length > 1 ? `${r.redirects.length} saltos (debe ser uno)` : "",
+                    r.redirects.length && ![301, 308].includes(r.redirects[0].status) ? `redirección ${r.redirects[0].status} (debe ser 301 o 308)` : "",
+                  ]
+                    .filter(Boolean)
+                    .join("; ") || "Revisar destino, estado final y redirección permanente directa",
             });
           } catch (e) {
             results.push({

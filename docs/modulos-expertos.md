@@ -4,7 +4,7 @@ La pestaña **Experto** reúne doce vistas. Lee el último crawl público comple
 
 | Bloque | Implementación                                                                                                                | Fuente y límite                                                                                                                                                             |
 | ------ | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| B      | Robots según el user-agent configurado, parámetros/facetas, cadenas de redirección, hipótesis de soft 404 y evidencia por URL | HTML final recibido, cabeceras sin cookies, cadena HTTP, directivas y fecha. Hasta 2 MiB por respuesta; se indica si se recorta. Robots 429/5xx detiene el crawl.           |
+| B      | Robots según las reglas de Googlebot (o el grupo propio del bot si robots.txt lo nombra), parámetros/facetas, cadenas de redirección, hipótesis de soft 404 y evidencia por URL | HTML final recibido, cabeceras sin cookies, cadena HTTP, directivas y fecha. Se leen hasta 2 MiB por respuesta y se guardan hasta 256 KB como evidencia; se indica si se recorta. Robots 429/5xx detiene el crawl.           |
 | C      | Matriz sitemap/indexación, inspección por lotes priorizada por clics e impresiones, canonical y motivo de cobertura           | URL Inspection de Google; las URLs sin inspección tienen estado desconocido. Se reutilizan inspecciones de menos de siete días. Hasta 100 por lote; no solicita indexación. |
 | D      | Profundidad, enlaces con anchor y zona, páginas sin enlace encontrado y propuestas entre páginas relacionadas                 | Grafo del crawl. La cobertura parcial y las URLs solo vistas en sitemap se identifican; las sugerencias requieren revisión editorial.                                       |
 | E      | LCP/INP de campo por URL y plantilla, medición representativa mobile/desktop                                                  | PageSpeed Insights/CrUX. Datos de origen se identifican sin atribuirlos a una plantilla; no se calcula un falso p75 combinando percentiles ni se convierte TBT en INP.      |
@@ -66,7 +66,7 @@ Authorization: Bearer TOKEN
 
 Módulos: `crawl`, `templates`, `structure`, `index`, `arch`, `perf`, `shop`, `serp`, `content`, `analytics`. El token solo sirve para su proyecto, tiene límite de solicitudes y se puede revocar. No permite escribir ni usar la sesión de un usuario.
 
-La lista de acceso por proyecto restringe a los miembros del espacio: `viewer` solo consulta y `editor` puede trabajar. Dueños y administradores conservan acceso. Al quitar la última restricción, se recupera el acceso normal de los miembros del espacio.
+La lista de acceso por proyecto (se agrega a cada persona por su correo) restringe a los miembros del espacio: `viewer` solo consulta y `editor` puede trabajar. Dueños y administradores conservan acceso. Al quitar la última restricción, se recupera el acceso normal de los miembros del espacio.
 
 ## Evidencia de esta entrega (16 de octubre de 2026)
 

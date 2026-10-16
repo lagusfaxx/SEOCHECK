@@ -1,6 +1,7 @@
 import { db } from "../db";
 import { requireProject, requireProjectWrite } from "../auth";
 import { gscPeriod } from "../gsc-period";
+import { normUrl } from "../util";
 import { ProError, type ProModule, type ProCtx } from "./types";
 import * as a from "./analysis";
 import type { Analysis } from "./analysis";
@@ -29,11 +30,25 @@ export async function lastCrawl(id: string) {
     orderBy: { startedAt: "desc" },
   });
 }
+/**
+ * Páginas del último crawl público. Tras cada crawl todos los módulos se recalculan seguidos: se reutiliza la misma
+ * lectura por un minuto en vez de cargar miles de páginas (con sus JSON) una vez por módulo.
+ */
+const pagesCache = new Map<string, { at: number; pages: Promise<a.Page[]> }>();
 export async function pagesOf(id: string) {
   const crawl = await lastCrawl(id);
-  if (!crawl) return { crawl, pages: [] };
-  const pages = await db.page.findMany({
-    where: { crawlId: crawl.id },
+  if (!crawl) return { crawl, pages: [] as a.Page[] };
+  const hit = pagesCache.get(crawl.id);
+  if (hit && Date.now() - hit.at < 60_000) return { crawl, pages: await hit.pages };
+  for (const [k, v] of pagesCache) if (Date.now() - v.at >= 60_000) pagesCache.delete(k);
+  const pages = loadPages(crawl.id);
+  pagesCache.set(crawl.id, { at: Date.now(), pages });
+  pages.catch(() => pagesCache.delete(crawl.id));
+  return { crawl, pages: await pages };
+}
+async function loadPages(crawlId: string): Promise<a.Page[]> {
+  return db.page.findMany({
+    where: { crawlId },
     select: {
       id: true,
       crawlId: true,
@@ -87,7 +102,6 @@ export async function pagesOf(id: string) {
       responseTruncated: true,
     },
   });
-  return { crawl, pages };
 }
 export async function traffic(id: string) {
   const period = await gscPeriod(id);
@@ -144,15 +158,16 @@ export async function build(kind: string, id: string): Promise<Analysis> {
       const byUrl = new Map<string, (typeof ins)[number]>(),
         clicks = new Map<string, number>();
       for (const i of ins) if (!byUrl.has(i.url)) byUrl.set(i.url, i);
+      const key = (u: string) => normUrl(u) ?? u;
       for (const r of rows)
-        clicks.set(r.page, (clicks.get(r.page) ?? 0) + r.clicks);
+        clicks.set(key(r.page), (clicks.get(key(r.page)) ?? 0) + r.clicks);
       for (const e of entries)
         if (!seen.has(e.url)) {
           const i = byUrl.get(e.url);
           result.rows.push({
             url: e.url,
             sitemap: true,
-            clics: clicks.get(e.url) ?? 0,
+            clics: clicks.get(key(e.url)) ?? 0,
             estadoGoogle:
               i?.verdict === "PASS"
                 ? "Indexada según inspección"
