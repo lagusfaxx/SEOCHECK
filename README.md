@@ -21,7 +21,7 @@ Límites mensuales en USD por proveedor (mes calendario en `TZ`): `SERPENT_MONTH
   - research: seeds + 2ª ronda + SERPs del top, más los lotes de intent con LLM;
   - rank: 1 llamada Quick por keyword;
   - contenido: 1 SERP + 1 brief.
-  Si no cabe en lo que queda del mes, el job falla con un error que dice cuánto se gastó, cuánto necesita y qué variable subir. No se reintenta, porque no se gastó nada. La API devuelve el mismo error (HTTP 402) al encolar, y la UI lo muestra al instante.
+    Si no cabe en lo que queda del mes, el job falla con un error que dice cuánto se gastó, cuánto necesita y qué variable subir. No se reintenta, porque no se gastó nada. La API devuelve el mismo error (HTTP 402) al encolar, y la UI lo muestra al instante.
 - **Volumen:** un proveedor cuyo gasto no cabe se trata como sin saldo y la cadena pasa al siguiente (el CSV es gratis), así el research no falla por eso.
 - **Dashboard:** el bloque "Gasto del mes" del resumen muestra gasto vs. límite por proveedor, llamadas y tokens del LLM. Endpoint: `GET /api/usage`.
 
@@ -77,12 +77,16 @@ Cada proyecto conecta **su propia cuenta de Google** (Ajustes → "Conectar con 
 Configuración (una vez, en Google Cloud):
 
 1. https://console.cloud.google.com → crea un proyecto (o usa uno) y habilita **Google Search Console API**.
-2. **Pantalla de consentimiento OAuth**: tipo *Externo*, nombre de la app, email de soporte, dominio. Agrega los scopes `.../auth/webmasters.readonly`, `openid` y `email`.
-   - Mientras esté en modo *Prueba*, solo entran los emails que agregues como usuarios de prueba (máx. 100). Para abrirlo a cualquier cliente hay que **publicar** la app y pasar la verificación de Google (el scope de Search Console es "sensible").
+2. **Pantalla de consentimiento OAuth**: tipo _Externo_, nombre de la app, email de soporte, dominio. Agrega los scopes `.../auth/webmasters.readonly`, `openid` y `email`.
+   - Mientras esté en modo _Prueba_, solo entran los emails que agregues como usuarios de prueba (máx. 100). Para abrirlo a cualquier cliente hay que **publicar** la app y pasar la verificación de Google (el scope de Search Console es "sensible").
 3. **Credenciales → Crear ID de cliente OAuth → Aplicación web**. URI de redirección autorizada: `https://TU-DOMINIO/api/oauth/google/callback` (la misma base que `APP_URL`).
 4. En Coolify: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `TOKEN_ENC_KEY` (`openssl rand -base64 32`) y `APP_URL`. No cambies `TOKEN_ENC_KEY` después: los tokens guardados dejarían de servir (habría que reconectar).
 
 La cuenta de servicio (`GSC_SERVICE_ACCOUNT_JSON`) sigue funcionando, pero **solo para los proyectos del workspace del dueño de la instancia**: así un cliente nunca puede leer una propiedad que otro cliente le compartió a esa cuenta.
+
+## Herramientas expertas B–L
+
+La pestaña **Experto** reúne rastreo, indexación, arquitectura, rendimiento, ecommerce, datos estructurados, SERP, briefs, analítica, monitorización y trabajo diario. Consulta [funciones, fuentes, límites y conexiones](docs/modulos-expertos.md). Requiere aplicar las migraciones y reiniciar web/worker.
 
 ## Local
 
@@ -133,12 +137,12 @@ Se usa para el intent de keywords dudosas y para el brief. Cada llamada registra
 
 **Rechazos con Claude (`LLM_PROVIDER=anthropic`).** Las requests van con `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`):
 
-| Modelo | Categoría del rechazo | Qué pasa |
-|---|---|---|
-| `claude-sonnet-5-5` | `cyber`, `frontier_llm` | se reintenta en `claude-sonnet-5` |
-| `claude-sonnet-5-5` | `bio`, `reasoning_extraction`, `general_harms` | sin fallback: rechazo final |
-| `claude-opus-5-5` | según categoría (`cyber` → `claude-opus-4-8`) | destinos posibles: `claude-opus-5`, `claude-opus-4-8` |
-| `claude-haiku-*` | — | sin fallback server-side |
+| Modelo              | Categoría del rechazo                          | Qué pasa                                              |
+| ------------------- | ---------------------------------------------- | ----------------------------------------------------- |
+| `claude-sonnet-5-5` | `cyber`, `frontier_llm`                        | se reintenta en `claude-sonnet-5`                     |
+| `claude-sonnet-5-5` | `bio`, `reasoning_extraction`, `general_harms` | sin fallback: rechazo final                           |
+| `claude-opus-5-5`   | según categoría (`cyber` → `claude-opus-4-8`)  | destinos posibles: `claude-opus-5`, `claude-opus-4-8` |
+| `claude-haiku-*`    | —                                              | sin fallback server-side                              |
 
 Cada fallback y rechazo final queda en `JobRun.log`. Con OpenAI, un `refusal` también queda registrado y el job cae a reglas o brief determinista.
 
@@ -146,11 +150,11 @@ Cada fallback y rechazo final queda en `JobRun.log`. Con OpenAI, un `refusal` ta
 
 Opciones por proyecto en `settings.crawler` (formulario de Ajustes o `PATCH /api/p/:id/_`), sobreescribibles por crawl en el body de `POST /api/p/:id/audit`:
 
-| Opción | Default | Qué hace |
-|---|---|---|
-| `userAgent` | `CRAWLER_UA` | User-agent del crawl (robots.txt, páginas, sitemaps y render) |
-| `maxPerPattern` | `50` | Máx. de URLs por patrón de path (`/productos/{n}?color&talla`). Corta trampas de facetas, calendarios y paginación infinita. `0` = sin límite |
-| `ignoreParams` | `utm_*, gclid, fbclid, msclkid, sessionid, phpsessid, sid` | Parámetros que se quitan de las URLs descubiertas. `*` = todos |
+| Opción          | Default                                                    | Qué hace                                                                                                                                      |
+| --------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `userAgent`     | `CRAWLER_UA`                                               | User-agent del crawl (robots.txt, páginas, sitemaps y render)                                                                                 |
+| `maxPerPattern` | `50`                                                       | Máx. de URLs por patrón de path (`/productos/{n}?color&talla`). Corta trampas de facetas, calendarios y paginación infinita. `0` = sin límite |
+| `ignoreParams`  | `utm_*, gclid, fbclid, msclkid, sessionid, phpsessid, sid` | Parámetros que se quitan de las URLs descubiertas. `*` = todos                                                                                |
 
 Páginas de challenge/bloqueo de WAF (Cloudflare `cf-mitigated` / "Just a moment..." / `cf-chl`, DataDome, PerimeterX, Akamai) se guardan con `error = blocked_by_waf` y el issue crítico correspondiente, no como páginas válidas. Tras 15 bloqueos seguidos el crawl se detiene (`stats.wafAborted`).
 
@@ -166,11 +170,11 @@ Prioridad por keyword:
 
 Cada keyword guarda `volumeSource` y `volumeAt`; la tabla muestra la fuente. **Caché global** `VolumeCache` por país + idioma + keyword normalizada, sin importar el proyecto: no se vuelve a pedir un dato de menos de 30 días.
 
-| Proveedor | Cómo funciona |
-|---|---|
+| Proveedor              | Cómo funciona                                                                                                                                                                                                                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `dataforseo` (default) | `DATAFORSEO_ENV=live` y `DATAFORSEO_MODE=live`: endpoint Live, hasta 1.000 keywords por task. `DATAFORSEO_ENV=sandbox` para pruebas gratis (datos ficticios). `DATAFORSEO_MODE=queue`: standard queue que junta keywords de varios proyectos por task y completa lo pendiente después. |
-| `apify` (opcional) | Ver abajo. |
-| `csv` | Solo lo importado desde Keyword Planner. |
+| `apify` (opcional)     | Ver abajo.                                                                                                                                                                                                                                                                             |
+| `csv`                  | Solo lo importado desde Keyword Planner.                                                                                                                                                                                                                                               |
 
 ### Apify (opcional)
 

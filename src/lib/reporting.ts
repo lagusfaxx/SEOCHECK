@@ -216,11 +216,13 @@ export async function saveReport(projectId: string) {
     executiveReport(projectId),
     buildReport(projectId),
   ]);
-  return withProjectQuota(projectId, "reports", 1, (tx) =>
+  const saved = await withProjectQuota(projectId, "reports", 1, (tx) =>
     tx.reportSnapshot.create({
       data: { projectId, executive: executive as any, markdown },
     }),
   );
+  await import("./pro/notifications").then(n => n.queueNotice(projectId, "report.ready", `report:${saved.id}`, { message: "Informe SEO actualizado", reportId: saved.id })).catch(e => console.warn("[notifications]", e));
+  return saved;
 }
 export function executivePdf(
   r: ExecutiveReport,

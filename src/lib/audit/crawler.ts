@@ -1,3 +1,11 @@
+import { classifyTemplate, type TemplateRule } from "./parse/template";
+import { extractStructured } from "./parse/structured";
+import { commerceSignals } from "./parse/commerce";
+import { imageList } from "./parse/media";
+import { mainText, mainHash, simhash } from "./parse/dup";
+import { extractCustom, type ExtractRule } from "./parse/extract";
+import { fetchSitemapEvidence } from "./sitemap";
+import { RULES_VERSION } from "../report-rules";
 import { crawlLimit } from "../plans";
 import { syncCrawlTasks } from "../tasks";
 import { createHash } from "node:crypto";
@@ -7,12 +15,14 @@ import { db } from "../db";
 import { env } from "../env";
 import { jobProgress } from "../queue";
 import { assertUrlAllowed, safeFetch, SsrfError } from "../net/ssrf";
-import { DEFAULT_IGNORE_PARAMS, detectWaf, PatternLimiter, stripParams } from "./guards";
+import { DEFAULT_IGNORE_PARAMS, detectWaf, PatternLimiter, stripParams,
+} from "./guards";
 import { hostOf, normUrl } from "../util";
 import { computeIssues } from "./issues";
 import { detectCms, type Cms } from "./cms";
 import { checkStructuredData } from "./structured";
-import { fetchSitemapUrls, parseRobots, robotsAllows, type Robots } from "./robots";
+import { fetchSitemapUrls, parseRobots, robotsAllows, type Robots,
+} from "./robots";
 
 export type CrawlOptions = {
   maxPages?: number;
@@ -26,11 +36,36 @@ export type CrawlOptions = {
   maxPerPattern?: number;
   /** Parámetros de query a ignorar al descubrir URLs (`*` = todos, `utm_*` = comodín) */
   ignoreParams?: string[];
+  templates?: TemplateRule[];
+  extract?: ExtractRule[];
 };
 
 export type PageError = "blocked_by_waf" | "ssrf_blocked" | "fetch_failed";
 
 export type PageData = {
+  evidence?: {
+    robotsMeta: string;
+    xRobots: string | null;
+    headers: Record<string, string>;
+    htmlSnippet: string;
+    responseHtml: string;
+    responseTruncated: boolean;
+  };
+  parsedExtra?: {
+    template: string;
+    mainHash: string | null;
+    simhash: string | null;
+    structured: ReturnType<typeof extractStructured>;
+    images: ReturnType<typeof imageList>["images"];
+    commerce: ReturnType<typeof commerceSignals>;
+    linkDetails: {
+      to: string;
+      anchor: string;
+      zone: string;
+      nofollow: boolean;
+    }[];
+    extracted: Record<string, string[]>;
+  };
   url: string;
   finalUrl: string;
   status: number;
@@ -88,15 +123,20 @@ export type PageSignals = {
   price: boolean;
 };
 
-export type FetchOpts = { userAgent?: string };
+export type FetchOpts = { userAgent?: string;
+  templates?: TemplateRule[];
+  extract?: ExtractRule[];
+};
 
 /** Error que no vale la pena reintentar (el sitio no responde, cancelado…): el worker no reintenta. */
 export class NoRetryError extends Error {
   noRetry = true;
 }
 
-export type CrawlOutcome = { status: "completed" | "partial" | "failed"; reason: string | null };
-type OutcomePage = { url: string; finalUrl: string; status: number; error?: PageError | null; contentType: string | null; robotsBlocked?: boolean };
+export type CrawlOutcome = { status: "completed" | "partial" | "failed"; reason: string | null;
+};
+type OutcomePage = { url: string; finalUrl: string; status: number; error?: PageError | null; contentType: string | null; robotsBlocked?: boolean;
+};
 
 /**
  * Resultado honesto del crawl: si no se pudo leer el sitio, es "fallido" (sin puntaje);
@@ -133,20 +173,83 @@ export function retryAfterMs(h: string | null, capMs = 10_000): number {
 
 async function fetchFollow(url: string, o: FetchOpts = {}) {
   const t0 = Date.now();
-  const doFetch = () => safeFetch(url, { headers: { "User-Agent": o.userAgent || env.userAgent, Accept: "text/html,*/*" }, timeoutMs: 25000 });
+  const doFetch = () =>
+    safeFetch(url, {
+      headers: {
+        "User-Agent": o.userAgent || env.userAgent,
+        Accept: "text/html,*/*",
+      },
+      timeoutMs: 25000,
+    });
   let r = await doFetch();
   // 429/503 = el servidor pide bajar el ritmo (Shopify, Cloudflare): esperar y reintentar, no es un link roto
-  for (let i = 0; i < 2 && (r.res.status === 429 || (r.res.status === 503 && r.res.headers.get("retry-after"))); i++) {
+  for (
+    let i = 0;
+    i < 2 &&
+    (r.res.status === 429 ||
+      (r.res.status === 503 && r.res.headers.get("retry-after")));
+    i++
+  ) {
     await r.res.body?.cancel().catch(() => {});
-    await new Promise((ok) => setTimeout(ok, retryAfterMs(r.res.headers.get("retry-after")) * (1 + Math.random() * 0.3)));
+    await new Promise((ok) =>
+      setTimeout(
+        ok,
+        retryAfterMs(r.res.headers.get("retry-after")) *
+          (1 + Math.random() * 0.3),
+      ),
+    );
     r = await doFetch();
   }
   const { res, finalUrl, redirects } = r;
   const ct = res.headers.get("content-type");
-  const isText = ct?.includes("html") || res.status === 403 || res.status === 503 || res.status === 429;
-  const html = isText ? await res.text() : (await res.body?.cancel().catch(() => {}), "");
+  const isText =
+    ct?.includes("html") ||
+    res.status === 403 ||
+    res.status === 503 ||
+    res.status === 429;
+  let html = "",
+    responseTruncated = false;
+  if (isText && res.body) {
+    const reader = res.body.getReader(),
+      chunks: Uint8Array[] = [];
+    let bytes = 0;
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const left = 2 * 1024 * 1024 - bytes;
+        chunks.push(value.subarray(0, left));
+        bytes += Math.min(value.length, left);
+        if (value.length > left) {
+          responseTruncated = true;
+          await reader.cancel();
+          break;
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    html = Buffer.concat(chunks).toString("utf8");
+  } else await res.body?.cancel().catch(() => {});
+  const headers = Object.fromEntries(
+    [...res.headers.entries()].filter(
+      ([k]) => !/[Cc]ookie|authorization|authentication/i.test(k),
+    ),
+  );
   const waf = detectWaf(res.status, res.headers, html);
-  return { status: res.status, finalUrl, redirects, contentType: ct, html: waf ? "" : html, waf, ms: Date.now() - t0, xRobots: res.headers.get("x-robots-tag") };
+  return {
+    status: res.status,
+    finalUrl,
+    redirects,
+    contentType: ct,
+    html: waf ? "" : html,
+    responseHtml: html,
+    responseTruncated,
+    headers,
+    waf,
+    ms: Date.now() - t0,
+    xRobots: res.headers.get("x-robots-tag"),
+  };
 }
 
 let browserP: Promise<any> | null = null;
@@ -427,20 +530,30 @@ export const isCdnInternal = (u: string) => {
   }
 };
 
-export function parseHtml(html: string, url: string) {
+export function parseHtml(html: string, url: string, options: FetchOpts = {}) {
   const $ = cheerio.load(html);
   resolveReactStreaming($);
   resolveCloudflareEmails($);
   const canonicalRaw = $('link[rel="canonical"]').attr("href");
   const canonical = canonicalRaw ? normUrl(canonicalRaw, url) : null;
-  const robotsMeta = $('meta[name="robots" i], meta[name="googlebot" i]').map((_, el) => $(el).attr("content") ?? "").get().join(" ");
+  const robotsMeta = $('meta[name="robots" i], meta[name="googlebot" i]')
+    .map((_, el) => $(el).attr("content") ?? "")
+    .get()
+    .join(" ");
   const jsonldTypes: string[] = [];
   const jsonldNodes: any[] = [];
   let jsonldErrors = 0;
   $('script[type="application/ld+json"]').each((_, el) => {
     try {
       // plugins de WordPress envuelven el JSON-LD en CDATA o comentarios HTML: no es un error
-      const data = JSON.parse($(el).text().trim().replace(/^(<!--|\/\/\s*<!\[CDATA\[|<!\[CDATA\[)/, "").replace(/(-->|\/\/\s*\]\]>|\]\]>)$/, "").trim());
+      const data = JSON.parse(
+        $(el)
+          .text()
+          .trim()
+          .replace(/^(<!--|\/\/\s*<!\[CDATA\[|<!\[CDATA\[)/, "")
+          .replace(/(-->|\/\/\s*\]\]>|\]\]>)$/, "")
+          .trim(),
+      );
       const walk = (n: any) => {
         if (!n || typeof n !== "object") return;
         if (Array.isArray(n)) return n.forEach(walk);
@@ -470,27 +583,103 @@ export function parseHtml(html: string, url: string) {
   const imgNoAlt = $("img").filter((_, el) => {
     const $i = $(el);
     if ($i.attr("alt") !== undefined) return false;
-    if (["0", "1"].includes($i.attr("width") ?? "") || ["0", "1"].includes($i.attr("height") ?? "")) return false;
-    if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test($i.attr("style") ?? "")) return false;
-    if ($i.attr("aria-hidden") === "true" || $i.attr("role") === "presentation" || $i.attr("role") === "none") return false;
+    if (
+      ["0", "1"].includes($i.attr("width") ?? "") ||
+      ["0", "1"].includes($i.attr("height") ?? "")
+    )
+      return false;
+    if (
+      /display\s*:\s*none|visibility\s*:\s*hidden/i.test($i.attr("style") ?? "")
+    )
+      return false;
+    if (
+      $i.attr("aria-hidden") === "true" ||
+      $i.attr("role") === "presentation" ||
+      $i.attr("role") === "none"
+    )
+      return false;
     return true;
   }).length;
+  const structured = extractStructured($, jsonldNodes);
+  const commerce = commerceSignals($, url, structured);
+  const media = imageList($, url);
+  const extracted = extractCustom(html, $, options.extract ?? []);
+  const linkDetails = $("a[href]")
+    .slice(0, 2000)
+    .map((_, el) => {
+      const a = $(el),
+        to = normUrl(a.attr("href")!, url);
+      const zone =
+        ["nav", "header", "footer", "aside"].find((z) => a.closest(z).length) ||
+        (a.closest('[aria-label*="breadcrumb" i],.breadcrumb').length
+          ? "breadcrumb"
+          : "content");
+      return to
+        ? {
+            to,
+            anchor: a.text().replace(/\s+/g, " ").trim().slice(0, 200),
+            zone,
+            nofollow: /\bnofollow\b/i.test(a.attr("rel") ?? ""),
+          }
+        : null;
+    })
+    .get();
   // fuera: código y los textos de respaldo de medios ("tu navegador no soporta video…")
-  $("script,style,noscript,svg,template,video,audio,iframe,object,embed,canvas,picture source").remove();
+  $(
+    "script,style,noscript,svg,template,video,audio,iframe,object,embed,canvas,picture source",
+  ).remove();
   const signals = pageSignals($, url);
   const blocks = textBlocks($);
   const body = $("main").length ? $("main") : $("body");
   const text = body.text().replace(/\s+/g, " ").trim();
   return {
     // el <title> de la página, no el de un <svg> del body
-    title: $("title").filter((_, el) => !$(el).closest("svg").length).first().text().trim() || null,
+    robotsMeta,
+    parsedExtra: {
+      template: classifyTemplate(
+        {
+          url,
+          signals,
+          jsonldTypes,
+          h1: $("h1")
+            .map((_, el) => $(el).text())
+            .get(),
+          title: $("title").first().text(),
+        },
+        options.templates,
+      ),
+      mainHash: mainHash(mainText(blocks)),
+      simhash: simhash(mainText(blocks)),
+      structured,
+      images: media.images,
+      commerce,
+      linkDetails,
+      extracted,
+    },
+    title:
+      $("title")
+        .filter((_, el) => !$(el).closest("svg").length)
+        .first()
+        .text()
+        .trim() || null,
     metaDesc: $('meta[name="description" i]').attr("content")?.trim() || null,
-    h1: $("h1").map((_, el) => $(el).text().replace(/\s+/g, " ").trim()).get(),
+    h1: $("h1")
+      .map((_, el) => $(el).text().replace(/\s+/g, " ").trim())
+      .get(),
     canonical,
-    canonicalType: (!canonical ? "none" : canonical === url ? "self" : "other") as PageData["canonicalType"],
+    canonicalType: (!canonical
+      ? "none"
+      : canonical === url
+        ? "self"
+        : "other") as PageData["canonicalType"],
     noindex: robotsNoindex(robotsMeta),
     nofollow: robotsNofollow(robotsMeta),
-    hreflang: $('link[rel="alternate"][hreflang]').map((_, el) => ({ lang: $(el).attr("hreflang")!, href: $(el).attr("href")! })).get(),
+    hreflang: $('link[rel="alternate"][hreflang]')
+      .map((_, el) => ({
+        lang: $(el).attr("hreflang")!,
+        href: $(el).attr("href")!,
+      }))
+      .get(),
     jsonldTypes: [...new Set(jsonldTypes)],
     jsonldErrors,
     wordCount: text ? text.split(" ").length : 0,
@@ -500,13 +689,22 @@ export function parseHtml(html: string, url: string) {
     headings,
     blocks,
     signals,
-    hash: text ? createHash("sha1").update(text.toLowerCase()).digest("hex") : null,
+    hash: text
+      ? createHash("sha1").update(text.toLowerCase()).digest("hex")
+      : null,
     // el precio puede estar fuera de <main> (barra de compra): se compara con todo el body
-    schemaIssues: checkStructuredData(jsonldNodes, $("body").text().replace(/\s+/g, " ")),
+    schemaIssues: checkStructuredData(
+      [...structured.jsonld, ...structured.microdata, ...structured.rdfa].map(e => ({ "@type": e.type, ...e.props })),
+      $("body").text().replace(/\s+/g, " "),
+    ),
   };
 }
 
-export async function fetchPage(url: string, render = false, o: FetchOpts = {}): Promise<PageData> {
+export async function fetchPage(
+  url: string,
+  render = false,
+  o: FetchOpts = {},
+): Promise<PageData> {
   const r = await fetchFollow(url, o);
   let html = r.html;
   let raw: ReturnType<typeof parseHtml> | null = null;
@@ -514,14 +712,23 @@ export async function fetchPage(url: string, render = false, o: FetchOpts = {}):
     const rendered = await renderHtml(r.finalUrl, o);
     // se guarda el HTML inicial para saber qué depende de JavaScript (Google renderiza, pero con demora y no siempre)
     if (rendered) {
-      raw = parseHtml(html, r.finalUrl);
+      raw = parseHtml(html, r.finalUrl, o);
       html = rendered;
     }
   }
-  const parsed = html ? parseHtml(html, r.finalUrl) : null;
+  const parsed = html ? parseHtml(html, r.finalUrl, o) : null;
   const rawLinks = raw ? new Set(raw.links) : null;
   return {
     url,
+    evidence: {
+      robotsMeta: parsed?.robotsMeta ?? "",
+      xRobots: r.xRobots,
+      headers: r.headers,
+      htmlSnippet: r.responseHtml.slice(0, 8000),
+      responseHtml: r.responseHtml,
+      responseTruncated: r.responseTruncated,
+    },
+    parsedExtra: parsed?.parsedExtra,
     finalUrl: r.finalUrl,
     status: r.status,
     redirects: r.redirects,
@@ -532,7 +739,8 @@ export async function fetchPage(url: string, render = false, o: FetchOpts = {}):
     canonical: parsed?.canonical ?? null,
     canonicalType: parsed?.canonicalType ?? "none",
     noindex: (parsed?.noindex ?? false) || xRobotsNoindex(r.xRobots),
-    nofollow: (parsed?.nofollow ?? false) || xRobotsNoindex(r.xRobots, robotsNofollow),
+    nofollow:
+      (parsed?.nofollow ?? false) || xRobotsNoindex(r.xRobots, robotsNofollow),
     hreflang: parsed?.hreflang ?? [],
     jsonldTypes: parsed?.jsonldTypes ?? [],
     jsonldErrors: parsed?.jsonldErrors ?? 0,
@@ -544,10 +752,19 @@ export async function fetchPage(url: string, render = false, o: FetchOpts = {}):
     text: parsed?.text ?? "",
     headings: parsed?.headings ?? [],
     blocks: parsed?.blocks ?? [],
-    signals: parsed?.signals ?? { linkGroup: 0, article: false, time: false, cart: false, price: false },
+    signals: parsed?.signals ?? {
+      linkGroup: 0,
+      article: false,
+      time: false,
+      cart: false,
+      price: false,
+    },
     error: r.waf ? "blocked_by_waf" : undefined,
     cms: html ? detectCms(html) : null,
-    jsLinks: rawLinks && parsed ? parsed.links.filter((l) => !rawLinks.has(l)).length : 0,
+    jsLinks:
+      rawLinks && parsed
+        ? parsed.links.filter((l) => !rawLinks.has(l)).length
+        : 0,
     rawWordCount: raw ? raw.wordCount : null,
     schemaIssues: parsed?.schemaIssues ?? [],
   };
@@ -555,46 +772,91 @@ export async function fetchPage(url: string, render = false, o: FetchOpts = {}):
 
 /** Crawl BFS con concurrencia limitada. */
 export async function runCrawl(crawlId: string, jobRunId?: string) {
-  const crawl = await db.crawl.findUniqueOrThrow({ where: { id: crawlId }, include: { project: true } });
-  const projectCrawler = ((crawl.project.settings ?? {}) as Record<string, any>).crawler ?? {};
+  const crawl = await db.crawl.findUniqueOrThrow({
+    where: { id: crawlId },
+    include: { project: true },
+  });
+  const projectCrawler =
+    ((crawl.project.settings ?? {}) as Record<string, any>).crawler ?? {};
   const o: CrawlOptions = {
-    maxPages: 500, concurrency: 5, render: false, maxDepth: 20, maxPerPattern: 50, ignoreParams: DEFAULT_IGNORE_PARAMS,
+    maxPages: 500,
+    concurrency: 5,
+    render: false,
+    maxDepth: 20,
+    maxPerPattern: 50,
+    ignoreParams: DEFAULT_IGNORE_PARAMS,
     ...projectCrawler,
     ...(crawl.options as CrawlOptions),
   };
-  o.maxPages = await crawlLimit(crawl.projectId,o.maxPages ?? 500);
+  o.concurrency = Math.max(1, Math.min(10, Number(o.concurrency) || 5));
+  o.maxDepth = Math.max(0, Math.min(50, Number(o.maxDepth) || 20));
+  o.maxPages = await crawlLimit(crawl.projectId, o.maxPages ?? 500);
   const ua = o.userAgent || env.userAgent;
   const patterns = new PatternLimiter(o.maxPerPattern ?? 0);
   const clean = (u: string) => normUrl(stripParams(u, o.ignoreParams ?? []))!;
   let wafStreak = 0;
   let wafAbort = false;
-  const domain = crawl.project.domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const domain = crawl.project.domain
+    .replace(/^https?:\/\//, "")
+    .replace(/\/$/, "");
   const start = normUrl(o.startUrl || `https://${domain}/`)!;
   const site = hostOf(start);
   const origin = new URL(start).origin;
   if (crawl.status === "cancelled") throw new NoRetryError("Crawl cancelado antes de empezar");
-  await db.crawl.update({ where: { id: crawlId }, data: { status: "running", reason: null } });
+  await db.crawl.update({ where: { id: crawlId }, data: { status: "running", reason: null,
+      config: JSON.parse(JSON.stringify(o)),
+      rulesVersion: RULES_VERSION,
+    },
+  });
 
   // robots + sitemap
   await jobProgress(jobRunId, 1, "robots.txt");
   let robots: Robots = { disallow: [], allow: [], sitemaps: [], group: "" };
   let robotsTxt: string | null = null;
+  let robotsFailure: string | null = null;
   try {
-    const { res: r } = await safeFetch(`${origin}/robots.txt`, { headers: { "User-Agent": ua } });
+    const { res: r } = await safeFetch(`${origin}/robots.txt`, {
+      headers: { "User-Agent": ua },
+    });
+    if (r.status === 429 || r.status >= 500)
+      robotsFailure = `robots.txt respondió HTTP ${r.status}; se suspende el crawl para respetar el control de acceso`;
     if (r.ok) {
       robotsTxt = await r.text();
-      robots = parseRobots(robotsTxt);
+      robots = parseRobots(robotsTxt, ua);
     }
   } catch {}
+  if (robotsFailure) {
+    await db.crawl.update({
+      where: { id: crawlId },
+      data: { status: "failed", reason: robotsFailure, finishedAt: new Date() },
+    });
+    throw new NoRetryError(robotsFailure);
+  }
   await jobProgress(jobRunId, 3, "sitemap.xml");
-  const sitemapList = robots.sitemaps.length ? robots.sitemaps : [`${origin}/sitemap.xml`];
-  const sitemapUrls = new Set((await fetchSitemapUrls(sitemapList, 20000)).map((u) => normUrl(u)).filter(Boolean) as string[]);
-  await db.crawl.update({ where: { id: crawlId }, data: { robots: robotsTxt, sitemapUrls: sitemapUrls.size } });
+  const sitemapList = robots.sitemaps.length
+    ? robots.sitemaps
+    : [`${origin}/sitemap.xml`];
+  const sitemapAudit = await fetchSitemapEvidence(sitemapList, 20000, {
+    userAgent: ua,
+  });
+  const sitemapUrls = new Set(
+    sitemapAudit.entries
+      .map((e) => normUrl(e.url))
+      .filter((u): u is string => Boolean(u) && hostOf(u!) === site),
+  );
+  const sitemapLastmod = new Map(
+    sitemapAudit.entries.map((e) => [normUrl(e.url), e.lastmod]),
+  );
+  await db.crawl.update({
+    where: { id: crawlId },
+    data: { robots: robotsTxt, sitemapUrls: sitemapUrls.size, sitemapAudit },
+  });
 
   const isInternal = (u: string) => hostOf(u) === site;
   // bloqueada para Googlebot según robots.txt (comodines, grupos y precedencia como Google)
   const blocked = (u: string) => !robotsAllows(robots, u);
-  const skipExt = /\.(jpg|jpeg|png|gif|webp|svg|pdf|zip|mp4|mp3|css|js|ico|woff2?|xml|json)(\?|$)/i;
+  const skipExt =
+    /\.(jpg|jpeg|png|gif|webp|svg|pdf|zip|mp4|mp3|css|js|ico|woff2?|xml|json)(\?|$)/i;
 
   let startError: string | null = null;
   // cancelación: el usuario puede cancelar el trabajo; se revisa entre tandas
@@ -602,7 +864,10 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   const cancelled = async () => {
     if (Date.now() - lastCheck < 3000) return false;
     lastCheck = Date.now();
-    const c = await db.crawl.findUnique({ where: { id: crawlId }, select: { status: true } });
+    const c = await db.crawl.findUnique({
+      where: { id: crawlId },
+      select: { status: true },
+    });
     return c?.status === "cancelled";
   };
   const seen = new Map<string, number>(); // url → depth
@@ -612,7 +877,12 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   seen.set(start, 0);
   const limit = pLimit(o.concurrency!);
   let depth = 0;
-  while (queue.length && pages.length < o.maxPages! && depth <= o.maxDepth! && !wafAbort) {
+  while (
+    queue.length &&
+    pages.length < o.maxPages! &&
+    depth <= o.maxDepth! &&
+    !wafAbort
+  ) {
     const batch = queue.slice(0, o.maxPages! - pages.length);
     const next: string[] = [];
     await Promise.all(
@@ -624,16 +894,27 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
           }
           let pd: PageData;
           try {
-            pd = await fetchPage(u, o.render, { userAgent: ua });
+            pd = await fetchPage(u, o.render, {
+              userAgent: ua,
+              templates: o.templates,
+              extract: o.extract,
+            });
           } catch (e) {
-            pd = { ...emptyPage(u), error: e instanceof SsrfError ? "ssrf_blocked" : "fetch_failed" };
+            pd = {
+              ...emptyPage(u),
+              error: e instanceof SsrfError ? "ssrf_blocked" : "fetch_failed",
+            };
             if (u === start) startError = describeFetchError(e);
           }
           pages.push({ ...pd, blocks: [] }); // los bloques solo los usa Contenido: no acumularlos en crawls grandes
           // Si el WAF bloquea todo, no seguir golpeando el sitio
           wafStreak = pd.error === "blocked_by_waf" ? wafStreak + 1 : 0;
           if (wafStreak >= 15) wafAbort = true;
-          if (pd.finalUrl !== u && isInternal(pd.finalUrl) && !seen.has(pd.finalUrl)) {
+          if (
+            pd.finalUrl !== u &&
+            isInternal(pd.finalUrl) &&
+            !seen.has(pd.finalUrl)
+          ) {
             seen.set(pd.finalUrl, depth);
             next.push(pd.finalUrl);
           }
@@ -648,9 +929,14 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
             seen.set(l, depth + 1);
             next.push(l);
           }
-          if (pages.length % 10 === 0) await jobProgress(jobRunId, 5 + (pages.length / o.maxPages!) * 80, `${pages.length} urls`);
-        })
-      )
+          if (pages.length % 10 === 0)
+            await jobProgress(
+              jobRunId,
+              5 + (pages.length / o.maxPages!) * 80,
+              `${pages.length} urls`,
+            );
+        }),
+      ),
     );
     queue = next;
     depth++;
@@ -660,26 +946,38 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   // Huérfanas: en sitemap pero no alcanzadas
   await jobProgress(jobRunId, 86, "huérfanas");
   const reached = new Set(pages.flatMap((p) => [p.url, p.finalUrl]));
-  const orphans = [...sitemapUrls].filter((u) => !reached.has(u)).slice(0, 2000);
+  const orphans = [...sitemapUrls]
+    .filter((u) => !reached.has(u))
+    .slice(0, 2000);
   // si el crawl ya tocó el máximo, no se baja nada más: el máximo que pidió el usuario se respeta,
   // y esas URLs no se pueden llamar huérfanas (no se recorrió todo el sitio)
   const linkLimitHit = pages.length >= o.maxPages!;
-  const orphanLimit = linkLimitHit ? 0 : Math.min(orphans.length, 300, Math.max(0, o.maxPages! - pages.length));
+  const orphanLimit = linkLimitHit
+    ? 0
+    : Math.min(orphans.length, 300, Math.max(0, o.maxPages! - pages.length));
   await Promise.all(
-    orphans.slice(0, orphanLimit).map((u) =>
-      limit(async () => {
-        try {
-          const pd = await fetchPage(u, false, { userAgent: ua });
-          pages.push({ ...pd, blocks: [] });
-          seen.set(u, -1);
-        } catch {}
-      })
-    )
+    orphans
+      .filter((u) => !blocked(u))
+      .slice(0, orphanLimit)
+      .map((u) =>
+        limit(async () => {
+          try {
+            const pd = await fetchPage(u, false, {
+              userAgent: ua,
+              templates: o.templates,
+              extract: o.extract,
+            });
+            pages.push({ ...pd, blocks: [] });
+            seen.set(u, -1);
+          } catch {}
+        }),
+      ),
   );
 
   // Inlinks
   const inlinks = new Map<string, number>();
-  for (const p of pages) for (const l of new Set(p.links)) inlinks.set(l, (inlinks.get(l) ?? 0) + 1);
+  for (const p of pages)
+    for (const l of new Set(p.links)) inlinks.set(l, (inlinks.get(l) ?? 0) + 1);
 
   await jobProgress(jobRunId, 90, "guardando");
   await db.page.deleteMany({ where: { crawlId } });
@@ -712,36 +1010,73 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     depth: seen.get(p.url) ?? -1,
     contentHash: p.contentHash,
     inSitemap: sitemapUrls.has(p.url),
+    lastmod: sitemapLastmod.get(p.url)
+      ? new Date(sitemapLastmod.get(p.url)!)
+      : null,
     orphan: orphanSet.has(p.url),
     blocked: p.status === 0 && !p.error && blocked(p.url),
     error: p.error ?? null,
     jsLinks: p.jsLinks ?? 0,
     rawWordCount: p.rawWordCount ?? null,
     schemaIssues: p.schemaIssues ?? [],
+    robotsMeta: p.evidence?.robotsMeta ?? null,
+    xRobots: p.evidence?.xRobots ?? null,
+    headers: p.evidence?.headers ?? {},
+    htmlSnippet: p.evidence?.htmlSnippet ?? null,
+    responseHtml: p.evidence?.responseHtml ?? null,
+    responseTruncated: p.evidence?.responseTruncated ?? false,
+    template: p.parsedExtra?.template ?? null,
+    mainHash: p.parsedExtra?.mainHash ?? null,
+    simhash: p.parsedExtra?.simhash ?? null,
+    structured: JSON.parse(JSON.stringify(p.parsedExtra?.structured ?? {})),
+    images: p.parsedExtra?.images ?? [],
+    commerce: JSON.parse(JSON.stringify(p.parsedExtra?.commerce ?? {})),
+    linkDetails: p.parsedExtra?.linkDetails ?? [],
+    extracted: p.parsedExtra?.extracted ?? {},
   }));
-  for (let i = 0; i < rows.length; i += 200) await db.page.createMany({ data: rows.slice(i, i + 200), skipDuplicates: true });
+  for (let i = 0; i < rows.length; i += 200)
+    await db.page.createMany({
+      data: rows.slice(i, i + 200),
+      skipDuplicates: true,
+    });
 
   await jobProgress(jobRunId, 95, "issues");
   const saved = await db.page.findMany({ where: { crawlId } });
-  const issues = computeIssues(saved, { robotsTxt, sitemapCount: sitemapUrls.size, site });
+  const issues = computeIssues(saved, {
+    robotsTxt,
+    sitemapCount: sitemapUrls.size,
+    site,
+  });
   await db.issue.deleteMany({ where: { crawlId } });
-  for (let i = 0; i < issues.length; i += 500) await db.issue.createMany({ data: issues.slice(i, i + 500).map((x) => ({ ...x, crawlId })) });
+  for (let i = 0; i < issues.length; i += 500)
+    await db.issue.createMany({
+      data: issues.slice(i, i + 500).map((x) => ({ ...x, crawlId })),
+    });
 
   const sev = (s: string) => issues.filter((x) => x.severity === s).length;
   const stats = {
     pages: saved.length,
     ok: saved.filter((p) => p.status === 200).length,
-    redirects: saved.filter((p) => p.redirects && (p.redirects as unknown[]).length).length,
+    redirects: saved.filter(
+      (p) => p.redirects && (p.redirects as unknown[]).length,
+    ).length,
     // errores HTTP = 4xx + 5xx + sin respuesta; lo bloqueado por robots.txt no se pidió y no es un error
-    errors: saved.filter((p) => !p.blocked && !p.error && (p.status >= 400 || p.status === 0)).length,
-    http4xx: saved.filter((p) => !p.error && p.status >= 400 && p.status < 500).length,
+    errors: saved.filter(
+      (p) => !p.blocked && !p.error && (p.status >= 400 || p.status === 0),
+    ).length,
+    http4xx: saved.filter((p) => !p.error && p.status >= 400 && p.status < 500)
+      .length,
     http5xx: saved.filter((p) => !p.error && p.status >= 500).length,
-    noResponse: saved.filter((p) => !p.blocked && !p.error && p.status === 0).length,
+    noResponse: saved.filter((p) => !p.blocked && !p.error && p.status === 0)
+      .length,
     robotsBlocked: saved.filter((p) => p.blocked).length,
     blockedByWaf: saved.filter((p) => p.error === "blocked_by_waf").length,
     wafAborted: wafAbort,
     trapSkipped: [...patterns.skipped.values()].reduce((a, b) => a + b, 0),
-    trapPatterns: [...patterns.skipped.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([pattern, skipped]) => ({ pattern, skipped })),
+    trapPatterns: [...patterns.skipped.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([pattern, skipped]) => ({ pattern, skipped })),
     orphans: linkLimitHit ? 0 : orphans.length,
     /** URLs del sitemap que no se alcanzaron porque el crawl tocó el máximo (no son huérfanas confirmadas) */
     sitemapNotReached: linkLimitHit ? orphans.length : 0,
@@ -750,15 +1085,33 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     critical: sev("critical"),
     warning: sev("warning"),
     info: sev("info"),
-    avgMs: Math.round(saved.reduce((s, p) => s + p.responseMs, 0) / Math.max(1, saved.length)),
-    health: Math.max(0, Math.round(100 - (sev("critical") * 5 + sev("warning")) / Math.max(1, saved.length) * 10)) as number | null,
+    avgMs: Math.round(
+      saved.reduce((s, p) => s + p.responseMs, 0) / Math.max(1, saved.length),
+    ),
+    health: Math.max(
+      0,
+      Math.round(
+        100 -
+          ((sev("critical") * 5 + sev("warning")) / Math.max(1, saved.length)) *
+            10,
+      ),
+    ) as number | null,
     /** cobertura: páginas leídas por links vs. el máximo pedido */
     limitReached: linkLimitHit,
     /** CMS más frecuente entre las páginas leídas (la home manda si lo tiene) */
-    cms: pages.find((p) => p.url === start)?.cms ?? mode(pages.map((p) => p.cms).filter((c): c is Cms => Boolean(c))),
+    cms:
+      pages.find((p) => p.url === start)?.cms ??
+      mode(pages.map((p) => p.cms).filter((c): c is Cms => Boolean(c))),
   };
   const outcome = classifyCrawl({
-    pages: pages.map((p) => ({ url: p.url, finalUrl: p.finalUrl, status: p.status, error: p.error ?? null, contentType: p.contentType, robotsBlocked: p.status === 0 && !p.error && blocked(p.url) })),
+    pages: pages.map((p) => ({
+      url: p.url,
+      finalUrl: p.finalUrl,
+      status: p.status,
+      error: p.error ?? null,
+      contentType: p.contentType,
+      robotsBlocked: p.status === 0 && !p.error && blocked(p.url),
+    })),
     start,
     wafAbort,
     startError,
@@ -767,12 +1120,27 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
   const note = healthBlocker(outcome.status, saved);
   if (note) Object.assign(stats, { health: null, healthNote: note });
   if (await cancelled()) throw new NoRetryError("Crawl cancelado");
-  await db.crawl.update({ where: { id: crawlId }, data: { status: outcome.status, reason: outcome.reason, stats, finishedAt: new Date() } });
-  await syncCrawlTasks(crawlId);
+  await db.crawl.update({
+    where: { id: crawlId },
+    data: {
+      status: outcome.status,
+      reason: outcome.reason,
+      stats,
+      finishedAt: new Date(),
+    },
+  });
+  if (!crawl.private) await syncCrawlTasks(crawlId);
   // avisos inmediatos (home caída, noindex o errores nuevos en páginas con tráfico, cambios masivos): no deben tirar el crawl
-  await import("../watch").then((w) => w.runWatch(crawl.projectId)).catch(() => {});
-  await import("../pro").then((m) => m.runAfterCrawl(crawlId, crawl.projectId)).catch(() => {});
-  if (outcome.status === "failed") throw new NoRetryError(outcome.reason ?? "Crawl fallido");
+  if (!crawl.private)
+    await import("../watch")
+      .then((w) => w.runWatch(crawl.projectId))
+      .catch(() => {});
+  if (!crawl.private && outcome.status !== "failed")
+    await import("../pro")
+      .then((m) => m.runAfterCrawl(crawlId, crawl.projectId))
+      .catch(() => {});
+  if (outcome.status === "failed")
+    throw new NoRetryError(outcome.reason ?? "Crawl fallido");
   return { ...stats, status: outcome.status };
 }
 

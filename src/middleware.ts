@@ -22,6 +22,8 @@ export function middleware(req: NextRequest) {
   if (req.method === "GET" && /^\/api\/feed\/[A-Za-z0-9_-]{30,80}\/[a-z]+\.csv$/.test(pathname)) return NextResponse.next();
   // Meta firma estas notificaciones con el app secret (signed_request); no traen cookie ni BASIC_AUTH
   if (req.method === "POST" && /^\/api\/oauth\/meta\/(deauthorize|data-deletion)$/.test(pathname)) return NextResponse.next();
+  // API externa: la ruta valida su token Bearer por proyecto, sin cookies ni escrituras.
+  if(req.method === "GET" && /^\/api\/expert\/[a-z0-9]+\/[a-z]+$/.test(pathname))return NextResponse.next();
   // el sitio público (landing, productos y sus imágenes) nunca va detrás de BASIC_AUTH ni de la sesión
   if (SITE.some((r) => r.test(pathname))) return NextResponse.next();
   const cred = process.env.BASIC_AUTH;

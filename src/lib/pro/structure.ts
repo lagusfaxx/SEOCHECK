@@ -1,3 +1,3 @@
-import type { ProModule } from "./types";
-
-export const module: ProModule = { prefix: "structure", routes: {} };
+import { standard } from "./data";
+export const module = standard("structure");
+export const templatesModule = standard("templates");

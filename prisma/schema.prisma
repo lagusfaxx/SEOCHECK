@@ -162,6 +162,7 @@ model Project {
   apiTokens        ApiToken[]
   webhooks         Webhook[]
   savedViews       SavedView[]
+  deliveries       WebhookDelivery[]
   overrides        IssueOverride[]
   access           ProjectAccess[]
 }
@@ -397,7 +398,10 @@ model Page {
   fetchError    String?
   /// cabeceras relevantes de la respuesta (evidencia)
   headers       Json      @default("{}")
-  /// primeros bytes del <head> (evidencia)
+  /// HTML recibido (hasta 2 MiB); responseTruncated indica si fue recortado.
+  responseHtml      String?
+  responseTruncated Boolean @default(false)
+  /// primeros bytes de la respuesta (evidencia)
   htmlSnippet   String?
   fetchedAt     DateTime  @default(now())
   /// con render JS: diferencias entre el HTML recibido y el DOM renderizado (title, robots, canonical, H1, links, texto)
@@ -1096,11 +1100,16 @@ model ApiToken {
 
 /// Webhook saliente: se firma con HMAC-SHA256 (cabecera X-Seocheck-Signature).
 model Webhook {
+  /// json | slack | whatsapp
+  format     String @default("json")
+  recipient  String?
+  template   String?
+  deliveries WebhookDelivery[]
   id         String    @id @default(cuid())
   projectId  String
   project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   url        String
-  /// crawl.completed | alert.created | task.created | task.updated | report.ready | * (todos)
+  /// crawl.completed | alert.created | daily.digest | task.updated | report.ready | * (todos)
   events     String[]
   secret     String
   active     Boolean   @default(true)
@@ -1159,4 +1168,24 @@ model ProjectAccess {
   createdAt DateTime @default(now())
 
   @@id([projectId, userId])
+}
+
+/// Bandeja durable con deduplicación y reintentos de avisos salientes.
+model WebhookDelivery {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  webhookId String
+  webhook   Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  eventKey  String
+  event     String
+  payload   Json
+  status    String   @default("pending")
+  attempts  Int      @default(0)
+  nextAt    DateTime @default(now())
+  lastError String?
+  createdAt DateTime @default(now())
+
+  @@unique([webhookId, eventKey])
+  @@index([status, nextAt])
 }

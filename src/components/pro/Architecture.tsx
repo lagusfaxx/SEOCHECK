@@ -1,5 +1,5 @@
 "use client";
-
+import ExpertPanel from "./ExpertPanel";
 export default function Architecture() {
-  return null;
+  return <ExpertPanel kind="arch" links={[]} />;
 }
