@@ -41,6 +41,8 @@ before(async () => {
 after(async () => {
   if (!hasDb) return;
   const { db } = await import("./db");
+  // el gasto simulado no debe quedar contando para el presupuesto mensual de otros tests
+  await db.providerUsage.deleteMany({ where: { projectId } });
   await db.project.deleteMany({ where: { id: projectId } });
   await db.$disconnect();
   srv?.close();

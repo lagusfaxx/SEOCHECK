@@ -303,6 +303,68 @@ export const PRODUCT_GETS: Record<string, Handler> = {
   },
 };
 export const PRODUCT_POSTS: Record<string, Handler> = {
+  "marketing/annotations": async ({ id, body, user }) => {
+    const scope = typeof body.scope === "string" && body.scope.trim() ? body.scope.trim().slice(0, 500) : null;
+    if (scope && !/^(https?:\/\/|\/)/.test(scope)) throw invalid("Alcance: una URL completa, una ruta (/blog/*) o vacío para todo el sitio");
+    return db.annotation.create({
+      data: { projectId: id, date: dayParam(body.date), title: boundedText(body.title, 200), scope, note: typeof body.note === "string" ? body.note.slice(0, 1000) : null, createdBy: user.email },
+    });
+  },
+  /** Dominios de la competencia (no son credenciales): se usan para backlinks; vacío = automáticos desde las SERPs */
+  "marketing/competitors": async ({ id, body }) => {
+    if (!Array.isArray(body.competitors) || body.competitors.length > 5) throw invalid("Hasta 5 competidores");
+    const competitors = [...new Set(body.competitors.map((d: unknown) => bareDomain(String(d))).filter((d: string) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)))] as string[];
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });
+    await db.project.update({ where: { id }, data: { settings: { ...((p.settings ?? {}) as Record<string, any>), competitors } } });
+    return { competitors };
+  },
+  "ga4/property": async ({ id, body, user }) => {
+    await admin(id, user.id);
+    const r = await setGa4Property(id, boundedText(body.property, 50));
+    // primera carga al tiro: 90 días de datos
+    await runInlineJob(id, "ga4.sync", () => syncGa4(id));
+    return r;
+  },
+  "ga4/sync": async ({ id }) => runInlineJob(id, "ga4.sync", () => syncGa4(id)),
+  "marketing/alerts": async ({ id, body, user }) => {
+    await admin(id, user.id);
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true, workspaceId: true } });
+    const members = await db.membership.findMany({ where: { workspaceId: p.workspaceId }, select: { user: { select: { email: true } } } });
+    const allowed = new Set(members.map((m) => m.user.email.toLowerCase()));
+    const emails = Array.isArray(body.emails) ? ([...new Set(body.emails.map((e: unknown) => String(e).trim().toLowerCase()).filter(Boolean))] as string[]) : [];
+    const outside = emails.filter((e) => !allowed.has(e));
+    if (outside.length) throw invalid(`Solo miembros del equipo pueden recibir avisos: ${outside.join(", ")}`);
+    const settings = (p.settings ?? {}) as Record<string, any>;
+    await db.project.update({ where: { id }, data: { settings: { ...settings, alerts: { ...(settings.alerts ?? {}), emails, immediate: body.immediate !== false } } } });
+    return { emails, immediate: body.immediate !== false };
+  },
+  /** SEO local: ciudad o comuna, nombre del negocio (para encontrarlo en Maps) y keywords */
+  "marketing/local": async ({ id, body }) => {
+    const location = typeof body.location === "string" ? body.location.trim().slice(0, 100) : "";
+    const businessName = typeof body.businessName === "string" ? body.businessName.trim().slice(0, 100) : "";
+    const keywords = Array.isArray(body.keywords) ? ([...new Set(body.keywords.map((k: unknown) => normTerm(String(k))).filter(Boolean))] as string[]).slice(0, MAX_LOCAL_KEYWORDS) : [];
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });
+    await db.project.update({ where: { id }, data: { settings: { ...((p.settings ?? {}) as Record<string, any>), local: { location, businessName, keywords } } } });
+    return { location, businessName, keywords };
+  },
+  /** Enlaces CSV para Sheets/Looker: el token se muestra una sola vez; generar otro revoca el anterior */
+  "marketing/feed": async ({ id, body, user, url }) => {
+    await admin(id, user.id);
+    if (body.revoke === true) {
+      await revokeFeedToken(id);
+      return { revoked: true };
+    }
+    const token = await rotateFeedToken(id);
+    const base = appBaseUrl(url.origin);
+    return { urls: Object.fromEntries(FEEDS.map((f) => [f, `${base}/api/feed/${token}/${f}.csv`])) };
+  },
+  "marketing/goals": async ({ id, body }) => {
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });
+    const settings = (p.settings ?? {}) as Record<string, any>;
+    const goals = { clicks: goalParam(body.clicks), nonBrandClicks: goalParam(body.nonBrandClicks) };
+    await db.project.update({ where: { id }, data: { settings: { ...settings, marketing: { ...(settings.marketing ?? {}), goals } } } });
+    return goals;
+  },
   "billing/checkout": async ({ id, user, body }) => createSubscription(id, user, body.seats, body.payerEmail),
   "billing/sync": async ({ id, user, body }) => syncWorkspace(id, user.id, body.preapprovalId),
   "billing/seats": async ({ id, user, body }) => changeSeats(id, user.id, body.seats),
@@ -612,68 +674,6 @@ export const PRODUCT_PATCHS: Record<string, Handler> = {
           body.status as TaskStatus,
           user.id,
         );
-  },
-  "marketing/annotations": async ({ id, body, user }) => {
-    const scope = typeof body.scope === "string" && body.scope.trim() ? body.scope.trim().slice(0, 500) : null;
-    if (scope && !/^(https?:\/\/|\/)/.test(scope)) throw invalid("Alcance: una URL completa, una ruta (/blog/*) o vacío para todo el sitio");
-    return db.annotation.create({
-      data: { projectId: id, date: dayParam(body.date), title: boundedText(body.title, 200), scope, note: typeof body.note === "string" ? body.note.slice(0, 1000) : null, createdBy: user.email },
-    });
-  },
-  /** Dominios de la competencia (no son credenciales): se usan para backlinks; vacío = automáticos desde las SERPs */
-  "marketing/competitors": async ({ id, body }) => {
-    if (!Array.isArray(body.competitors) || body.competitors.length > 5) throw invalid("Hasta 5 competidores");
-    const competitors = [...new Set(body.competitors.map((d: unknown) => bareDomain(String(d))).filter((d: string) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)))] as string[];
-    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });
-    await db.project.update({ where: { id }, data: { settings: { ...((p.settings ?? {}) as Record<string, any>), competitors } } });
-    return { competitors };
-  },
-  "ga4/property": async ({ id, body, user }) => {
-    await admin(id, user.id);
-    const r = await setGa4Property(id, boundedText(body.property, 50));
-    // primera carga al tiro: 90 días de datos
-    await runInlineJob(id, "ga4.sync", () => syncGa4(id));
-    return r;
-  },
-  "ga4/sync": async ({ id }) => runInlineJob(id, "ga4.sync", () => syncGa4(id)),
-  "marketing/alerts": async ({ id, body, user }) => {
-    await admin(id, user.id);
-    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true, workspaceId: true } });
-    const members = await db.membership.findMany({ where: { workspaceId: p.workspaceId }, select: { user: { select: { email: true } } } });
-    const allowed = new Set(members.map((m) => m.user.email.toLowerCase()));
-    const emails = Array.isArray(body.emails) ? ([...new Set(body.emails.map((e: unknown) => String(e).trim().toLowerCase()).filter(Boolean))] as string[]) : [];
-    const outside = emails.filter((e) => !allowed.has(e));
-    if (outside.length) throw invalid(`Solo miembros del equipo pueden recibir avisos: ${outside.join(", ")}`);
-    const settings = (p.settings ?? {}) as Record<string, any>;
-    await db.project.update({ where: { id }, data: { settings: { ...settings, alerts: { ...(settings.alerts ?? {}), emails, immediate: body.immediate !== false } } } });
-    return { emails, immediate: body.immediate !== false };
-  },
-  /** SEO local: ciudad o comuna, nombre del negocio (para encontrarlo en Maps) y keywords */
-  "marketing/local": async ({ id, body }) => {
-    const location = typeof body.location === "string" ? body.location.trim().slice(0, 100) : "";
-    const businessName = typeof body.businessName === "string" ? body.businessName.trim().slice(0, 100) : "";
-    const keywords = Array.isArray(body.keywords) ? ([...new Set(body.keywords.map((k: unknown) => normTerm(String(k))).filter(Boolean))] as string[]).slice(0, MAX_LOCAL_KEYWORDS) : [];
-    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });
-    await db.project.update({ where: { id }, data: { settings: { ...((p.settings ?? {}) as Record<string, any>), local: { location, businessName, keywords } } } });
-    return { location, businessName, keywords };
-  },
-  /** Enlaces CSV para Sheets/Looker: el token se muestra una sola vez; generar otro revoca el anterior */
-  "marketing/feed": async ({ id, body, user, url }) => {
-    await admin(id, user.id);
-    if (body.revoke === true) {
-      await revokeFeedToken(id);
-      return { revoked: true };
-    }
-    const token = await rotateFeedToken(id);
-    const base = appBaseUrl(url.origin);
-    return { urls: Object.fromEntries(FEEDS.map((f) => [f, `${base}/api/feed/${token}/${f}.csv`])) };
-  },
-  "marketing/goals": async ({ id, body }) => {
-    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { settings: true } });
-    const settings = (p.settings ?? {}) as Record<string, any>;
-    const goals = { clicks: goalParam(body.clicks), nonBrandClicks: goalParam(body.nonBrandClicks) };
-    await db.project.update({ where: { id }, data: { settings: { ...settings, marketing: { ...(settings.marketing ?? {}), goals } } } });
-    return goals;
   },
   "report/schedule": async ({ id, body, user }) => {
     await admin(id, user.id);
