@@ -63,13 +63,16 @@ export function opportunityClicks(impressions: number, clicks: number, position:
 }
 
 /** Cuota de visibilidad: CTR esperado de cada posición × volumen de la keyword, por dominio. */
+/** Resultados de Google mismo (bloques de imágenes, Maps, Shopping, búsquedas relacionadas): no son competidores. */
+export const isGoogleOwned = (domain: string) => /(^|\.)google\.[a-z.]+$/i.test(domain.replace(/^www\./, ""));
+
 export function shareOfVoice(serps: { keyword: string; volume: number; results: { domain: string; position: number }[] }[], own: string) {
   const by = new Map<string, { visibility: number; keywords: Set<string>; best: number; positions: number[] }>();
   let total = 0;
   for (const s of serps) {
     const vol = Math.max(1, s.volume);
     for (const r of s.results) {
-      if (r.position > 20) continue;
+      if (r.position > 20 || isGoogleOwned(r.domain)) continue;
       const d = r.domain.replace(/^www\./, "");
       const v = expectedCtrAt(r.position) * vol;
       total += v;
@@ -296,6 +299,8 @@ export async function competitorsOverview(projectId: string, own: string) {
     own
   );
   const ai = [...latest.values()].filter((s) => s.aiOverview);
+  // cuántos resultados de google.com se dejaron fuera, y en qué keywords (para poder revisar la extracción)
+  const googleHits = [...latest.values()].flatMap((s) => ((s.organic as any[]) ?? []).filter((o) => isGoogleOwned(String(o.domain ?? hostOf(o.url)))).map((o) => ({ keyword: s.keyword, url: String(o.url ?? "") })));
   return {
     basis: terms.length ? "keywords monitoreadas en Rankings" : "SERPs guardadas por research, contenido o rankings",
     // con pocas keywords la cuota describe esas consultas, no el mercado
@@ -308,6 +313,7 @@ export async function competitorsOverview(projectId: string, own: string) {
       cited: ai.filter((s) => citedInAiOverview(s.aiOverview, own)).length,
       examples: ai.slice(0, 8).map((s) => ({ keyword: s.keyword, cited: citedInAiOverview(s.aiOverview, own) })),
     },
-    note: "Visibilidad = CTR esperado de cada posición × volumen de búsqueda (o 1 si no hay volumen), sumado por dominio en el top 20.",
+    excludedGoogle: { results: googleHits.length, examples: googleHits.slice(0, 3) },
+    note: `Visibilidad = CTR esperado de cada posición × volumen de búsqueda (o 1 si no hay volumen), sumado por dominio en el top 20.${googleHits.length ? ` Se excluyeron ${googleHits.length} resultados de Google mismo (imágenes, Maps, Shopping u otros bloques): no son competidores.` : ""}`,
   };
 }

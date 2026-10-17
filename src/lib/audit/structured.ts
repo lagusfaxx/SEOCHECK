@@ -43,30 +43,38 @@ export function checkStructuredData(
     .replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
-  const present = (v: unknown) => {
-    const t = String(v ?? "")
+  const clean = (v: unknown) =>
+    String(v ?? "")
       .replace(/<[^>]*>/g, " ")
       .toLowerCase()
       .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
+      .replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-z0-9]+/g, " ")
       .trim();
-    return !t || visible.includes(t);
+  // la respuesta puede estar redactada con otra puntuación o cortes: basta con que casi todas sus palabras se vean
+  const visibleWords = new Set(visible.split(" "));
+  const present = (v: unknown) => {
+    const t = clean(v);
+    if (!t || visible.includes(t)) return true;
+    const words = t.split(" ").filter((w) => w.length > 2);
+    return words.length > 0 && words.filter((w) => visibleWords.has(w)).length / words.length >= 0.8;
+  };
+  const short = (v: unknown) => {
+    const s = String(v ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    return s.length > 90 ? `${s.slice(0, 90)}…` : s;
   };
   for (const n of nodes) {
     if (types(n).includes("faqpage"))
       for (const q of arr(n.mainEntity)) {
-        if (!present(q.name) || !present(q.acceptedAnswer?.text))
-          issues.push(
-            "FAQ declara una pregunta o respuesta no encontrada en el texto visible: verificar",
-          );
+        if (!present(q.name))
+          issues.push(`FAQ: la pregunta «${short(q.name)}» del JSON-LD no aparece en el texto visible`);
+        else if (!present(q.acceptedAnswer?.text))
+          issues.push(`FAQ: la respuesta a «${short(q.name)}» del JSON-LD («${short(q.acceptedAnswer?.text)}») no aparece en el texto visible`);
       }
     if (types(n).includes("breadcrumblist"))
       for (const item of arr(n.itemListElement))
         if (!present(item.name ?? item.item?.name))
-          issues.push(
-            "Breadcrumb declara un nombre no encontrado en la página: verificar",
-          );
+          issues.push(`Breadcrumb: el nombre «${short(item.name ?? item.item?.name)}» del JSON-LD no aparece en la página`);
   }
   if (!products.length) return [...new Set(issues)];
   const nums = visibleNumbers(visibleText);

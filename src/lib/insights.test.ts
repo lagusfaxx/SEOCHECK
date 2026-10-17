@@ -125,8 +125,9 @@ test("intencional y huérfanas sin confirmar no son hallazgos", () => {
 
 test("patrones: plantilla que concentra, tipo de página, CMS e issues que van juntos", () => {
   const issues: IssueIn[] = [];
-  for (let i = 0; i < 40; i++) issues.push({ url: prod(i), code: "title_long", severity: "warning" }, { url: prod(i), code: "meta_missing", severity: "warning" });
-  issues.push({ url: `${S}/blog/nota-1`, code: "img_no_alt", severity: "info" });
+  // hipótesis (no mejoras opcionales): las opcionales no deciden por qué plantilla empezar
+  for (let i = 0; i < 40; i++) issues.push({ url: prod(i), code: "title_dup", severity: "warning" }, { url: prod(i), code: "h1_missing", severity: "warning" });
+  issues.push({ url: `${S}/blog/nota-1`, code: "thin_content", severity: "info" });
   const p = detectPatterns(pages, issues, "shopify");
   assert.ok(p.some((x) => x.kind === "cms" && /Shopify.*Temas/.test(x.text)));
   assert.ok(p.some((x) => x.kind === "template" && /\/products\/\* concentra el 99%/.test(x.text)));

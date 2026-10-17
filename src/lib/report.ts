@@ -16,6 +16,7 @@ import { hostOf, urlKey } from "./util";
 import { coverage, emptyText, STATE_LABEL } from "./coverage";
 import { buildFindings, KIND_LABEL, kindOf, urlSection, type Pattern } from "./audit/insights";
 import type { Cms } from "./audit/cms";
+import { siteVocabulary, triageKeyword, VERDICT_LABEL, type Triage, type TriageContext } from "./keyword-triage";
 import { RULES_VERSION, brandFromDomain, CONFIDENCE_FACTOR, DISCREPANCY_HINT, EASE_LABEL, expectedCtrAt, isBrandQuery, ISSUE_RISK, makeTask, MINOR_FACTOR, psiVerdict, SEV_WEIGHT, byPriority, MINOR_ONPAGE, LOW_GSC_IMPRESSIONS, MIN_TREND_BASE, spellingVariants, type Confidence, type PsiField, type Task } from "./report-rules";
 
 const SEV_ORDER = ["critical", "warning", "info"] as const;
@@ -58,6 +59,8 @@ export async function buildReport(projectId: string): Promise<string> {
   let httpCounts: { c4xx: number; c5xx: number } | null = null;
   const notes: string[] = [];
   const intentional: string[] = [];
+  /** URLs que el informe da por intencionales y a la vez como error confirmado (debe quedar vacío) */
+  let intentOverlap: string[] | null = null;
   const trends: string[] = [];
   const patterns: Pattern[] = [];
 
@@ -197,6 +200,8 @@ export async function buildReport(projectId: string): Promise<string> {
     const pagesFull = await db.page.findMany({ where: { crawlId: crawl.id }, select: { url: true, status: true, depth: true, inlinks: true, jsonldTypes: true, error: true, canonical: true } });
     const ins = buildFindings(pagesFull, issues, { cms: (st.cms as Cms) ?? null, hitLimit, impr: hasGsc ? imprByUrl : undefined });
     for (const it of ins.intentional) intentional.push(`- **${it.text}.** Ej.: ${it.examples.join(" · ")}`);
+    const intentionalUrls = new Set(ins.intentional.flatMap((it) => it.examples.map((e) => e.split(" → ")[0])));
+    intentOverlap = [...new Set(ins.findings.filter((f) => kindOf(f.code) === "confirmed").flatMap((f) => f.urls).filter((u) => intentionalUrls.has(u)))];
     const covered = new Set(ins.findings.flatMap((f) => f.urls.map((u) => `${f.code}|${u}`)));
     const real = issues.filter((i) => covered.has(`${i.code}|${i.url}`) || ["robots_missing", "sitemap_missing"].includes(i.code));
     const byCode = new Map<string, typeof real>();
@@ -509,24 +514,63 @@ export async function buildReport(projectId: string): Promise<string> {
     .map((t) => ({ k: t.keyword, pos: t.checks[0]?.position ?? null, prev: t.checks[1]?.position ?? null, url: t.checks[0]?.url ?? null, at: t.checks[0]?.date ?? null }))
     .sort((a, b) => (a.pos ?? 999) - (b.pos ?? 999));
 
+  // ---------- Triaje de keywords: rubro del sitio y páginas existentes, antes de cualquier tarea ----------
+  const triagePages = crawl ? await db.page.findMany({ where: { crawlId: crawl.id, status: 200, noindex: false }, select: { url: true, title: true, h1: true } }) : [];
+  const triageGsc = period
+    ? (await db.gscRow.groupBy({ by: ["query", "page"], where: { projectId, date: { gte: period.start, lt: period.endExclusive } }, _sum: { impressions: true } })).map((r) => ({ query: r.query, page: r.page, impressions: r._sum.impressions ?? 0 }))
+    : [];
+  const triageCtx: TriageContext = {
+    vocab: siteVocabulary([...triagePages.map((p) => `${p.title ?? ""} ${p.h1.join(" ")}`), ...triageGsc.map((r) => r.query)]),
+    brand,
+    home: `https://${site}/`,
+    pages: triagePages.map((p) => ({ url: p.url, text: `${p.title ?? ""} ${p.h1.join(" ")}` })),
+    gsc: triageGsc,
+  };
+  /** keywords que terminaron en una tarea de crear/optimizar: la validación comprueba que todas pasaron el triaje */
+  const triagedForTasks: Triage[] = [];
+
   // ---------- Keywords ----------
   const kwOut: string[] = [];
   const run = await db.keywordRun.findFirst({ where: { projectId, status: "done" }, orderBy: { createdAt: "desc" } });
   if (run) {
     const clusters = await db.cluster.findMany({ where: { runId: run.id }, include: { topic: true, _count: { select: { keywords: true } } }, orderBy: { score: "desc" }, take: 40 });
     kwOut.push(`Research del ${date(run.createdAt)} · semillas: ${run.seeds.join(", ")}\n`);
-    const rowsK = clusters.map((c) => {
+    // cada cluster pasa por el triaje: marca propia y páginas existentes primero; términos ajenos no son tareas
+    const triaged = clusters.map((c) => {
       const own = c.urls.find(mine);
-      return [c.topic?.name ?? "–", c.name, c.primary, f0(c.volume), c.intent ?? "–", c._count.keywords, own ? `optimizar ${own}` : "crear página"];
+      return { c, t: own ? ({ keyword: c.primary, verdict: "existing", page: own, unknown: [], reason: `${own} ya rankea para el cluster` } as Triage) : triageKeyword(c.primary, triageCtx) };
     });
+    const rowsK = triaged.map(({ c, t }) => [c.topic?.name ?? "–", c.name, c.primary, f0(c.volume), c.intent ?? "–", c._count.keywords, t.page ? `${VERDICT_LABEL[t.verdict]}: ${t.page}` : VERDICT_LABEL[t.verdict]]);
     kwOut.push(table(["Topic", "Cluster", "Keyword principal", "Volumen", "Intención", "KWs", "Acción"], rowsK));
-    const gaps = clusters.filter((c) => !c.urls.some(mine) && c.volume > 0).sort((a, b) => b.volume - a.volume).slice(0, 10);
+    const outside = triaged.filter(({ t }) => t.verdict === "unknown_terms" || t.verdict === "off_topic");
+    if (outside.length)
+      kwOut.push("", `_Sin tarea (${outside.length} clusters): ${outside.slice(0, 8).map(({ c, t }) => `«${c.primary}» — ${t.reason}`).join("; ")}. Si el negocio sí ofrece eso, agrégalo al sitio (o como comparativa editorial si es una marca de la competencia) y vuelve a correr el informe._`);
+    const gaps = triaged.filter(({ c, t }) => t.verdict === "create" && c.volume > 0).map(({ c }) => c).sort((a, b) => b.volume - a.volume).slice(0, 10);
+    const toOptimize = triaged.filter(({ c, t }) => t.verdict === "existing" && !c.urls.some(mine) && c.volume > 0).sort((a, b) => b.c.volume - a.c.volume).slice(0, 10);
+    triagedForTasks.push(...triaged.filter(({ c, t }) => gaps.includes(c) || toOptimize.some((x) => x.c === c)).map(({ t }) => t));
+    if (toOptimize.length) {
+      const vol = toOptimize.reduce((s, x) => s + x.c.volume, 0);
+      tasks.push(
+        makeTask({
+          title: `Optimizar ${pl(toOptimize.length, "página existente")} para temas investigados`,
+          fix: toOptimize.slice(0, 6).map(({ c, t }) => `«${c.primary}» → ${t.page}`).join("; ") + ". Ajustar title, H1 y una sección a esa búsqueda en la página que ya existe; no crear otra URL.",
+          traffic: vol,
+          trafficLabel: `${f0(vol)} búsquedas/mes`,
+          sev: 1.5,
+          sevLabel: "oportunidad",
+          ease: 0.6,
+          confidence: "media",
+          evidence: `research del ${isoDay(run.createdAt)} cruzado con Search Console y el title/H1 de las páginas del crawl`,
+          verify: "La página indicada aparece en Search Console con impresiones para esa búsqueda en 4–8 semanas.",
+        })
+      );
+    }
     if (gaps.length) {
       const vol = gaps.reduce((s, c) => s + c.volume, 0);
       tasks.push(
         makeTask({
-          title: `Crear páginas para ${pl(gaps.length, "cluster")} sin URL propia`,
-          fix: `Una landing por cluster: ${gaps.slice(0, 6).map((c) => `«${c.primary}» (${f0(c.volume)}/mes)`).join(", ")}${gaps.length > 6 ? ", …" : ""}. Las keywords del cluster van en H2/texto.`,
+          title: `Evaluar ${pl(gaps.length, "página nueva")} para temas del catálogo sin URL propia`,
+          fix: `Temas del rubro del sitio que ninguna página trata hoy: ${gaps.slice(0, 6).map((c) => `«${c.primary}» (${f0(c.volume)}/mes)`).join(", ")}${gaps.length > 6 ? ", …" : ""}. Crear la página solo si hay productos o servicios reales para esa búsqueda; las keywords del cluster van en H2/texto.`,
           traffic: vol,
           trafficLabel: `${f0(vol)} búsquedas/mes`,
           sev: 1.5,
@@ -679,7 +723,7 @@ export async function buildReport(projectId: string): Promise<string> {
     const c = mk.competitors;
     resultsOut.push(
       "",
-      `**Competencia** (${c.keywords} keyword${c.keywords === 1 ? "" : "s"}, ${c.basis}${c.representative ? "" : `: vale solo para ${c.keywords === 1 ? "esa consulta" : "esas consultas"}, no describe el mercado`}): tu cuota de visibilidad ${pctS(c.ownShare)}. Primeros: ${c.top.slice(0, 5).map((x) => `${x.domain}${x.own ? " (tú)" : ""} ${pctS(x.share)}`).join(" · ")}. AI Overview en ${c.aiOverview.keywords} keywords; te cita en ${c.aiOverview.cited}.`
+      `**Competencia** (${c.keywords} keyword${c.keywords === 1 ? "" : "s"}, ${c.basis}${c.representative ? "" : `: vale solo para ${c.keywords === 1 ? "esa consulta" : "esas consultas"}, no describe el mercado`}): tu cuota de visibilidad ${pctS(c.ownShare)}. Primeros: ${c.top.slice(0, 5).map((x) => `${x.domain}${x.own ? " (tú)" : ""} ${pctS(x.share)}`).join(" · ")}. AI Overview en ${c.aiOverview.keywords} keywords; te cita en ${c.aiOverview.cited}.${c.excludedGoogle?.results ? ` Se excluyeron ${c.excludedGoogle.results} resultados de Google mismo (imágenes, Maps, Shopping), p. ej. ${c.excludedGoogle.examples.map((e) => `«${e.keyword}»: ${e.url}`).join(" · ")}.` : ""}`
     );
   }
 
@@ -711,6 +755,8 @@ export async function buildReport(projectId: string): Promise<string> {
         [s, ...bl.competitorSummaries].map((x) => [x.target === bl.target ? `${x.target} (tú)` : x.target, f0(x.referringDomains), f0(x.backlinks), f0(x.rank), f0(x.brokenBacklinks)])
       )
     );
+    const zeros = [s, ...bl.competitorSummaries].filter((x) => !x.referringDomains && !x.backlinks).map((x) => x.target);
+    if (zeros.length) blOut.push("", `_${zeros.join(", ")}: 0 = DataForSEO no tiene links registrados hacia ese dominio en su índice. En un sitio nuevo puede ser real; no prueba que no existan links._`);
     if (bl.previous) blOut.push("", `Variación desde la foto anterior: ${f0(s.referringDomains - bl.previous.referringDomains)} dominios de referencia.`);
     if (bl.newDomains.length) blOut.push("", `**Nuevos (30 días):** ${bl.newDomains.slice(0, 10).map((d) => `${d.domain} (rank ${d.rank})`).join(" · ")}`);
     if (bl.lost.length) blOut.push("", `**Perdidos:** ${bl.lost.slice(0, 10).map((d) => `${d.domain} (rank ${d.rank}${d.lostDate ? `, ${String(d.lostDate).slice(0, 10)}` : ""})`).join(" · ")}`);
@@ -810,17 +856,23 @@ export async function buildReport(projectId: string): Promise<string> {
   // ---------- Keyword gap y estacionalidad ----------
   const gapOut: string[] = [];
   const kg = await gapOverview(projectId);
+  if (kg.gap?.discarded)
+    gapOut.push(`_Se descartaron ${kg.gap.discarded} keywords de los competidores que no tienen relación con el vocabulario del sitio (titles, H1, consultas de Search Console), p. ej. ${kg.gap.discardedExamples.map((k) => `«${k}»`).join(", ")}. Si el competidor es una multitienda, conviene configurar competidores del mismo rubro en Resultados._\n`);
   if (kg.gap?.items.length) {
     const g = kg.gap;
     gapOut.push(
       `_DataForSEO Labs, ${g.at.slice(0, 10)}: keywords donde ${g.competitors.join(", ")} está en el top 20 y el sitio no aparece. Confirmar que el negocio ofrece eso antes de crear contenido._\n`,
       table(["Keyword", "Búsquedas/mes", "Competidor (pos.)", "Meses pico"], g.items.slice(0, 20).map((i) => [i.keyword, f0(i.volume), i.competitors.map((c) => `${c.domain} (${c.position})`).join(", "), i.peaks.length ? i.peaks.map((m) => ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"][m - 1]).join(", ") : "pareja"]))
     );
-    const vol = g.items.slice(0, 20).reduce((s, i) => s + i.volume, 0);
+    // el mismo triaje que los clusters: solo del rubro, y a la página existente si ya hay una
+    const tg = g.items.slice(0, 20).map((i) => ({ i, t: triageKeyword(i.keyword, triageCtx) })).filter(({ t }) => t.verdict === "existing" || t.verdict === "create");
+    triagedForTasks.push(...tg.map(({ t }) => t));
+    const vol = tg.reduce((s, x) => s + x.i.volume, 0);
+    if (tg.length)
     tasks.push(
       makeTask({
-        title: `Cubrir ${pl(Math.min(g.items.length, 20), "keyword")} que traen tráfico a la competencia`,
-        fix: `Revisar las primeras (${g.items.slice(0, 5).map((i) => `«${i.keyword}»`).join(", ")}): si el negocio lo ofrece, optimizar la página que corresponde o crear una; usar la página del competidor como referencia de intención, no para copiar.`,
+        title: `Cubrir ${pl(tg.length, "keyword")} del rubro donde la competencia aparece y el sitio no`,
+        fix: `${tg.slice(0, 5).map(({ i, t }) => (t.page ? `«${i.keyword}» → optimizar ${t.page}` : `«${i.keyword}» → evaluar página nueva si el negocio lo ofrece`)).join("; ")}. Usar la página del competidor como referencia de intención, no para copiar.`,
         traffic: vol,
         trafficLabel: `${f0(vol)} búsquedas/mes`,
         sev: 1.5,
@@ -850,6 +902,15 @@ export async function buildReport(projectId: string): Promise<string> {
     const sum = k.brand.now + k.nonBrand.now + k.unclassified.now;
     checks.push(["clics de marca + sin marca + no clasificables = total", !k.unclassified.now || sum === k.clicks.now, `${sum} vs ${k.clicks.now}`]);
   }
+  // exactitud, no solo forma: las keywords que llegaron a una tarea pasaron el triaje de rubro y de páginas existentes
+  // se vuelve a triar cada «keyword» citada en el texto final de las tareas de contenido (no solo cómo se armaron)
+  const contentTasks = tasks.filter((t) => /página nueva|páginas? existentes?|Cubrir .* keyword/.test(t.title));
+  const cited = [...new Set(contentTasks.flatMap((t) => [...t.fix.matchAll(/«([^»]+)»/g)].map((m) => m[1])))];
+  const badKw = [...triagedForTasks.filter((t) => t.verdict !== "create" && t.verdict !== "existing"), ...cited.map((k) => triageKeyword(k, triageCtx)).filter((t) => t.verdict !== "create" && t.verdict !== "existing")];
+  checks.push(["ninguna keyword fuera del rubro del sitio (o de la marca propia) se convierte en tarea", !badKw.length, badKw.map((t) => `«${t.keyword}» (${t.reason})`).slice(0, 5).join(", ")]);
+  const createWithPage = triagedForTasks.filter((t) => t.verdict === "create" && t.page);
+  checks.push(["no se propone crear una página cuando ya existe una que cubre la búsqueda", !createWithPage.length, createWithPage.map((t) => t.keyword).join(", ")]);
+  if (intentOverlap) checks.push(["ninguna URL figura a la vez como error confirmado y como comportamiento intencional", !intentOverlap.length, intentOverlap.slice(0, 5).join(", ")]);
   if (!inspLatest.size) checks.push(["indexación sin inspecciones se informa como «no medido» (no como 0)", true]);
 
   // ---------- Armado ----------
@@ -905,7 +966,7 @@ export async function buildReport(projectId: string): Promise<string> {
         ]
       ),
       "",
-      "_Tener impresiones prueba que la URL está indexada; no tenerlas no prueba lo contrario. Solo URL Inspection confirma el estado, y solo se inspeccionan las URLs principales._",
+      "_Tener impresiones prueba que la URL estuvo indexada en algún momento del período, no que lo esté hoy; no tenerlas no prueba lo contrario. Solo URL Inspection confirma el estado, y solo se inspeccionan las URLs principales._",
       ""
     );
   }
@@ -913,7 +974,7 @@ export async function buildReport(projectId: string): Promise<string> {
   out.push(
     "## Tareas por impacto",
     "",
-    "**Cómo se prioriza.** Impacto = tráfico afectado × severidad × facilidad × confianza.",
+    "**Cómo se prioriza.** Primero los problemas comprobados, después las hipótesis y al final las oportunidades de contenido y mejoras menores; dentro de cada nivel, por impacto = tráfico afectado × severidad × facilidad × confianza.",
     "",
     `- **Tráfico:** ${hasGsc ? `impresiones de Search Console (${isoDay(period!.start)} a ${isoDay(period!.end)}) de las URLs afectadas.` : `${imprByUrl.size ? `hay menos de ${f0(LOW_GSC_IMPRESSIONS)} impresiones en 28 días, así que no se usan para ordenar` : "sin Search Console"}: se usa el peso de cada URL en el sitio (1 + log₂(1 + links entrantes), +3 la home).`}`,
     `- **Severidad:** error ${SEV_WEIGHT.critical}, advertencia ${SEV_WEIGHT.warning}, observación ${SEV_WEIGHT.info}; oportunidades de Search Console 1,5–2,5.`,

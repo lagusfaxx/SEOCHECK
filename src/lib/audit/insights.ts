@@ -29,7 +29,7 @@ export const KIND_HINT: Record<Kind, string> = {
 /** Qué tan objetivo es cada issue. Las recomendaciones subjetivas no se presentan como errores. */
 export const ISSUE_KIND: Record<string, Kind> = {
   http_4xx: "confirmed", http_5xx: "confirmed", fetch_failed: "confirmed", blocked_by_waf: "confirmed", broken_link: "confirmed",
-  redirect_chain: "confirmed", redirect_loop: "confirmed", canonical_loop: "confirmed", robots_conflict: "confirmed", render_mismatch: "possible", noindex_in_sitemap: "confirmed", canonical_bad_target: "confirmed", title_missing: "confirmed", jsonld_invalid: "confirmed",
+  redirect_chain: "confirmed", redirect_loop: "confirmed", canonical_loop: "confirmed", robots_conflict: "confirmed", noindex_canonical: "possible", not_in_sitemap: "confirmed", faq_mismatch: "possible", breadcrumb_mismatch: "possible", render_mismatch: "possible", noindex_in_sitemap: "confirmed", canonical_bad_target: "confirmed", title_missing: "confirmed", jsonld_invalid: "confirmed",
   orphan: "possible", no_inlinks: "possible", dup_content: "possible", title_dup: "possible", meta_dup: "possible", canonical_other: "possible",
   blocked_robots: "possible", noindex: "possible", deep_page: "possible", slow: "possible", hreflang_no_self: "possible", redirect: "possible",
   thin_content: "possible", nofollow: "possible", sitemap_missing: "possible", ssrf_blocked: "possible", h1_missing: "possible",
@@ -321,13 +321,14 @@ function finding(code: string, severity: string, template: string, scope: Findin
 export function detectPatterns(pages: PageIn[], issues: IssueIn[], cms: Cms | null): Pattern[] {
   const out: Pattern[] = [];
   if (cms) out.push({ kind: "cms", text: `Sitio hecho con ${CMS_LABEL[cms]}: los títulos, metas y H1 repetidos se corrigen en la plantilla. ${CMS_FIX_HINT[cms]}` });
-  const relevant = issues.filter((i) => !SITE_WIDE.has(i.code));
+  // las mejoras opcionales (largo de title/meta…) se acumulan por URL: no deben decidir por dónde empezar
+  const relevant = issues.filter((i) => !SITE_WIDE.has(i.code) && kindOf(i.code) !== "opportunity");
   if (relevant.length >= 10) {
     // plantilla que concentra los problemas
     const bySec = new Map<string, number>();
     for (const i of relevant) bySec.set(urlSection(i.url), (bySec.get(urlSection(i.url)) ?? 0) + 1);
     const [topSec, topN] = [...bySec.entries()].sort((a, b) => b[1] - a[1])[0];
-    if (topN / relevant.length >= 0.4 && bySec.size > 1) out.push({ kind: "template", text: `La plantilla ${topSec} concentra el ${pct(topN / relevant.length)} de los problemas (${f0(topN)} de ${f0(relevant.length)}): empieza por ahí.` });
+    if (topN / relevant.length >= 0.4 && bySec.size > 1) out.push({ kind: "template", text: `La plantilla ${topSec} concentra el ${pct(topN / relevant.length)} de los errores e hipótesis (${f0(topN)} de ${f0(relevant.length)}, sin contar mejoras opcionales): si se confirman, se corrigen una vez en esa plantilla.` });
     // tipo de página con más problemas por URL
     const kindOfUrl = new Map(pages.map((p) => [p.url, pageKind(p.url, p.jsonldTypes ?? [], p.depth)]));
     const perKind = new Map<PageKind, { pages: number; issues: number }>();

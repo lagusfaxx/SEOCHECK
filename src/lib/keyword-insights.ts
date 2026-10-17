@@ -1,5 +1,7 @@
 import { db } from "./db";
 import { hostOf, urlKey } from "./util";
+import { siteVocabulary, triageKeyword } from "./keyword-triage";
+import { brandFromDomain } from "./report-rules";
 export async function clusterInsights(projectId: string, runId?: string) {
   const [project, clusters, snapshots, gsc] = await Promise.all([
     db.project.findUniqueOrThrow({ where: { id: projectId } }),
@@ -27,6 +29,17 @@ export async function clusterInsights(projectId: string, runId?: string) {
         s.keyword,
         new Set((s.organic as any[]).slice(0, 10).map((o) => urlKey(o.url))),
       );
+  // triaje para los clusters sin página: rubro del sitio, marca propia y páginas que ya tratan el tema
+  const crawl = await db.crawl.findFirst({ where: { projectId, private: false, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" }, select: { id: true } });
+  const sitePages = crawl ? await db.page.findMany({ where: { crawlId: crawl.id, status: 200, noindex: false }, select: { url: true, title: true, h1: true } }) : [];
+  const site = hostOf(`https://${project.domain.replace(/^https?:\/\//, "")}`);
+  const triageCtx = {
+    vocab: siteVocabulary([...sitePages.map((p) => `${p.title ?? ""} ${p.h1.join(" ")}`), ...gsc.map((r) => r.query)]),
+    brand: brandFromDomain(site),
+    home: `https://${site}/`,
+    pages: sitePages.map((p) => ({ url: p.url, text: `${p.title ?? ""} ${p.h1.join(" ")}` })),
+    gsc: gsc.map((r) => ({ query: r.query, page: r.page, impressions: r._sum.impressions ?? 0 })),
+  };
   const own = (url: string) => {
     const h = hostOf(url),
       d = hostOf(project.domain);
@@ -64,6 +77,9 @@ export async function clusterInsights(projectId: string, runId?: string) {
       queries.set(r.query, pages);
     }
     const cannibal = [...queries.values()].some((p) => p.size > 1);
+    const triage = !cannibal && !owned.length ? triageKeyword(c.primary, triageCtx) : null;
+    if (triage?.page) owned.push(triage.page);
+    const outside = triage && (triage.verdict === "unknown_terms" || triage.verdict === "off_topic");
     return {
       id: c.id,
       name: c.name,
@@ -78,11 +94,15 @@ export async function clusterInsights(projectId: string, runId?: string) {
         ? "consolidate"
         : owned.length
           ? "optimize"
-          : "create",
+          : outside
+            ? "review"
+            : "create",
       overlaps,
       evidence: primary ? "serp" : "no-serp",
       note: cannibal
         ? "Varias URLs reciben impresiones por la misma consulta. Confirma intención y marca antes de consolidar."
+        : triage && triage.verdict !== "create"
+          ? `${triage.reason}.`
         : !primary
           ? "Sin SERPs guardadas: no se afirma solapamiento real."
           : "Coincidencias de URLs entre los últimos top 10 guardados; no equivalen a una probabilidad de éxito.",

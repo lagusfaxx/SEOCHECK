@@ -59,20 +59,9 @@ export function computeExtraIssues(
         });
       else hashes.set(p.mainHash, p.url);
     }
-    if (
-      p.template === "product" &&
-      !p.noindex &&
-      p.canonicalType !== "other" &&
-      /OutOfStock|SoldOut|Discontinued/i.test(
-        String((p.commerce as any)?.availability ?? ""),
-      )
-    )
-      out.push({
-        url: p.url,
-        code: "product_out_of_stock",
-        severity: "info",
-        detail: String((p.commerce as any).availability),
-      });
+    // un agotado indexable puede ser correcto: no es un problema por sí solo. La discrepancia entre el JSON-LD y lo
+    // visible ya la reporta jsonld_mismatch; el inventario de agotados queda en Experto → Ecommerce
+
     if (p.template === "category" && !p.noindex && !p.mainHash)
       out.push({
         url: p.url,

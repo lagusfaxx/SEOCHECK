@@ -13,6 +13,7 @@ import { dfsAuth, dfsBase, dfsAccountError } from "./volume/dataforseo";
 import { assertBudget } from "./budget";
 import { backlinksConfigured, bareDomain, pickCompetitors } from "./backlinks";
 import { competitorsOverview } from "./marketing";
+import { siteVocabulary, topicWords } from "./keyword-triage";
 
 const DAY = 864e5;
 export const GAP_REFRESH_DAYS = 30;
@@ -65,6 +66,20 @@ export function upcomingPeaks<T extends { monthly?: Monthly | null }>(items: T[]
   return items.map((x) => ({ x, peaks: peakMonths(x.monthly) })).filter((r) => r.peaks.some((m) => next.includes(m)));
 }
 
+/**
+ * Solo keywords del tema del sitio (ver keyword-triage): todas sus palabras de tema aparecen en el vocabulario propio.
+ * Competidores generalistas (multitiendas, marketplaces) rankean en miles de cosas que el negocio no vende.
+ */
+export function relevantGap<T extends { keyword: string }>(items: T[], vocab: Iterable<string>) {
+  const own = siteVocabulary(vocab);
+  const relevant: T[] = [], discarded: T[] = [];
+  for (const i of items) {
+    const words = topicWords(i.keyword);
+    (words.length && words.every((w) => own.has(w)) ? relevant : discarded).push(i);
+  }
+  return { relevant, discarded };
+}
+
 // ---------- llamadas ----------
 
 export async function runKeywordGap(projectId: string, opts: { force?: boolean } = {}) {
@@ -110,9 +125,29 @@ export async function gapOverview(projectId: string) {
   const own = await db.keyword.findMany({ where: { projectId, excluded: false }, select: { term: true, volume: true, monthly: true }, orderBy: { volume: "desc" }, take: 300 });
   const now = new Date();
   const ownWithMonthly = own.filter((k) => Array.isArray(k.monthly)).map((k) => ({ keyword: k.term, volume: k.volume ?? 0, monthly: k.monthly as Monthly }));
-  const items = (g?.items as GapItem[] | undefined) ?? [];
+  // vocabulario propio: titles/H1 del último crawl público, consultas de Search Console y keywords investigadas
+  const crawl = await db.crawl.findFirst({ where: { projectId, private: false, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" }, select: { id: true } });
+  const [pages, queries] = await Promise.all([
+    crawl ? db.page.findMany({ where: { crawlId: crawl.id, status: 200 }, select: { title: true, h1: true }, take: 3000 }) : [],
+    db.gscRow.groupBy({ by: ["query"], where: { projectId }, _sum: { impressions: true }, orderBy: { _sum: { impressions: "desc" } }, take: 500 }),
+  ]);
+  const vocab = [...pages.map((p) => `${p.title ?? ""} ${p.h1.join(" ")}`), ...queries.map((q) => q.query)];
+  const all = (g?.items as GapItem[] | undefined) ?? [];
+  // sin vocabulario propio no se puede juzgar: se muestra todo con la advertencia de siempre
+  const { relevant, discarded } = vocab.length ? relevantGap(all, vocab) : { relevant: all, discarded: [] as GapItem[] };
+  const items = relevant;
   return {
-    gap: g ? { at: g.createdAt.toISOString(), competitors: g.competitors, total: items.length, items: items.slice(0, 50).map((i) => ({ ...i, peaks: peakMonths(i.monthly) })), errors: g.errors } : null,
+    gap: g
+      ? {
+          at: g.createdAt.toISOString(),
+          competitors: g.competitors,
+          total: items.length,
+          items: items.slice(0, 50).map((i) => ({ ...i, peaks: peakMonths(i.monthly) })),
+          errors: g.errors,
+          discarded: discarded.length,
+          discardedExamples: discarded.slice(0, 5).map((i) => i.keyword),
+        }
+      : null,
     // estacionalidad: keywords propias y del gap que suben en los próximos 2 meses
     upcoming: upcomingPeaks([...ownWithMonthly, ...items], now)
       .sort((a, b) => (b.x as any).volume - (a.x as any).volume)
