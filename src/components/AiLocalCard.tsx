@@ -21,7 +21,8 @@ export function AiLocalCard() {
     setForm(null);
     await mutate();
   });
-  if (!data) return null;
+  // IA y Maps usan las búsquedas de Google: sin ellas en la instalación, la tarjeta no aporta nada
+  if (!data || !data.configured) return null;
   const f = form ?? { location: data.local.location ?? "", businessName: data.local.businessName ?? "", keywords: (data.local.keywords ?? []).join(", ") };
   return (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -41,7 +42,7 @@ export function AiLocalCard() {
             </div>
             <div className="text-xs text-ink-500">Más citados en tu lugar: {data.ai.topCited.slice(0, 6).map((c) => c.domain).join(", ") || "—"}</div>
           </>
-        ) : <Empty compact icon="sparkle" title={data.configured ? "Sin revisión todavía" : "No disponible en este servidor"}>{data.configured ? "Se revisan las keywords de Rankings al ejecutar el análisis completo (una vez por semana)." : ""}</Empty>}
+        ) : <Empty compact icon="sparkle" title="Sin revisión todavía">Se revisan las keywords de Rankings al ejecutar el análisis completo (una vez por semana).</Empty>}
       </section>
       <section className="card space-y-3 p-4">
         <h2 className="text-base font-semibold">SEO local (Google Maps)</h2>

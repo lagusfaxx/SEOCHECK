@@ -13,7 +13,7 @@ import { newToken, requireProject, tokenHash } from "./auth";
 export const GSC_SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly", "https://www.googleapis.com/auth/analytics.readonly", "openid", "email"];
 
 export class GscNotConnected extends Error {
-  constructor(msg = "Search Console no está conectado: conéctalo en Ajustes del proyecto") {
+  constructor(msg = "Search Console no está conectado: conéctalo en la sección Search Console") {
     super(msg);
     this.name = "GscNotConnected";
   }
@@ -138,7 +138,7 @@ export async function projectClient(projectId: string): Promise<{ client: OAuth2
   try {
     token = decryptToken(c.refreshTokenEnc);
   } catch (e) {
-    if (e instanceof TokenDecryptError) throw new GscNotConnected("La conexión con Google ya no es válida: vuelve a conectar Search Console en Ajustes");
+    if (e instanceof TokenDecryptError) throw new GscNotConnected("La conexión con Google ya no es válida: vuelve a conectarla en la sección Search Console");
     throw e;
   }
   if (token.rotated) await db.gscConnection.update({ where: { projectId }, data: { refreshTokenEnc: encrypt(token.plain) } }).catch(() => {});

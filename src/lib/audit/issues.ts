@@ -12,6 +12,7 @@ export const ISSUE_LABELS: Record<string, string> = {
   ssrf_blocked: "URL bloqueada (red interna)",
   redirect_chain: "Cadena de redirects",
   redirect: "Redirect",
+  client_redirect: "Redirección desde el HTML (responde 200)",
   broken_link: "Link roto",
   noindex_in_sitemap: "noindex en sitemap",
   title_missing: "Sin título",
@@ -56,6 +57,8 @@ export const ISSUE_LABELS: Record<string, string> = {
 
 /** Por debajo de esto la página casi no tiene texto propio; no es un objetivo de largo. */
 export const THIN_WORDS = 100;
+/** Respuesta del servidor (HTML) sobre esto se anota como lenta; sobre el doble, advertencia. */
+export const SLOW_MS = 1500;
 
 /** Evidencia de un error HTTP: estado, URL final, de dónde viene (sitemap o links) y quién la enlaza. */
 export function httpEvidence(p: Pick<Page, "status" | "finalUrl" | "url" | "inSitemap">, from: string[]): string {
@@ -135,7 +138,7 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
   const group = (key: (p: Page) => string | null) => {
     const m = new Map<string, Page[]>();
     for (const p of html) {
-      if (p.noindex || p.canonicalType === "other" || (p.redirects as unknown[]).length) continue;
+      if (p.noindex || p.canonicalType === "other" || (p.redirects as unknown[]).length || p.clientRedirect) continue;
       const k = key(p);
       if (!k) continue;
       m.set(k, [...(m.get(k) ?? []), p]);
@@ -154,6 +157,11 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
     else if (p.status >= 400) add(p.url, "http_4xx", "critical", httpEvidence(p, linkedFrom.get(p.url) ?? []));
     if (redirects.length > 1) add(p.url, "redirect_chain", "warning", [...redirects.map((r) => `${r.status} ${r.url}`), p.finalUrl ?? ""].join(" → "));
     else if (redirects.length === 1 && p.inSitemap) add(p.url, "redirect", "warning", `→ ${p.finalUrl}`);
+    // 200 que redirige desde el HTML: su contenido es el de una página de paso (sin H1, 0 palabras) y no se evalúa
+    if (p.clientRedirect && !redirects.length) {
+      add(p.url, "client_redirect", "warning", `→ ${p.clientRedirect} · responde 200 y el navegador redirige (meta refresh o JavaScript)${p.inSitemap ? " · está en el sitemap" : ""}`);
+      continue;
+    }
     // no encontrar el link en el HTML no prueba que no exista (links condicionales o armados con JS): es una hipótesis
     if (p.orphan) add(p.url, "orphan", "info", "en sitemap; no se encontró un link en el HTML rastreado");
     if (redirects.length) continue;
@@ -215,7 +223,7 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
     if (p.wordCount < THIN_WORDS && !p.noindex) add(p.url, "thin_content", "info", `${p.wordCount} palabras visibles`);
     if (p.imgNoAlt) add(p.url, "img_no_alt", "info", `${p.imgNoAlt} imagen${p.imgNoAlt === 1 ? "" : "es"} sin atributo alt`);
     if (p.depth > 3) add(p.url, "deep_page", "warning", `a ${p.depth} clics de la home`);
-    if (p.responseMs > 1500) add(p.url, "slow", p.responseMs > 3000 ? "warning" : "info", `${p.responseMs} ms`);
+    if (p.responseMs > SLOW_MS) add(p.url, "slow", p.responseMs > SLOW_MS * 2 ? "warning" : "info", `${p.responseMs} ms`);
     if (!p.inlinks && p.depth !== 0 && !p.orphan) add(p.url, "no_inlinks", "warning");
     const hl = p.hreflang as { lang: string; href: string }[];
     // el hreflang se evalúa en la versión canónica: una página con canonical a otra URL no necesita auto-referencia

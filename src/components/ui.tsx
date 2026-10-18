@@ -280,7 +280,7 @@ export function Tabs<T extends string>({ value, onChange, items }: { value: T; o
   return (
     <div className="inline-flex rounded-lg border border-ink-200 bg-white p-0.5 dark:border-ink-800 dark:bg-ink-900">
       {items.map((it) => (
-        <button key={it.id} title={it.title} onClick={() => onChange(it.id)} className={cx("inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition", value === it.id ? "bg-ink-900 text-white dark:bg-ink-100 dark:text-ink-900" : "text-ink-500 hover:text-ink-900 dark:hover:text-ink-100")}>
+        <button key={it.id} title={it.title} onClick={() => onChange(it.id)} className={cx("inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-sm transition", value === it.id ? "bg-ink-900 text-white dark:bg-ink-100 dark:text-ink-900" : "text-ink-500 hover:text-ink-900 dark:hover:text-ink-100")}>
           {it.icon && <Icon name={it.icon} className="h-3.5 w-3.5" />}
           {it.label}
         </button>

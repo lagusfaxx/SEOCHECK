@@ -73,7 +73,7 @@ export function ReportTools() {
             {!r
               ? "Cargando resumen…"
               : c
-                ? `Salud técnica ${c.health ?? "—"}/100${c.previousId ? ` · ${c.new ?? "—"} nuevas · ${c.resolved ?? "sin confirmar"} solucionadas` : " · Primera auditoría"}`
+                ? `Salud técnica ${c.health ?? "—"}/100${!c.previousId ? " · Primera auditoría" : c.rulesChanged ? " · reglas actualizadas: la comparación vuelve en la próxima auditoría" : ` · ${c.new ?? "—"} nuevas · ${c.resolved ?? "sin confirmar"} solucionadas`}`
                 : "Todavía no hay una auditoría terminada."}
           </p>
           {c?.partial && (
@@ -104,7 +104,7 @@ export function ReportTools() {
                 <tr key={`${a.title}:${a.pattern}`}>
                   <td className="!whitespace-normal break-words">
                     <b>{a.title}</b>
-                    {a.pattern && <span className="ml-2 font-mono text-xs text-ink-500">{a.pattern}</span>}
+                    {a.pattern && !a.title.endsWith(` · ${a.pattern}`) && <span className="ml-2 font-mono text-xs text-ink-500">{a.pattern}</span>}
                     <p className="mt-1 text-xs text-ink-500">{a.reason}</p>
                   </td>
                   <td className="whitespace-nowrap">{plural(a.affected, "URL", "URLs")}</td>

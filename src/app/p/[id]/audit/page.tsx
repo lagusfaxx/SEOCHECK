@@ -14,7 +14,7 @@ const SEV_HINT: Record<string, string> = {
   info: "Mejoras recomendadas. No penalizan por sí solas; revisa si aplican a tu sitio.",
 };
 
-type PageRow = { id: string; url: string; status: number; titleLen: number; metaLen: number; wordCount: number; depth: number; inlinks: number; outlinks: number; responseMs: number; canonicalType: string; noindex: boolean; inSitemap: boolean; orphan: boolean; jsonldTypes: string[]; imgNoAlt: number; title: string | null; issues: number };
+type PageRow = { id: string; url: string; status: number; titleLen: number; metaLen: number; wordCount: number; depth: number; inlinks: number; outlinks: number; responseMs: number; canonicalType: string; noindex: boolean; inSitemap: boolean; orphan: boolean; jsonldTypes: string[]; imgNoAlt: number; title: string | null; issues: number; blocked?: boolean; error?: string | null; clientRedirect?: string | null; redirects?: unknown[] };
 type IssueAgg = { code: string; label: string; severity: string; count: number };
 
 /** Sin el "Sin H1: " inicial, que repite el nombre del issue. */
@@ -23,6 +23,11 @@ const short = (t: string) => {
   return r.charAt(0).toUpperCase() + r.slice(1);
 };
 const path = (u: string) => u.replace(/^https?:\/\/[^/]+/, "") || "/";
+/** Estado legible: una URL bloqueada por robots.txt no se pidió, no es que «no responda». */
+const statusText = (p: Pick<PageRow, "status" | "blocked" | "clientRedirect" | "error">) =>
+  p.blocked ? "Bloqueada (robots.txt)" : p.error === "blocked_by_waf" ? `${p.status} · firewall` : p.clientRedirect ? "200 · redirige" : p.status ? String(p.status) : "Sin respuesta";
+/** Solo se cuentan palabras de páginas HTML que respondieron 200 y no redirigen. */
+const hasContent = (p: PageRow) => p.status === 200 && !p.blocked && !p.clientRedirect && !(p.redirects ?? []).length;
 const statusCls = (s: number) => (s === 200 ? "text-emerald-600" : s >= 300 && s < 400 ? "text-amber-600" : "text-rose-600");
 
 function cwv(metric: string, v: number | null | undefined) {
@@ -74,15 +79,15 @@ export default function AuditPage() {
 
   const pageCols: Col<PageRow>[] = [
     { key: "url", label: "URL", get: (p) => p.url, render: (p) => <span className="block max-w-[420px] truncate" title={p.url}>{path(p.url)}</span> },
-    { key: "status", label: "Estado", get: (p) => p.status, render: (p) => <span className={statusCls(p.status)}>{p.status || "—"}</span>, num: true },
-    { key: "issues", label: "Errores", get: (p) => p.issues, num: true },
+    { key: "status", label: "Estado", get: (p) => p.status, render: (p) => <span className={p.blocked ? "text-ink-500" : statusCls(p.clientRedirect ? 301 : p.status)}>{statusText(p)}</span>, num: true },
+    { key: "issues", label: "Problemas", get: (p) => p.issues, num: true },
     { key: "depth", label: "Profundidad", get: (p) => p.depth, render: (p) => (p.depth < 0 ? "–" : p.depth), num: true },
     { key: "in", label: "Entrantes", get: (p) => p.inlinks, num: true },
     { key: "out", label: "Salientes", get: (p) => p.outlinks, num: true },
-    { key: "words", label: "Palabras", get: (p) => p.wordCount, render: (p) => `${fmt(p.wordCount)} palabras`, num: true },
-    { key: "title", label: "Título", get: (p) => p.titleLen, render: (p) => <span className={cx(p.titleLen > 60 || !p.titleLen ? "text-amber-600" : "")}>{p.titleLen} caracteres</span>, num: true },
-    { key: "meta", label: "Meta", get: (p) => p.metaLen, render: (p) => <span className={cx(p.metaLen > 155 || !p.metaLen ? "text-amber-600" : "")}>{p.metaLen} caracteres</span>, num: true },
-    { key: "ms", label: "Respuesta", get: (p) => p.responseMs, render: (p) => `${p.responseMs} ms`, num: true },
+    { key: "words", label: "Palabras", get: (p) => p.wordCount, render: (p) => (hasContent(p) ? `${fmt(p.wordCount)} palabras` : "–"), num: true },
+    { key: "title", label: "Título", get: (p) => p.titleLen, render: (p) => (hasContent(p) ? `${p.titleLen} caracteres` : "–"), num: true },
+    { key: "meta", label: "Meta", get: (p) => p.metaLen, render: (p) => (hasContent(p) ? `${p.metaLen} caracteres` : "–"), num: true },
+    { key: "ms", label: "Respuesta", get: (p) => p.responseMs, render: (p) => (p.blocked ? "–" : `${p.responseMs} ms`), num: true },
     { key: "flags", label: "", get: (p) => (p.noindex ? 1 : 0) + (p.orphan ? 2 : 0), render: (p) => (
       <span className="flex gap-1">
         {p.noindex && <span className="chip"><Metric label="noindex"/></span>}
@@ -157,7 +162,7 @@ export default function AuditPage() {
           {tab === "summary" && <div className="card overflow-hidden">
             <div className="p-3"><input aria-label="Filtrar páginas" className="input w-full md:w-80" placeholder="Buscar URL" value={q} onChange={e=>setQ(e.target.value)}/></div>
             <div className="overflow-auto"><table className="tbl min-w-[680px] table-fixed"><colgroup><col style={{width:"40%"}}/><col style={{width:"14%"}}/><col style={{width:"14%"}}/><col style={{width:"16%"}}/><col style={{width:"16%"}}/></colgroup><thead><tr>{['URL','Estado','Problemas','Palabras','Respuesta'].map(label=><th key={label}><Metric label={label}/></th>)}</tr></thead><tbody>
-              {filtered.slice(0,summaryLimit).map(p=><Fragment key={p.id}><tr><td><button className="max-w-full truncate text-left underline-offset-4 hover:underline" aria-expanded={expanded===p.url} onClick={()=>setExpanded(expanded===p.url?null:p.url)}>{expanded===p.url?'−':'+'} {path(p.url)}</button></td><td>{p.status || 'Sin respuesta'}</td><td>{p.issues}</td><td>{fmt(p.wordCount)} palabras</td><td>{p.responseMs} ms</td></tr>{expanded===p.url&&<tr><td colSpan={5} className="!whitespace-normal"><PageDrawer inline crawlId={data.crawlId} url={p.url} onClose={()=>setExpanded(null)} onUrl={setPageUrl} run={run}/></td></tr>}</Fragment>)}
+              {filtered.slice(0,summaryLimit).map(p=><Fragment key={p.id}><tr><td><button className="max-w-full truncate text-left underline-offset-4 hover:underline" aria-expanded={expanded===p.url} onClick={()=>setExpanded(expanded===p.url?null:p.url)}>{expanded===p.url?'−':'+'} {path(p.url)}</button></td><td className={p.blocked ? "text-ink-500" : statusCls(p.clientRedirect ? 301 : p.status)}>{statusText(p)}</td><td>{p.issues}</td><td>{hasContent(p) ? `${fmt(p.wordCount)} palabras` : "–"}</td><td>{p.blocked ? "–" : `${p.responseMs} ms`}</td></tr>{expanded===p.url&&<tr><td colSpan={5} className="!whitespace-normal"><PageDrawer inline crawlId={data.crawlId} url={p.url} onClose={()=>setExpanded(null)} onUrl={setPageUrl} run={run}/></td></tr>}</Fragment>)}
             </tbody></table></div>{filtered.length>summaryLimit&&<button className="btn-g m-3" onClick={()=>setSummaryLimit(n=>n+25)}>Mostrar 25 páginas más</button>}
           </div>}
 
@@ -333,10 +338,11 @@ function PageDrawer({ crawlId, url, onClose, onUrl, run, inline = false }: { inl
             <button className="btn" disabled={!project?.providers?.indexnow} onClick={() => api(`/api/p/${id}/indexnow`, "POST", { urls: [p.url] })}>IndexNow</button>
           </div>
           <div className="mt-4 space-y-2">
-            {data.issues.length ? data.issues.map((i:any)=><div key={i.id} className="border-b border-ink-100 pb-2 text-sm"><span className={SEVERITY_TEXT[i.severity]}>{SEVERITY_LABEL[i.severity]}</span> · <b>{i.label}</b>{i.code==='meta_long'?` · ${p.metaLen} caracteres · recomendado ≤155`:i.code==='title_long'?` · ${p.titleLen} caracteres · recomendado ≤60`:i.detail?` · ${i.detail}`:''}<details className="mt-1 text-xs"><summary>Cómo corregirlo</summary><p>{ISSUE_WHY[i.code]} {ISSUE_FIX[i.code]}</p></details></div>):<p className="text-sm">Sin incidencias detectadas en esta página.</p>}
+            {data.issues.length ? data.issues.map((i:any)=><div key={i.id} className="border-b border-ink-100 pb-2 text-sm"><span className={SEVERITY_TEXT[i.severity]}>{SEVERITY_LABEL[i.severity]}</span> · <b>{i.label}</b>{i.detail?` · ${i.detail}`:''}<details className="mt-1 text-xs"><summary>Cómo corregirlo</summary><p>{ISSUE_WHY[i.code]} {ISSUE_FIX[i.code]}</p></details></div>):<p className="text-sm">Sin incidencias detectadas en esta página.</p>}
           </div>
           <div className="mt-4 divide-y divide-ink-100 dark:divide-ink-800">
-            {row("Estado", <span className={statusCls(p.status)}>{p.status || "Sin respuesta"} · {p.responseMs} ms</span>)}
+            {row("Estado", <span className={p.blocked ? "text-ink-500" : statusCls(p.clientRedirect ? 301 : p.status)}>{statusText(p)}{p.blocked ? " · no se pidió" : ` · ${p.responseMs} ms`}{p.fetchError ? ` · ${p.fetchError}` : ""}</span>)}
+            {p.clientRedirect && row("Redirige a", p.clientRedirect)}
             {(p.redirects as any[]).length > 0 && row("Redirecciones", (p.redirects as any[]).map((r) => `${r.status} ${r.url}`).concat(p.finalUrl).join(" → "))}
             {row("Título", <>{p.title} <span className="text-ink-400">({p.titleLen} caracteres)</span></>)}
             {row("Meta", <>{p.metaDesc} <span className="text-ink-400">({p.metaLen} caracteres)</span></>)}

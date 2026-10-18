@@ -241,7 +241,7 @@ export default function Results() {
         )}
       </div>
 
-      <section className="card space-y-3 p-4">
+      {bl?.configured !== false && <section className="card space-y-3 p-4">
         <h2 className="text-base font-semibold">Backlinks</h2>
         {bl?.snapshot ? (
           <>
@@ -266,12 +266,12 @@ export default function Results() {
             </div>
             {bl.snapshot.broken.length > 0 && <p className="text-sm text-rose-600">{bl.snapshot.broken.length} backlink(s) llegan a páginas con error: redirígelas con 301 (detalle en el informe).</p>}
           </>
-        ) : <Empty compact icon="globe" title={bl?.configured === false ? "Backlinks no disponible en este servidor" : "Sin datos de backlinks"}>{bl?.configured === false ? "" : "Se obtienen al ejecutar el análisis completo en Informe."}</Empty>}
+        ) : <Empty compact icon="globe" title="Sin datos de backlinks">Se obtienen al ejecutar el análisis completo en Informe.</Empty>}
         <form className="flex flex-wrap items-center gap-2 text-sm" onSubmit={(e) => { e.preventDefault(); saveComp(); }}>
           <input className="input flex-1" placeholder={`Competidores (opcional): ${bl?.snapshot?.competitors.join(", ") || "se eligen solos desde Google"}`} value={comp ?? ""} onChange={(e) => setComp(e.target.value)} />
           <button className="btn" disabled={savingComp || comp == null}>Guardar</button>
         </form>
-      </section>
+      </section>}
 
       <AiLocalCard />
 

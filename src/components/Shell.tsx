@@ -15,122 +15,74 @@ type Job = { id: string; kind: string; status: string; progress: number; message
 const Ctx = createContext<{ id: string; project?: Project; jobs: Job[]; refreshJobs: () => void }>({ id: "", jobs: [], refreshJobs: () => {} });
 export const useProject = () => useContext(Ctx);
 
-type NavItem = { href: string; icon: string; label: string; desc: string; jobs?: string[]; intro: string; steps?: string[] };
+type NavItem = { href: string; icon: string; label: string; desc: string; jobs?: string[]; intro: string };
 
 const NAV: { group: string; items: NavItem[] }[] = [
   {
-    group: "General",
+    group: "",
     items: [
+      { href: "", icon: "home", label: "Resumen", desc: "Estado del proyecto y qué hacer ahora", intro: "Lo más importante del sitio y qué hacer ahora. Puedes arrastrar los bloques para ordenarlos." },
       {
-        href: "", icon: "home", label: "Resumen", desc: "Estado del proyecto",
-        intro: "Vista general: keywords, salud técnica, rankings y Search Console. Arrastra los bloques para ordenarlos; el botón 1/3 de cada bloque cambia su ancho.",
+        href: "/tasks", icon: "check", label: "Tareas", desc: "Qué arreglar primero",
+        intro: "Las correcciones ordenadas por impacto. Márcalas al resolverlas: la próxima auditoría confirma si quedaron bien.",
       },
       {
-        href: "/results", icon: "trend", label: "Resultados", desc: "¿El SEO mueve las métricas?",
-        intro: "Lo que hay que mirar cada semana: clics con y sin marca, objetivo del mes con su proyección, el efecto de cada cambio publicado, dónde está el crecimiento (posiciones 4–20), contenido que viene cayendo y cómo vas contra la competencia.",
-        steps: ["Define el objetivo de clics del mes.", "Cada vez que publiques un cambio, anótalo con su fecha y alcance: a las 2–4 semanas ves si movió los clics.", "Trabaja primero las consultas con más clics extra estimados y refresca las páginas en caída."],
-      },
-      {
-        href: "/report", icon: "doc", label: "Informe", desc: "Todo de una + informe", jobs: ["report.full"],
-        intro: "Corre todos los módulos de una vez y arma un informe con las tareas ordenadas por prioridad. Está escrito para que tu equipo o tu asistente de programación aplique las correcciones en el sitio.",
-        steps: ["Elige qué módulos correr. Keywords viene apagado porque es el módulo que más cuota consume.", "Aprieta Correr todo. Tarda unos minutos; abajo del botón ves cada paso en verde, gris (saltado) o rojo.", "Copia el informe o descárgalo en .md y entrégaselo a tu equipo o a tu asistente de programación."],
+        href: "/report", icon: "doc", label: "Informe", desc: "Análisis completo y PDF", jobs: ["report.full"],
+        intro: "Corre todos los análisis de una vez y descarga el informe en PDF para el cliente o en texto para el equipo técnico.",
       },
     ],
   },
   {
-    group: "Investigar",
-    items: [
-      {
-        href: "/keywords", icon: "key", label: "Keywords", desc: "Qué busca la gente", jobs: ["keywords.run"],
-        intro: "Descubre qué busca la gente sobre tu negocio. Partes de pocas semillas; se expanden con el autocompletado de Google, las preguntas frecuentes y tu Search Console, se les agrega volumen y se agrupan en clusters. Un cluster son keywords a las que Google responde con las mismas páginas: van juntas en una sola URL. Los clusters se agrupan en topics.",
-        steps: ["Escribe 3 a 5 semillas (ej. \"masajes santiago\") y aprieta Correr.", "Revisa el tablero o el mapa: cada cluster es una página a crear u optimizar; el score ordena por oportunidad.", "Arrastra keywords entre clusters o renombra: los cambios manuales quedan con candado y se respetan al volver a correr."],
-      },
-      {
-        href: "/explore", icon: "map", label: "Explorar", desc: "Mapa de relaciones",
-        intro: "Mapa interactivo de cómo se conecta todo: tu sitio, sus páginas, keywords, clusters, competidores y problemas. Cada nodo se puede expandir para ver lo que tiene relacionado (quién rankea para una keyword, quién enlaza a una página, dónde aparece un competidor). Usa solo datos ya guardados: no gasta créditos.",
-        steps: ["Haz clic en un nodo y elige qué expandir en el panel de la derecha (doble clic expande lo siguiente).", "Busca arriba una keyword, página, cluster o dominio para agregarlo al mapa.", "Arrastra nodos para ordenarlos o usa Ordenar. El mapa queda guardado en este navegador."],
-      },
-      {
-        href: "/content", icon: "content", label: "Contenido", desc: "Optimizar una página", jobs: ["content.analyze"],
-        intro: "Compara una página tuya con el top 10 de Google para una keyword: qué términos, secciones y preguntas tienen los que rankean y a ti te faltan. Genera un brief con títulos, estructura H2/H3 y FAQ.",
-        steps: ["Pega la URL de tu página y la keyword que quieres rankear.", "Mira el score y los términos marcados como faltantes.", "Usa el brief (títulos, outline, FAQ) para reescribir la página."],
-      },
-    ],
-  },
-  {
-    group: "Monitorear",
+    group: "Diagnóstico",
     items: [
       {
         href: "/audit", icon: "audit", label: "Auditoría", desc: "Salud técnica del sitio", jobs: ["audit.crawl", "audit.psi", "audit.inspect"],
-        intro: "Recorre tu sitio como lo haría Google y detecta problemas técnicos: errores, redirects, títulos y metas, contenido duplicado, páginas huérfanas, velocidad (PageSpeed) e indexación (Search Console).",
-        steps: ["Aprieta Analizar sitio con un máximo mayor que la cantidad de páginas del sitio (si no, aparecen huérfanas falsas).", "Corrige primero los errores, después las advertencias. Las observaciones son mejoras opcionales.", "Haz clic en un problema para ver qué significa, cómo se arregla y qué URLs lo tienen."],
+        intro: "Recorre el sitio como Google y lista los problemas técnicos. Abre un problema para ver qué URLs lo tienen y cómo se arregla.",
       },
       {
-        href: "/pro", icon: "audit", label: "Experto", desc: "Rastreo, indexación, rendimiento y más",
-        intro: "Herramientas para el especialista: evidencia completa por URL, indexación real, arquitectura y enlazado, rendimiento de campo y laboratorio, ecommerce, datos estructurados, SERP, contenido, analítica, logs, migraciones, API y webhooks. Cada vista indica de qué ejecución y fuente salen sus cifras.",
+        href: "/gsc", icon: "gsc", label: "Search Console", desc: "Clics e impresiones reales de Google", jobs: ["gsc.sync"],
+        intro: "Clics, impresiones, CTR y posición reales de Google por consulta y página. Requiere conectar tu cuenta de Google.",
       },
       {
         href: "/rank", icon: "rank", label: "Rankings", desc: "Posiciones en Google", jobs: ["rank.check"],
-        intro: "Sigue la posición de tus keywords en Google (top 100) cada semana. Avisa cuando una keyword cae más de 3 posiciones, cuando dos páginas tuyas compiten por la misma keyword (canibalización) y cuando el CTR es bajo para la posición.",
-        steps: ["Agrega las keywords que te importan (una por línea).", "Se revisan solas cada semana; Revisar las actualiza ahora (consume cuota de búsquedas).", "Haz clic en una keyword para ver su historial y el top 10 actual."],
+        intro: "La posición de tus keywords en Google, revisada cada semana. Haz clic en una keyword para ver su historial.",
       },
       {
-        href: "/gsc", icon: "gsc", label: "Search Console", desc: "Datos reales de Google", jobs: ["gsc.sync"],
-        intro: "Clics, impresiones, CTR y posición reales por consulta y página, sacados de Google Search Console. Requiere conectar tu cuenta de Google con el botón Conectar con Google.",
+        href: "/results", icon: "trend", label: "Resultados", desc: "¿El SEO mueve las métricas?",
+        intro: "Si el SEO está moviendo los clics: objetivo del mes, efecto de cada cambio publicado y dónde está el crecimiento.",
       },
     ],
   },
   {
-    group: "Actuar",
+    group: "Herramientas",
     items: [
       {
-        href: "/tasks", icon: "check", label: "Tareas", desc: "Qué arreglar primero",
-        intro: "Las correcciones que salen de la auditoría, Search Console y los demás módulos, ordenadas por impacto. Se mantienen entre auditorías: marca lo que vas resolviendo y la siguiente auditoría confirma si quedó bien.",
-        steps: ["Corre una auditoría (o Informe) para que aparezcan las tareas.", "Empieza por las de prioridad alta: cada una explica el problema y cómo arreglarlo.", "Márcala como resuelta; la próxima auditoría verifica la corrección."],
+        href: "/keywords", icon: "key", label: "Keywords", desc: "Qué busca la gente", jobs: ["keywords.run"],
+        intro: "Escribe 3 a 5 semillas y descubre qué busca la gente, agrupado en las páginas que conviene crear u optimizar.",
       },
       {
-        href: "/social", icon: "social", label: "Social", desc: "Instagram con IA",
-        intro: "Crea posts de Instagram con las keywords del proyecto: genera la imagen con IA (también a partir de una foto de tu producto) y el texto, y publícalos al tiro o prográmalos. Las estadísticas de tus posts ayudan a la IA a escribir mejor.",
-        steps: ["Conecta tu cuenta profesional con el botón Conectar Instagram.", "Genera o sube la imagen y genera el caption; guárdalo como borrador.", "En la lista, publica ahora o elige fecha y hora para programarlo."],
+        href: "/content", icon: "content", label: "Contenido", desc: "Optimizar una página", jobs: ["content.analyze"],
+        intro: "Compara una página con el top 10 de Google para una keyword y obtén qué le falta y un brief para reescribirla.",
       },
-    ],
-  },
-  {
-    group: "Configurar",
-    items: [
-      {
-        href: "/settings", icon: "gear", label: "Ajustes", desc: "Proyecto y crawler",
-        intro: "Configuración del proyecto: propiedad de Search Console, opciones del crawler (User-Agent, límites, parámetros a ignorar), expansión de keywords y frecuencia de rankings.",
-      },
+      { href: "/explore", icon: "map", label: "Explorar", desc: "Mapa de relaciones", intro: "Mapa de cómo se conectan páginas, keywords, clusters y competidores. Usa datos guardados: no gasta créditos." },
+      { href: "/pro", icon: "layers", label: "Experto", desc: "Análisis técnicos detallados", intro: "Análisis técnicos detallados para especialistas: rastreo, indexación, arquitectura, rendimiento y más." },
+      { href: "/social", icon: "social", label: "Social", desc: "Posts de Instagram", intro: "Crea y programa posts de Instagram con las keywords del proyecto." },
     ],
   },
 ];
-const ALL_NAV = NAV.flatMap((g) => g.items);
+/** Ajustes va aparte, al pie del menú. */
+const SETTINGS: NavItem = { href: "/settings", icon: "gear", label: "Ajustes", desc: "Proyecto, cuenta y equipo", intro: "Configuración del proyecto, del rastreo, de la cuenta y del equipo." };
+const ALL_NAV = [...NAV.flatMap((g) => g.items), SETTINGS];
 
-/** Tutorial de la sección: se abre solo la primera vez; al cerrarlo no vuelve (queda en Ayuda). */
+/** Qué hace la sección, en una frase: se muestra la primera vez; al cerrarlo no vuelve (queda en Ayuda). */
 function Intro({ item, onClose }: { item: NavItem; onClose: () => void }) {
   return (
-    <div className="anim-in mx-4 mt-4 rounded-xl border border-acc/20 bg-acc-soft/60 p-4 text-sm dark:border-acc/30 dark:bg-acc/10 md:mx-6">
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold text-ink-900 dark:text-ink-100">{item.label}</div>
-          <p className="mt-0.5 max-w-3xl leading-relaxed text-ink-600 dark:text-ink-300">{item.intro}</p>
-          {item.steps && (
-            <ol className="mt-2 grid gap-1.5 md:grid-cols-3">
-              {item.steps.map((st, i) => (
-                <li key={i} className="flex gap-2 text-ink-600 dark:text-ink-300">
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-acc text-[11px] font-semibold text-white">{i + 1}</span>
-                  <span className="leading-snug">{st}</span>
-                </li>
-              ))}
-            </ol>
-          )}
-          <p className="mt-2 text-xs text-ink-500">Puedes volver a verlo cuando quieras en <b>? Ayuda</b>, arriba a la derecha.</p>
-        </div>
-        <button onClick={onClose} className="btn-g shrink-0 px-1" title="Entendido, no volver a mostrar" aria-label="Cerrar tutorial">
-          <Icon name="x" className="h-4 w-4" />
-        </button>
-      </div>
+    <div className="anim-in mx-4 mt-4 flex items-center gap-3 rounded-lg border border-acc/20 bg-acc-soft/60 px-4 py-2.5 text-sm dark:border-acc/30 dark:bg-acc/10 md:mx-6">
+      <Icon name="info" className="h-4 w-4 shrink-0 text-acc" />
+      <p className="min-w-0 flex-1 text-ink-700 dark:text-ink-200">{item.intro}</p>
+      <button onClick={onClose} className="btn-g shrink-0 px-1" title="Entendido (vuelve a verlo en Ayuda)" aria-label="Cerrar">
+        <Icon name="x" className="h-4 w-4" />
+      </button>
     </div>
   );
 }
@@ -200,9 +152,7 @@ function HelpMenu({ item, path, onShowIntro }: { item?: NavItem; path: string; o
               <>
                 <div className="font-semibold text-ink-900 dark:text-ink-100">¿Para qué sirve {item.label}?</div>
                 <p className="mt-1 leading-relaxed text-ink-600 dark:text-ink-300">{item.intro}</p>
-                {item.steps && (
-                  <button className="btn mt-2 text-xs" onClick={() => { setOpen(false); onShowIntro(); }}>Ver los pasos</button>
-                )}
+                <button className="btn-g mt-1 px-0 text-xs text-acc" onClick={() => { setOpen(false); onShowIntro(); }}>Mostrar este aviso en la sección</button>
               </>
             )}
             <div className="lbl mt-4">Glosario</div>
@@ -273,6 +223,33 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
   const closeIntro = () => { setForceIntro(null); if (!seenIntro.includes(introKey)) setSeenIntro([...seenIntro, introKey]); };
   const active = jobs.filter((j) => j.status === "queued" || j.status === "running" || j.status === "error");
 
+  // función y no componente: definido dentro de Shell, un componente se volvería a montar en cada render
+  const navLink = (n: NavItem) => {
+    const on = n === current;
+    const busy = n.jobs && jobs.some((j) => n.jobs!.includes(j.kind) && (j.status === "queued" || j.status === "running"));
+    const gscOff = n.href === "/gsc" && project && (!project.gscProperty || !project.providers?.gsc);
+    return (
+      <Link
+        key={n.href}
+        href={base + n.href}
+        onClick={() => setMenu(false)}
+        title={`${n.label}: ${n.desc}`}
+        aria-current={on ? "page" : undefined}
+        className={cx(
+          "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition",
+          slim && "md:justify-center md:px-0",
+          on ? "bg-acc-soft font-semibold text-acc dark:bg-acc/20" : "font-medium text-ink-600 hover:bg-ink-100 hover:text-ink-900 dark:text-ink-300 dark:hover:bg-ink-800",
+        )}
+      >
+        {on && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-acc" />}
+        <Icon name={n.icon} className={cx("nav-ic h-[18px] w-[18px] shrink-0", on && "ic-pop")} />
+        <span className={cx("min-w-0 flex-1 truncate", slim && "md:hidden")}>{n.label}</span>
+        {busy && <Spinner className={cx("h-3.5 w-3.5 shrink-0 text-acc", slim && "md:absolute md:right-1 md:top-1")} />}
+        {!busy && gscOff && <span className={cx("h-2 w-2 shrink-0 rounded-full bg-amber-400", slim && "md:absolute md:right-1.5 md:top-1.5")} title="Search Console no está conectado" />}
+      </Link>
+    );
+  };
+
   return (
     <Ctx.Provider value={{ id, project, jobs, refreshJobs: () => refreshJobs() }}>
       <div className="flex h-screen">
@@ -284,50 +261,23 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
             slim ? "w-64 md:w-16" : "w-64"
           )}
         >
-          <div className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
+          <div className="flex-1 space-y-5 overflow-y-auto px-2 py-3">
             {NAV.map((g) => (
-              <div key={g.group}>
-                <div className={cx("lbl mb-1 px-3", slim && "md:hidden")}>{g.group}</div>
+              <div key={g.group || "inicio"}>
+                {g.group && <div className={cx("lbl mb-1 px-3", slim && "md:hidden")}>{g.group}</div>}
                 <div className="space-y-0.5">
-                  {g.items.map((n) => {
-                    const href = base + n.href;
-                    const on = n === current;
-                    const busy = n.jobs && jobs.some((j) => n.jobs!.includes(j.kind) && (j.status === "queued" || j.status === "running"));
-                    return (
-                      <Link
-                        key={n.href}
-                        href={href}
-                        onClick={() => setMenu(false)}
-                        title={slim ? `${n.label} · ${n.desc}` : undefined}
-                        className={cx(
-                          "group relative flex items-center gap-3 rounded-lg px-3 py-2 transition",
-                          slim && "md:justify-center md:px-0",
-                          on ? "bg-acc-soft text-acc dark:bg-acc/20" : "text-ink-600 hover:bg-ink-100 hover:text-ink-900 dark:text-ink-300 dark:hover:bg-ink-800"
-                        )}
-                      >
-                        {on && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-acc" />}
-                        <Icon name={n.icon} className={cx("nav-ic h-[18px] w-[18px] shrink-0", on && "ic-pop")} />
-                        <span className={cx("min-w-0 flex-1", slim && "md:hidden")}>
-                          <span className="block text-sm font-medium leading-tight">{n.label}</span>
-                          <span className={cx("block truncate text-[11px] leading-tight", on ? "text-acc/70" : "text-ink-400")}>{n.desc}</span>
-                        </span>
-                        {busy && <Spinner className={cx("h-3.5 w-3.5 shrink-0 text-acc", slim && "md:absolute md:right-1 md:top-1")} />}
-                        {!busy && n.href === "/gsc" && project && (!project.gscProperty || !project.providers?.gsc) && (
-                          <span className={cx("shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-medium text-amber-800", slim && "md:absolute md:right-1 md:top-1 md:h-2 md:w-2 md:p-0 md:text-[0px]")} title="Search Console no está conectado">
-                            Conectar
-                          </span>
-                        )}
-                      </Link>
-                    );
-                  })}
+                  {g.items.map(navLink)}
                 </div>
               </div>
             ))}
           </div>
-          <button onClick={() => setSlim(!slim)} className="btn-g m-2 hidden justify-center md:flex" title={slim ? "expandir menú" : "achicar menú"}>
-            <Icon name={slim ? "chevr" : "chevl"} className="h-4 w-4" />
-            {!slim && <span className="text-xs">achicar</span>}
-          </button>
+          <div className="space-y-0.5 border-t border-ink-100 px-2 py-2 dark:border-ink-800">
+            {navLink(SETTINGS)}
+            <button onClick={() => setSlim(!slim)} className={cx("btn-g hidden w-full gap-3 px-3 text-ink-500 md:flex", slim && "md:justify-center md:px-0")} title={slim ? "Expandir menú" : "Achicar menú"}>
+              <Icon name={slim ? "chevr" : "chevl"} className="h-[18px] w-[18px] shrink-0" />
+              {!slim && <span className="text-sm">Achicar menú</span>}
+            </button>
+          </div>
         </nav>
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-12 shrink-0 items-center gap-3 border-b border-ink-200 bg-white px-4 dark:border-ink-800 dark:bg-ink-900">

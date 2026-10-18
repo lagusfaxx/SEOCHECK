@@ -3,6 +3,7 @@ import { db } from "./db";
 import { gscPeriod } from "./gsc-period";
 import { ISSUE_LABELS } from "./audit/issues";
 import { ISSUE_WHY, ISSUE_FIX } from "./audit/fixes";
+import { kindOf, splitIntentional } from "./audit/insights";
 import {
   canAutoResolve,
   issueIdentity,
@@ -11,6 +12,11 @@ import {
   TASK_STATUSES,
   type TaskStatus,
 } from "./task-rules";
+
+/** Motivos con que el sistema (no una persona) archiva una tarea: si la incidencia vuelve a ser real, se reabre. */
+const INTENTIONAL = "Parece intencional: el informe lo lista en «Revisado, parece intencional».";
+const RULES_CHANGED = "Ya no se detecta, pero las reglas de análisis cambiaron desde que se detectó: no se cuenta como corrección.";
+const SYSTEM_ARCHIVED = new Set([INTENTIONAL, RULES_CHANGED]);
 
 export async function syncCrawlTasks(crawlId: string) {
   const crawl = await db.crawl.findUniqueOrThrow({ where: { id: crawlId } });
@@ -37,6 +43,10 @@ export async function syncCrawlTasks(crawlId: string) {
       .map((p) => p.url),
   );
   const seen = new Set(issues.map((i) => issueIdentity(i.code, i.url)));
+  // lo que el informe muestra como intencional (noindex en filtros, canonical que consolida variantes, carrito
+  // bloqueado por robots…) no es una tarea: la misma regla para el informe y para la lista de tareas
+  const { real } = splitIntentional(issues, pages, { hitLimit: Boolean((crawl.stats as { limitReached?: boolean } | null)?.limitReached) });
+  const realIds = new Set(real.map((i) => issueIdentity(i.code, i.url)));
   await db.$transaction(
     async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${crawl.projectId}))`;
@@ -44,8 +54,11 @@ export async function syncCrawlTasks(crawlId: string) {
         where: { projectId: crawl.projectId, source: "crawl" },
       });
       const prior = new Map(old.map((t) => [t.fingerprint, t]));
+      // versión de reglas con que se vio cada tarea por última vez: si cambió, que no aparezca no prueba una corrección
+      const lastIds = [...new Set(old.map((t) => t.lastCrawlId).filter((x): x is string => Boolean(x)))];
+      const rulesOf = new Map((await tx.crawl.findMany({ where: { id: { in: lastIds } }, select: { id: true, rulesVersion: true } })).map((c) => [c.id, c.rulesVersion]));
       for (const i of new Map(
-        issues.map((i) => [issueIdentity(i.code, i.url), i]),
+        real.map((i) => [issueIdentity(i.code, i.url), i]),
       ).values()) {
         const fingerprint = issueIdentity(i.code, i.url),
           prev = prior.get(fingerprint);
@@ -57,7 +70,9 @@ export async function syncCrawlTasks(crawlId: string) {
         )
           continue;
         const status = prev
-          ? observedStatus(prev.status, prev.lastCrawlId === crawlId)
+          ? prev.status === "ignored" && SYSTEM_ARCHIVED.has(prev.resolution ?? "")
+            ? "detected"
+            : observedStatus(prev.status, prev.lastCrawlId === crawlId)
           : "detected";
         const impr = impressions.get(i.url) ?? 0,
           inlinks = pageMap.get(i.url)?.inlinks ?? 0;
@@ -73,6 +88,7 @@ export async function syncCrawlTasks(crawlId: string) {
           lastCrawlId: crawlId,
           lastSeenAt: crawl.startedAt,
           resolvedAt: status === "resolved" ? prev?.resolvedAt : null,
+          ...(prev && SYSTEM_ARCHIVED.has(prev.resolution ?? "") && status === "detected" ? { resolution: null } : {}),
         };
         if (!prev)
           await tx.projectTask.create({
@@ -93,26 +109,31 @@ export async function syncCrawlTasks(crawlId: string) {
         }
       }
       for (const t of old)
-        if (
+        if (seen.has(t.fingerprint) && !realIds.has(t.fingerprint) && !["resolved", "ignored"].includes(t.status)) {
+          // creadas antes de reconocer el caso como intencional: se archivan con el motivo, sin darlas por corregidas
+          await tx.projectTask.update({ where: { id: t.id }, data: { status: "ignored", resolution: INTENTIONAL, lastCrawlId: crawlId } });
+          await tx.taskEvent.create({
+            data: { taskId: t.id, status: "ignored", crawlId, note: "Revisado: parece intencional (ver «Revisado, parece intencional» en el informe)." },
+          });
+        } else if (
           !seen.has(t.fingerprint) &&
           !["resolved", "ignored"].includes(t.status) &&
           t.lastSeenAt <= crawl.startedAt &&
           canAutoResolve(crawl.status, successful, t.url)
         ) {
+          const rulesChanged = Boolean(t.lastCrawlId && rulesOf.get(t.lastCrawlId) !== crawl.rulesVersion);
           await tx.projectTask.update({
             where: { id: t.id },
-            data: {
-              status: "resolved",
-              resolvedAt: new Date(),
-              lastCrawlId: crawlId,
-            },
+            data: rulesChanged
+              ? { status: "ignored", resolution: RULES_CHANGED, lastCrawlId: crawlId }
+              : { status: "resolved", resolvedAt: new Date(), lastCrawlId: crawlId },
           });
           await tx.taskEvent.create({
             data: {
               taskId: t.id,
-              status: "resolved",
+              status: rulesChanged ? "ignored" : "resolved",
               crawlId,
-              note: "La URL se volvió a rastrear correctamente y la incidencia ya no aparece.",
+              note: rulesChanged ? RULES_CHANGED : "La URL se volvió a rastrear correctamente y la incidencia ya no aparece.",
             },
           });
         }
@@ -158,16 +179,19 @@ export async function projectActions(projectId: string) {
   const traffic = period ? await db.gscRow.groupBy({ by: ["page"], where: { projectId, date: { gte: period.start, lt: period.endExclusive } }, _sum: { impressions: true } }) : [];
   // tareas de auditoría con la etiqueta vigente; las que la última auditoría ya no observó quedan marcadas
   // (no se presentan como acciones actuales: su evidencia es de una ejecución anterior)
+  // mejoras opcionales (largo de title/meta, alt…): se listan aparte para que no tapen lo que sí hay que corregir
+  const optional = (t: { source: string; code: string | null }) => t.source === "crawl" && Boolean(t.code) && kindOf(t.code!) === "opportunity";
   const groups = groupTasks(rows, rankedUrls, new Map(traffic.map(t=>[t.page,t._sum.impressions ?? 0]))).map((g) => ({
     ...g,
     title: g.source === "crawl" && g.code ? ISSUE_LABELS[g.code] ?? g.title : g.title,
     stale: g.source === "crawl" && Boolean(latest) && !g.members.some((m) => m.lastCrawlId === latest!.id),
+    optional: optional(g),
   }));
   return {
-    tasks: rows,
+    tasks: rows.map((t) => ({ ...t, optional: optional(t) })),
     groups,
     latestCrawlId: latest?.id ?? null,
-    actions: groups.filter(t => !["resolved", "ignored"].includes(t.status) && !t.stale).slice(0, 5),
+    actions: groups.filter(t => !["resolved", "ignored"].includes(t.status) && !t.stale && !t.optional).slice(0, 5),
     improved: groups.filter(t => t.status === "resolved").slice(0, 5),
   };
 }

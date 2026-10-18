@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useProject } from "./Shell";
 import { api, useApi, fmtDate } from "./ui";
-import { useSeoView, type SeoView } from "./useSeoView";
+import { useSeoView } from "./useSeoView";
 import {
   SITE_LABELS,
   GOAL_LABELS,
@@ -13,7 +13,7 @@ import {
 import type { AdviceReport } from "@/lib/advice/service";
 export function GuidanceCard() {
   const { id, jobs, refreshJobs } = useProject(),
-    [view, setView] = useSeoView(),
+    [view] = useSeoView(),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
   const running = jobs.some(
@@ -93,49 +93,31 @@ export function GuidanceCard() {
       <header className="flex flex-wrap items-center gap-3 border-b border-ink-200 px-4 py-3 dark:border-ink-800">
         <div className="min-w-0 flex-1">
           <h2 id="guidance-heading" className="font-semibold">
-            Tu plan de mejora
+            Qué hacer ahora
           </h2>
           <p className="text-sm text-ink-500">
             {SITE_LABELS[data.effectiveType]} · {data.goalLabel}
+            {data.coverage.crawlAt &&
+              ` · ${data.coverage.pages} ${data.coverage.pages === 1 ? "página revisada" : "páginas revisadas"} el ${fmtDate(data.coverage.crawlAt)}${data.coverage.partial ? " (auditoría parcial)" : ""}`}
           </p>
         </div>
-        <label className="text-sm">
-          Vista{" "}
-          <select
-            aria-label="Vista"
-            className="input ml-2 w-auto"
-            value={view}
-            onChange={(e) => setView(e.target.value as SeoView)}
-          >
-            <option value="guided">Guiada</option>
-            <option value="technical">Técnica</option>
-          </select>
-        </label>
+        {data.coverage.crawlAt && (
+          <Link className="btn" href={`/p/${id}/tasks`}>
+            Ver todas las tareas
+          </Link>
+        )}
       </header>
       <div className="space-y-4 p-4">
         {!data.coverage.crawlAt && (
-          <div className="space-y-2">
-            <p>
-              Empieza revisando el sitio. Después verás qué corregir, por qué y
-              cómo comprobar el resultado.
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="flex-1">
+              Primero revisa el sitio: después verás qué corregir y cómo
+              comprobarlo.
             </p>
             <Link className="btn-p" href={`/p/${id}/audit`}>
               Revisar mi sitio
             </Link>
-            <Link className="btn ml-2" href={`/p/${id}/start`}>
-              Ver configuración inicial
-            </Link>
           </div>
-        )}
-        {data.coverage.crawlAt && (
-          <p className="text-sm text-ink-500">
-            {data.coverage.pages}{" "}
-            {data.coverage.pages === 1
-              ? "página revisada"
-              : "páginas revisadas"}{" "}
-            · {fmtDate(data.coverage.crawlAt)}
-            {data.coverage.partial ? " · Auditoría parcial" : ""}
-          </p>
         )}
         {!!data.actions.length && (
           <ol className="divide-y divide-ink-200 dark:divide-ink-800">
@@ -148,6 +130,11 @@ export function GuidanceCard() {
                   >
                     {a.title}
                   </Link>
+                  {a.pattern && (
+                    <span className="font-mono text-xs text-ink-500">
+                      {a.pattern}
+                    </span>
+                  )}
                   <span className="text-xs text-ink-500">
                     Prioridad {a.priority.toLowerCase()} · {a.affected}{" "}
                     {a.affected === 1 ? "URL" : "URLs"} ·{" "}
@@ -204,23 +191,15 @@ export function GuidanceCard() {
         )}
         {data.coverage.crawlAt && !data.actions.length && (
           <p className="text-sm">
-            No hay acciones automáticas pendientes en la evidencia revisada.
-            Completa las fuentes faltantes y las revisiones manuales antes de
-            concluir que todo está cubierto.
+            Nada urgente en la última revisión. Las mejoras opcionales están en
+            Tareas.
           </p>
         )}
-        <div className="flex flex-wrap items-center gap-3">
-          <Link className="btn" href={`/p/${id}/tasks`}>
-            Ver todas las tareas
-          </Link>
-          <Link className="btn" href={`/p/${id}/pro`}>
-            Abrir herramientas detalladas
-          </Link>
-          {data.ai.available &&
+        {data.ai.available &&
             data.profile.aiEnabled &&
             data.permissions?.analyze && (
               <button
-                className="btn"
+                className="btn self-start"
                 disabled={
                   busy ||
                   running ||
@@ -236,13 +215,6 @@ export function GuidanceCard() {
                     : "Explicar acciones con IA"}
               </button>
             )}
-        </div>
-        {data.ai.state === "unavailable" && (
-          <p className="text-xs text-ink-500">
-            La conexión de IA no está habilitada. Las acciones medidas siguen
-            disponibles.
-          </p>
-        )}
         {data.ai.state === "error" && (
           <p role="status" className="text-xs text-ink-500">
             No se pudo validar la explicación de IA. Conservamos las
@@ -250,7 +222,7 @@ export function GuidanceCard() {
           </p>
         )}
         <details className="text-sm">
-          <summary className="cursor-pointer">
+          <summary className="cursor-pointer text-ink-500">
             Fuentes y revisiones que faltan
           </summary>
           <ul className="mt-3 divide-y divide-ink-200 dark:divide-ink-800">
@@ -284,7 +256,7 @@ export function GuidanceCard() {
         </details>
         {data.permissions?.manage && (
           <details className="text-sm">
-            <summary className="cursor-pointer">
+            <summary className="cursor-pointer text-ink-500">
               Adaptar el plan a mi negocio
             </summary>
             <div className="mt-3 flex flex-wrap gap-4">

@@ -36,8 +36,10 @@ export async function auditComparison(projectId: string) {
       .filter((p) => p.status === 200 && !p.error && !p.blocked)
       .map((p) => p.url),
   );
+  // con otras reglas de análisis, lo que aparece o desaparece puede ser un cambio de criterio y no del sitio
+  const rulesChanged = Boolean(prev && prev.rulesVersion !== now.rulesVersion);
   const resolved =
-    prev && now.status === "completed"
+    prev && now.status === "completed" && !rulesChanged
       ? prev.issues.filter(
           (i) =>
             !current.has(issueIdentity(i.code, i.url)) && observed.has(i.url),
@@ -52,11 +54,12 @@ export async function auditComparison(projectId: string) {
     previousAt: prev?.finishedAt ?? null,
     health: stats.health ?? null,
     previousHealth: before?.health ?? null,
-    new: prev ? [...current].filter((k) => !old.has(k)).length : null,
+    new: prev && !rulesChanged ? [...current].filter((k) => !old.has(k)).length : null,
     resolved,
+    rulesChanged,
     total: current.size,
     partial: now.status === "partial",
-    comparable: !!prev && now.status === "completed",
+    comparable: !!prev && now.status === "completed" && !rulesChanged,
     pages: now.pages.length,
   };
 }
@@ -344,7 +347,9 @@ export function executivePdf(
     if (c && unmeasured.length) doc.fillColor("#9a3412").text(`Sin medir en esta versión: ${unmeasured.join(", ")}. La salud no incluye esas áreas.`).fillColor("#222222");
     if (c?.previousId)
       doc.text(
-        `${c.new ?? "—"} incidencias nuevas. ${c.resolved ?? "No confirmado"} solucionadas.${c.partial ? " Auditoría parcial: no se confirma la desaparición de problemas." : ""}`,
+        c.rulesChanged
+          ? "Las reglas de análisis se actualizaron desde la auditoría anterior: la comparación de incidencias nuevas y solucionadas vuelve en la próxima auditoría."
+          : `${c.new ?? "—"} incidencias nuevas. ${c.resolved ?? "No confirmado"} solucionadas.${c.partial ? " Auditoría parcial: no se confirma la desaparición de problemas." : ""}`,
       );
     doc.text(
       r.traffic.impressions != null && r.traffic.period

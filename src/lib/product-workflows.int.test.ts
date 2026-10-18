@@ -185,6 +185,26 @@ test(
   },
 );
 test(
+  "Tareas: lo intencional (noindex en filtros) no se vuelve tarea y la que ya existía se archiva",
+  { skip: !enabled },
+  async () => {
+    const url = "https://ejemplo.cl/a?color=rojo";
+    const fingerprint = issueIdentity("noindex", url);
+    const c = await db.crawl.create({ data: { projectId: pid, status: "completed", startedAt: new Date(), finishedAt: new Date(), stats: {} } });
+    await db.page.create({ data: { crawlId: c.id, url, status: 200, noindex: true } });
+    await db.issue.create({ data: { crawlId: c.id, url, code: "noindex", severity: "info" } });
+    // tarea creada por una versión anterior que no reconocía el caso
+    const old = await db.projectTask.create({ data: { projectId: pid, fingerprint, title: "noindex", reason: "noindex", code: "noindex", url, source: "crawl", status: "detected", priority: 1 } });
+    await syncCrawlTasks(c.id);
+    const t = await db.projectTask.findUniqueOrThrow({ where: { id: old.id } });
+    assert.equal(t.status, "ignored");
+    assert.match(t.resolution ?? "", /intencional/);
+    assert.equal(await db.projectTask.count({ where: { projectId: pid, fingerprint } }), 1);
+    await db.projectTask.delete({ where: { id: old.id } });
+    await db.crawl.delete({ where: { id: c.id } });
+  },
+);
+test(
   "Comparación y PDF conservan datos medidos; no afirman correcciones en parciales",
   { skip: !enabled },
   async () => {

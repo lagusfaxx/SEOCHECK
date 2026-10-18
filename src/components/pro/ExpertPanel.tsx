@@ -113,7 +113,7 @@ export default function ExpertPanel({
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-xl font-semibold">
+        <h2 className="text-lg font-semibold">
           {data?.title ?? "Herramientas expertas"}
         </h2>
         <button
@@ -142,7 +142,7 @@ export default function ExpertPanel({
         <nav className="flex flex-wrap gap-4">
           {links.map((l) => (
             <Link
-              className="text-blue-600 underline"
+              className="text-sm text-acc hover:underline"
               key={l.path}
               href={`/p/${id}/${l.path}`}
             >
@@ -151,29 +151,29 @@ export default function ExpertPanel({
           ))}
         </nav>
       )}
-      {isLoading && <p role="status">Cargando datos…</p>}
+      {isLoading && <p role="status" className="text-sm text-ink-500">Cargando datos…</p>}
       {error && (
-        <p role="alert" className="text-red-600">
+        <p role="alert" className="text-sm text-rose-600">
           {error.message}
         </p>
       )}
       {message && (
-        <p role="status" className="rounded border p-3">
+        <p role="status" className="rounded-lg bg-ink-50 px-3 py-2 text-sm dark:bg-ink-800/50">
           {message}
         </p>
       )}
       {data && (
         <>
-          <p className="text-sm text-slate-500">
+          <p className="text-xs text-ink-500">
             {data.source}
             {data.at ? ` · Calculado: ${fmtDate(data.at, "datetime")}` : ""}
           </p>
-          <details className="text-sm"><summary className="cursor-pointer">Alcance y límites de este análisis</summary>{data.notes.map((n,i)=><p className="mt-2 text-ink-500" key={i}>{n}</p>)}</details>
+          <details className="text-sm"><summary className="cursor-pointer text-ink-500">Alcance y límites de este análisis</summary>{data.notes.map((n,i)=><p className="mt-2 text-ink-500" key={i}>{n}</p>)}</details>
           <label className="block">
-            Filtrar resultados
             <input
               aria-label="Filtrar resultados"
-              className="ml-3 rounded border p-2"
+              placeholder="Filtrar resultados"
+              className="input w-full md:w-80"
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
@@ -182,18 +182,18 @@ export default function ExpertPanel({
             />
           </label>
           {!rows.length ? (
-            <div className="rounded border p-4 text-sm"><p>{query ? "Ningún resultado coincide con este filtro." : help?.empty ?? "No hay datos disponibles para este análisis."}</p>{query?<button className="btn mt-2" onClick={()=>{setQuery("");setPage(0);}}>Limpiar filtro</button>:help&&<Link className="btn mt-2" href={`/p/${id}/${help.href}`}>Obtener o revisar datos</Link>}</div>
+            <div className="card p-4 text-sm"><p>{query ? "Ningún resultado coincide con este filtro." : help?.empty ?? "No hay datos disponibles para este análisis."}</p>{query?<button className="btn mt-2" onClick={()=>{setQuery("");setPage(0);}}>Limpiar filtro</button>:help&&<Link className="btn mt-2" href={`/p/${id}/${help.href}`}>Obtener o revisar datos</Link>}</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="card overflow-x-auto">
+              <table className="tbl w-full">
                 <thead>
                   <tr>
                     {keys.map((k) => (
-                      <th className="border-b px-3 py-2 text-left" key={k}>
+                      <th key={k}>
                         {columnLabel(k)}
                       </th>
                     ))}
-                    <th className="border-b px-3 py-2">Acciones</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -201,17 +201,17 @@ export default function ExpertPanel({
                     <tr key={i}>
                       {keys.map((k) => (
                         <td
-                          className="max-w-sm break-words border-b px-3 py-2 align-top"
+                          className="max-w-sm !whitespace-normal break-words align-top"
                           key={k}
                         >
                           {displayValue(k,r[k])}
                         </td>
                       ))}
-                      <td className="border-b px-3 py-2">
+                      <td className="!whitespace-normal align-top">
                         {view==="guided"&&allKeys.some(k=>!keys.includes(k)&&r[k]!=null)&&<details className="mb-2 text-xs"><summary className="cursor-pointer">Ver detalle</summary><dl className="mt-2 space-y-2">{allKeys.filter(k=>r[k]!=null).map(k=><div key={k}><dt className="font-medium">{columnLabel(k)}</dt><dd className="break-words">{displayValue(k,r[k])}</dd></div>)}</dl></details>}
                         {kind === "crawl" && r.url && (
                           <button
-                            className="underline"
+                            className="text-acc hover:underline"
                             onClick={async () => {
                               try {
                                 setDetails(
@@ -229,7 +229,7 @@ export default function ExpertPanel({
                         )}
                         {kind === "content" && r.clusterId && (
                           <button
-                            className="underline"
+                            className="text-acc hover:underline"
                             disabled={busy}
                             onClick={() =>
                               call("brief", { clusterId: r.clusterId })
@@ -240,7 +240,7 @@ export default function ExpertPanel({
                         )}
                         {kind === "ops" && r.tipo === "Plantilla de tarea" && (
                           <button
-                            className="underline"
+                            className="text-acc hover:underline"
                             disabled={busy}
                             onClick={() => call("template/apply", { id: r.id })}
                           >
@@ -248,7 +248,7 @@ export default function ExpertPanel({
                           </button>
                         )}
                         {kind === "ops" && r.tipo === "Qué hago hoy" && (
-                          <Link className="underline" href={`/p/${id}/tasks`}>
+                          <Link className="text-acc hover:underline" href={`/p/${id}/tasks`}>
                             Gestionar tarea
                           </Link>
                         )}
@@ -260,8 +260,9 @@ export default function ExpertPanel({
             </div>
           )}
           {rows.length > 50 && (
-            <div className="flex gap-4">
+            <div className="flex items-center gap-3 text-sm">
               <button
+                className="btn"
                 disabled={currentPage === 0}
                 onClick={() => setPage(currentPage - 1)}
               >
@@ -272,6 +273,7 @@ export default function ExpertPanel({
                 resultados)
               </span>
               <button
+                className="btn"
                 disabled={currentPage === lastPage}
                 onClick={() => setPage(currentPage + 1)}
               >
@@ -282,7 +284,7 @@ export default function ExpertPanel({
         </>
       )}
       {forms.length>0&&<details><summary className="cursor-pointer text-sm font-medium">Opciones de configuración y herramientas avanzadas</summary><div className="mt-3 space-y-3">{forms.map((f) => (
-        <details key={f.title} className="rounded border p-4">
+        <details key={f.title} className="card p-4">
           <summary className="cursor-pointer font-medium">{f.title}</summary>
           {f.hint && <p className="my-2 text-sm">{f.hint}</p>}
           <form
@@ -294,20 +296,20 @@ export default function ExpertPanel({
                 {field.label}
                 {field.type === "textarea" ? (
                   <textarea
-                    className="min-h-28 rounded border p-2"
+                    className="input min-h-28"
                     name={field.name}
                     required={field.required}
                     placeholder={field.placeholder}
                   />
                 ) : field.type === "select" ? (
-                  <select name={field.name} className="rounded border p-2">
+                  <select name={field.name} className="input">
                     {field.options?.map((o) => (
                       <option key={o}>{o}</option>
                     ))}
                   </select>
                 ) : (
                   <input
-                    className="rounded border p-2"
+                    className="input"
                     name={field.name}
                     type={field.type ?? "text"}
                     required={field.required}
@@ -316,17 +318,17 @@ export default function ExpertPanel({
                 )}
               </label>
             ))}
-            <button className="btn" disabled={busy} type="submit">
+            <button className="btn-p justify-self-start" disabled={busy} type="submit">
               {busy ? "Procesando…" : "Guardar"}
             </button>
           </form>
         </details>
       ))}</div></details>}
       {details !== undefined && (
-        <div className="rounded border p-4">
-          <div className="flex justify-between">
-            <h3>Detalle</h3>
-            <button onClick={() => setDetails(undefined)}>Cerrar</button>
+        <div className="card p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold">Detalle</h3>
+            <button className="btn-g" onClick={() => setDetails(undefined)}>Cerrar</button>
           </div>
           <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap break-all text-xs">
             {JSON.stringify(details, null, 2)}

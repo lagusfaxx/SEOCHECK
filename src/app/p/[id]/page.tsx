@@ -74,8 +74,9 @@ function SetupBanner({ id }: { id: string }) {
 const ALERT_LABEL: Record<string, string> = { drop: "Caída", cannibal: "Canibalización", lowctr: "CTR bajo" };
 
 export default function Overview() {
-  const { id, refreshJobs } = useProject();
+  const { id, project, refreshJobs } = useProject();
   const { data } = useApi<any>(`/api/p/${id}/overview`);
+  const gscOn = Boolean(project?.gscProperty && project?.providers?.gsc);
   const [layout, setLayout] = useLocal<W[]>(`dash:${id}`, DEFAULT);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const items = [...layout, ...DEFAULT.filter((d) => !layout.some((l) => l.id === d.id))].filter((w) => w.id !== "spend");
@@ -128,7 +129,7 @@ export default function Overview() {
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <Empty key="g" compact icon="gsc" tone="info" title="Sin datos de Search Console">Conecta una propiedad y sincroniza sus datos.<Link className="btn mt-1" href={`/p/${id}/gsc`}>Abrir Search Console</Link><button className="btn-p hov-spin mt-1" onClick={() => run("gsc/sync")}><Icon name="refresh" />Sincronizar</button></Empty>
+            <Empty key="g" compact icon="gsc" tone="info" title="Sin datos de Search Console">{gscOn ? <>Todavía no hay datos sincronizados.<button className="btn-p hov-spin mt-1" onClick={() => run("gsc/sync")}><Icon name="refresh" />Sincronizar</button></> : <>Conecta tu cuenta de Google para ver clics e impresiones reales.<Link className="btn-p mt-1" href={`/p/${id}/gsc`}>Conectar Search Console</Link></>}</Empty>
           ),
         ];
       case "health":
@@ -190,8 +191,8 @@ export default function Overview() {
           "Acciones",
           <div key="ac" className="flex flex-wrap gap-1.5">
             <button className="btn text-xs" title="Recorre el sitio y detecta problemas técnicos" onClick={() => run("audit")}><Icon name="audit" />Analizar sitio</button>
-            <button className="btn text-xs" title="Mide ahora la posición de las keywords monitoreadas (gasta créditos)" onClick={() => run("rank/check")}><Icon name="rank" />Revisar rankings</button>
-            <button className="btn hov-spin text-xs" title="Trae los últimos datos de Google Search Console" onClick={() => run("gsc/sync")}><Icon name="gsc" />Sincronizar Search Console</button>
+            <button className="btn text-xs" disabled={!data?.tracked} title={data?.tracked ? "Mide ahora la posición de las keywords monitoreadas (gasta créditos)" : "Primero agrega keywords en Rankings"} onClick={() => run("rank/check")}><Icon name="rank" />Revisar rankings</button>
+            <button className="btn hov-spin text-xs" disabled={!gscOn} title={gscOn ? "Trae los últimos datos de Google Search Console" : "Primero conecta Search Console"} onClick={() => run("gsc/sync")}><Icon name="gsc" />Sincronizar Search Console</button>
             <button className="btn text-xs" title="Recalcula caídas, canibalización y CTR bajo" onClick={() => run("alerts")}><Icon name="bell" />Recalcular alertas</button>
           </div>,
         ];

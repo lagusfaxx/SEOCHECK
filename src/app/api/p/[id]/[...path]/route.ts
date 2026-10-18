@@ -26,9 +26,10 @@ import { parseKeywordPlannerCsv } from "@/lib/volume/csv";
 import { clampKeywordOpts } from "@/lib/keywords/pipeline";
 import { importProjectVolumes, volumeChainStatus } from "@/lib/volume/broker";
 import { env } from "@/lib/env";
+import { locationOf } from "@/lib/locations";
 import { llmStatus } from "@/lib/providers/llm";
 import { assertBudget, BudgetError, budgetLimits, est, monthStart, releaseBudget, spentThisMonth } from "@/lib/budget";
-import { hostOf, normTerm, normUrl, sameSite } from "@/lib/util";
+import { hostOf, normDomain, normTerm, normUrl, sameSite } from "@/lib/util";
 import { buildReport } from "@/lib/report";
 import { expand, graphSearch, siteNode } from "@/lib/graph";
 import { TRANSFORMS, type GType } from "@/lib/graph-types";
@@ -47,6 +48,11 @@ class HttpError extends Error {
   }
 }
 const notFound = () => new HttpError(404, "no existe");
+/** Las búsquedas en Google (Serpent) son obligatorias para keywords, rankings y contenido: sin ellas el trabajo
+ * fallaría en el worker después de gastar cupo; se avisa al tiro con un mensaje que entiende el cliente. */
+const requireSerp = () => {
+  if (!env.serpentKey) throw new HttpError(503, "Las búsquedas en Google no están habilitadas en esta instalación. Escríbenos a contacto@fsvc.cl para activarlas.");
+};
 
 /** Aislamiento: todo id que llega por parámetro tiene que ser de ESTE proyecto. */
 async function ownCrawl(projectId: string, crawlId: string | null) {
@@ -179,7 +185,7 @@ const GETS: Record<string, H> = {
       db.issue.groupBy({ by: ["code", "severity"], where: { crawlId }, _count: true }),
       db.page.findMany({
         where: { crawlId },
-        select: { id: true, url: true, status: true, titleLen: true, metaLen: true, wordCount: true, depth: true, inlinks: true, outlinks: true, responseMs: true, canonicalType: true, noindex: true, inSitemap: true, orphan: true, jsonldTypes: true, imgNoAlt: true, title: true },
+        select: { id: true, url: true, status: true, titleLen: true, metaLen: true, wordCount: true, depth: true, inlinks: true, outlinks: true, responseMs: true, canonicalType: true, noindex: true, inSitemap: true, orphan: true, jsonldTypes: true, imgNoAlt: true, title: true, blocked: true, error: true, clientRedirect: true, redirects: true },
         orderBy: [{ depth: "asc" }, { url: "asc" }],
         take: 5000,
       }),
@@ -361,6 +367,7 @@ const POSTS: Record<string, H> = {
     await assertIdle(id, QUEUES.keywords, "una investigación de keywords");
     await assertResource(id, "keywords", 0);
     await assertResource(id, "research", 1);
+    requireSerp();
     await assertProviderUp("serpent");
     const kwOpts = clampKeywordOpts({ serpTop: 150, serpExpansion: 20, maxKeywords: 400, ...((((await db.project.findUniqueOrThrow({ where: { id } })).settings ?? {}) as any).keywords ?? {}) });
     await assertBudget({ serpent: est.serpCalls(seeds.length + kwOpts.serpExpansion + kwOpts.serpTop), llm: est.llmIntent(kwOpts.maxKeywords) }, "Investigación de keywords");
@@ -472,7 +479,8 @@ const POSTS: Record<string, H> = {
     }
     return created;
     });
-    if (created.length && body.check !== false) await enqueue(id, QUEUES.rankOne, { trackedIds: created.map((c) => c.id) });
+    // sin búsquedas habilitadas las keywords quedan guardadas y se revisan cuando se activen
+    if (created.length && body.check !== false && env.serpentKey) await enqueue(id, QUEUES.rankOne, { trackedIds: created.map((c) => c.id) });
     return created;
   },
 
@@ -480,6 +488,7 @@ const POSTS: Record<string, H> = {
     // solo keywords de este proyecto (antes se podían revisar —y cobrar— las de otro)
     const ids: string[] = (await db.trackedKeyword.findMany({ where: { projectId: id, active: true, ...(body.ids?.length ? { id: { in: body.ids } } : {}) }, select: { id: true } })).map((t) => t.id);
     if (!ids.length) throw new HttpError(400, "No hay keywords trackeadas para revisar");
+    requireSerp();
     await assertIdle(id, QUEUES.rankOne, "una revisión de rankings");
     await assertPlanActive(id);
     // el seguimiento automático ya corre solo: a mano, hasta 3 revisiones al día por proyecto
@@ -490,7 +499,7 @@ const POSTS: Record<string, H> = {
 
   "gsc/sync": async ({ id, body }) => {
     await assertIdle(id, QUEUES.gscSync, "una sincronización de Search Console");
-    if (!(await gscAvailable(id))) throw new HttpError(400, "Search Console no está conectado: conéctalo en Ajustes");
+    if (!(await gscAvailable(id))) throw new HttpError(400, "Search Console no está conectado: conéctalo en la sección Search Console");
     return enqueue(id, QUEUES.gscSync, { backfillDays: Math.min(Math.max(Number(body.backfillDays ?? 90) || 90, 1), 480) });
   },
 
@@ -510,9 +519,10 @@ const POSTS: Record<string, H> = {
   content: async ({ id, body }) => {
     await assertResource(id,"briefs",1);
     if (!body.url || !body.keyword) throw new HttpError(400, "Falta la URL o la keyword");
-    await assertProviderUp("serpent");
     const [u] = await ownUrls(id, [body.url]);
     if (!u) throw new HttpError(400, "URL inválida");
+    requireSerp();
+    await assertProviderUp("serpent");
     await assertBudget({ serpent: est.serpCalls(1), llm: est.llmBrief() }, "Optimización de contenido");
     const a = await withProjectQuota(id,"briefs",1,tx=>tx.contentAnalysis.create({ data: { projectId: id, url: u, keyword: normTerm(body.keyword), pageKind: ["article","listing","landing","product"].includes(body.pageKind) ? body.pageKind : null } }));
     await enqueue(id, QUEUES.content, { contentId: a.id }, a.id);
@@ -542,6 +552,19 @@ const PATCHS: Record<string, H> = {
   "": async ({ id, body }) => {
     const data: Prisma.ProjectUpdateInput = {};
     for (const k of ["name", "domain", "country", "language", "gscProperty"] as const) if (k in body) (data as any)[k] = body[k] || (k === "gscProperty" ? null : body[k]);
+    // el mismo criterio que al crear: «https://Sitio.cl/» se guarda como «sitio.cl», y un dominio inválido no se acepta
+    if ("domain" in body) {
+      const domain = normDomain(String(body.domain ?? ""));
+      if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)) throw new HttpError(400, "Dominio inválido");
+      data.domain = body.domain = domain;
+    }
+    const current = await db.project.findUniqueOrThrow({ where: { id }, select: { country: true } });
+    if ("country" in body) {
+      const country = String(body.country ?? "").toLowerCase();
+      data.country = country;
+      // otro país = otra ubicación para volúmenes y búsquedas (antes se quedaba la del país anterior)
+      if (country !== current.country && !("locationCode" in body && Number(body.locationCode) !== locationOf(current.country))) data.locationCode = locationOf(country) ?? undefined;
+    }
     if (body.gscProperty) {
       const p = await db.project.findUniqueOrThrow({ where: { id }, select: { domain: true } });
       const dom = "domain" in body && body.domain ? String(body.domain) : p.domain;
@@ -549,7 +572,7 @@ const PATCHS: Record<string, H> = {
       if (!sameSite(String(body.gscProperty), dom)) throw new HttpError(400, `La propiedad ${body.gscProperty} no es del dominio del proyecto (${dom}). Elige una propiedad de ${dom}.`);
       data.gscProperty = await resolveGscProperty(body.gscProperty, id);
     }
-    if ("locationCode" in body) data.locationCode = Number(body.locationCode);
+    if ("locationCode" in body && data.locationCode === undefined) data.locationCode = Number(body.locationCode);
     if (body.settings) {
       const p = await db.project.findUniqueOrThrow({ where: { id } });
       // merge de un nivel: { keywords: {...} } no borra claves de keywords que no vengan en el body

@@ -37,6 +37,8 @@ export function GscConnect({ compact, returnTo, hideWhenConnected }: { compact?:
   }, [id]);
 
   if (!c) return null;
+  // en el resumen no se ofrece un botón que no puede funcionar: la instalación no tiene la conexión con Google
+  if (compact && !c.mode && !c.oauthConfigured) return null;
   if (hideWhenConnected && c.mode && c.property && !c.lastError && !err) return ok ? <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">{ok}</div> : null;
   const connect = async () => {
     setBusy(true);

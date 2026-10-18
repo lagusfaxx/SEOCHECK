@@ -1,12 +1,12 @@
 import { createProjectWithinPlan, PlanLimitError } from "@/lib/plans";
 import { db } from "@/lib/db";
 import { normDomain } from "@/lib/util";
+import { locationOf } from "@/lib/locations";
 import { normalizeGscProperty } from "@/lib/providers/google";
 import { AuthError, requireUser, requireWorkspace, userWorkspaceIds } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-const LOCATIONS: Record<string, number> = { cl: 2152, ar: 2032, mx: 2484, co: 2170, pe: 2604, es: 2724, us: 2840, uy: 2858 };
 const fail = (msg: string, status = 400) => Response.json({ error: msg }, { status });
 
 /** Proyectos de los workspaces del usuario (nunca los de otros). */
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
         domain,
         country,
         language: b.language ?? "es",
-        locationCode: b.locationCode ?? LOCATIONS[country] ?? 2152,
+        locationCode: b.locationCode ?? locationOf(country) ?? 2152,
         gscProperty: b.gscProperty ? normalizeGscProperty(b.gscProperty) : null,
     });
     return Response.json(p);

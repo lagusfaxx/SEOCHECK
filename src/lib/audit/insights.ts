@@ -29,7 +29,7 @@ export const KIND_HINT: Record<Kind, string> = {
 /** Qué tan objetivo es cada issue. Las recomendaciones subjetivas no se presentan como errores. */
 export const ISSUE_KIND: Record<string, Kind> = {
   http_4xx: "confirmed", http_5xx: "confirmed", fetch_failed: "confirmed", blocked_by_waf: "confirmed", broken_link: "confirmed",
-  redirect_chain: "confirmed", redirect_loop: "confirmed", canonical_loop: "confirmed", robots_conflict: "confirmed", noindex_canonical: "possible", not_in_sitemap: "confirmed", faq_mismatch: "possible", breadcrumb_mismatch: "possible", render_mismatch: "possible", noindex_in_sitemap: "confirmed", canonical_bad_target: "confirmed", title_missing: "confirmed", jsonld_invalid: "confirmed",
+  redirect_chain: "confirmed", redirect_loop: "confirmed", client_redirect: "confirmed", canonical_loop: "confirmed", robots_conflict: "confirmed", noindex_canonical: "possible", not_in_sitemap: "confirmed", faq_mismatch: "possible", breadcrumb_mismatch: "possible", render_mismatch: "possible", noindex_in_sitemap: "confirmed", canonical_bad_target: "confirmed", title_missing: "confirmed", jsonld_invalid: "confirmed",
   orphan: "possible", no_inlinks: "possible", dup_content: "possible", title_dup: "possible", meta_dup: "possible", canonical_other: "possible",
   blocked_robots: "possible", noindex: "possible", deep_page: "possible", slow: "possible", hreflang_no_self: "possible", redirect: "possible",
   thin_content: "possible", nofollow: "possible", sitemap_missing: "possible", ssrf_blocked: "possible", h1_missing: "possible",

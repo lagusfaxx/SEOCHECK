@@ -45,14 +45,20 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
     case QUEUES.rankOne: {
       const ids: string[] = d.trackedIds ?? [d.trackedId];
       await assertBudget({ serpent: est.serpCalls(ids.length) }, `Rank tracking (${ids.length} keywords)`);
+      const failed: string[] = [];
       for (let i = 0; i < ids.length; i++) {
         try {
           await checkRank(ids[i]);
         } catch (e) {
           console.error("[rank]", ids[i], e);
+          failed.push(e instanceof Error ? e.message : String(e));
         }
         await jobProgress(d.jobRunId, ((i + 1) / ids.length) * 95, `${i + 1}/${ids.length}`);
       }
+      // que ninguna keyword se haya podido revisar es un error, no un trabajo terminado
+      // (sin reintento: con el mismo proveedor fallaría igual)
+      if (failed.length === ids.length) throw Object.assign(new Error(`No se pudo revisar ninguna keyword: ${failed[0]}`), { noRetry: true });
+      if (failed.length) await jobLog("warn", `${failed.length} de ${ids.length} keywords no se pudieron revisar: ${failed[0]}`);
       await computeAlerts(d.projectId);
       await runWatch(d.projectId).catch((e) => jobLog("warn", `Avisos: ${e instanceof Error ? e.message : String(e)}`));
       return;

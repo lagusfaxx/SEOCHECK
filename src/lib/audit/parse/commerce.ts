@@ -5,6 +5,9 @@ export type Commerce = {
   currency?: string | null;
   availability?: string | null;
   sku?: string | null;
+  /** código del fabricante: distingue productos distintos que el sitio marca con el mismo SKU */
+  mpn?: string | null;
+  name?: string | null;
   productLinks?: number;
   pagination?: {
     next?: string | null;
@@ -23,7 +26,12 @@ export function commerceSignals(
     /^(Product|ProductGroup)$/.test(e.type),
   );
   const offers: any = product?.props.offers;
-  const offer = Array.isArray(offers) ? offers[0] : (offers ?? {});
+  const list: any[] = (Array.isArray(offers) ? offers : offers ? [offers] : []).filter((o) => o && typeof o === "object");
+  const offer = list[0] ?? {};
+  // con varias ofertas (tallas, colores) el producto está disponible si alguna lo está: no basta con la primera
+  const availability =
+    list.find((o) => /InStock|LimitedAvailability|PreOrder|BackOrder|OnlineOnly|InStoreOnly/i.test(String(o.availability ?? "")))?.availability ??
+    offer.availability;
   const raw =
     offer.price ??
     $('meta[property="product:price:amount"], [itemprop="price"]')
@@ -45,14 +53,18 @@ export function commerceSignals(
       offer.priceCurrency ??
       $('meta[property="product:price:currency"], [itemprop="priceCurrency"]').first().attr("content") ??
       null,
+    // sin datos estructurados: solo el botón o el indicador de stock, no cualquier «agotado» de la página (otra talla,
+    // un producto relacionado o un texto de ayuda harían pasar por agotada una ficha que se vende)
     availability:
-      offer.availability ??
+      availability ??
       (/\b(agotado|sin stock|out of stock)\b/i.test(
-        $("main,body").first().text(),
+        $("button, [class*='stock' i], [class*='availability' i], [class*='disponib' i], [itemprop='availability']").text(),
       )
         ? "OutOfStock"
         : null),
     sku: product?.props.sku ? String(product.props.sku) : null,
+    mpn: product?.props.mpn ? String(product.props.mpn) : null,
+    name: product?.props.name ? String(product.props.name) : null,
     productLinks: $("a[href*='/products/'],a[href*='/producto/']").length,
     pagination: {
       next: link("next"),

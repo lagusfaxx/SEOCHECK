@@ -7,6 +7,7 @@ import { useProject } from "@/components/Shell";
 import { api, Icon } from "@/components/ui";
 import { AccountCard, TeamCard } from "@/components/Account";
 import { GscConnect } from "@/components/GscConnect";
+import { COUNTRIES, LANGUAGES } from "@/lib/locations";
 
 export default function Settings() {
   const { id, project } = useProject();
@@ -32,7 +33,11 @@ export default function Settings() {
   }, [project, f]);
   if (!f || !project) return null;
 
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.type === "checkbox" ? (e.target as HTMLInputElement).checked : e.target.value });
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const v = e.target.type === "checkbox" ? (e.target as HTMLInputElement).checked : e.target.value;
+    // el código de ubicación sigue al país: volúmenes y búsquedas del país elegido
+    setF({ ...f, [k]: v, ...(k === "country" ? { locationCode: COUNTRIES.find((c) => c.code === v)?.location ?? f.locationCode } : {}) });
+  };
   const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
   const save = async () => {
     setErr(null);
@@ -62,58 +67,81 @@ export default function Settings() {
     </label>
   );
 
+  const select = (label: string, k: string, options: { code: string; name: string }[]) => (
+    <label className="block">
+      <span className="lbl">{label}</span>
+      <select className="input mt-1" value={f[k]} onChange={set(k)}>
+        {options.map((o) => <option key={o.code} value={o.code}>{o.name}</option>)}
+      </select>
+    </label>
+  );
+
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
-      <CommercialSettings />
-      <div className="card grid gap-3 p-4 md:grid-cols-3">
-        {field("Nombre", "name")}
-        {field("Dominio", "domain")}
-        {field("Propiedad GSC", "gscProperty", { placeholder: "sc-domain:dominio.cl" })}
-        {field("País", "country")}
-        {field("Idioma", "language")}
-      </div>
-      <div className="card grid gap-3 p-4 md:grid-cols-2">
-        {field("Marcas (navegacional)", "brands", { placeholder: "marca, otra marca" })}
-        {field("Dominios fuertes extra", "strongDomains", { placeholder: "competidor.cl" })}
-      </div>
-      <details className="card p-4"><summary className="cursor-pointer text-sm">Opciones avanzadas</summary><div className="mt-3 space-y-3">
-        {field("Código de ubicación del proveedor", "locationCode", { type: "number" })}
-      <div className="card grid gap-3 p-4 md:grid-cols-4">
-        {field("Máx. keywords", "maxKeywords", { type: "number" })}
-        {field("SERPs por run", "serpTop", { type: "number" })}
-        {field("URLs en común", "minShared", { type: "number", min: 1, max: 10 })}
-        <label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" checked={f.useGsc} onChange={set("useGsc")} />queries GSC</label>
-        <label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" checked={f.autocomplete} onChange={set("autocomplete")} />autocomplete</label>
-        {field("SERPs 2ª ronda", "serpExpansion", { type: "number", min: 0, title: "PAA/related de los seeds; 0 = desactivado" })}
-        {field("Alerta caída (pos.)", "drop", { type: "number" })}
-        {field("Impr. mín. CTR", "minImpressions", { type: "number" })}
-      </div>
-      <div className="card grid gap-3 p-4 md:grid-cols-3">
-        <div className="md:col-span-3">{field("User-agent del crawler", "userAgent", { placeholder: "por defecto CRAWLER_UA" })}</div>
-        {field("Máx. URLs por patrón", "maxPerPattern", { type: "number", min: 0, title: "0 = sin límite" })}
-        <div className="md:col-span-2">{field("Parámetros a ignorar", "ignoreParams", { placeholder: "utm_*, gclid, orderby  (* = todos)" })}</div>
-      </div>
-      </div></details>
-      <div className="card flex flex-wrap items-end gap-3 p-4">
-        <label className="block">
-          <span className="lbl">Rank tracking</span>
-          <select className="input mt-1 w-auto" value={f.rankFrequency} onChange={set("rankFrequency")}>
-            <option value="weekly">semanal</option>
-            <option value="daily">diario</option>
-          </select>
-        </label>
-        <span className="pb-2 text-xs text-ink-400">se aplica a todas las keywords monitoreadas del proyecto</span>
-      </div>
-      {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{err}</div>}
-      <div className="flex items-center gap-2">
-        <button className="btn-p" onClick={save}><Icon name={saved ? "check" : "check"} />{saved ? "Guardado" : "Guardar"}</button>
-        <button className="btn ml-auto text-rose-600" onClick={async () => { if (!confirm(`¿Eliminar ${project.domain} y todos sus datos?`)) return; await api(`/api/p/${id}/_`, "DELETE"); router.push("/app"); }}>
-          <Icon name="trash" />Eliminar proyecto
-        </button>
-      </div>
+      <section className="card space-y-4 p-4">
+        <h2 className="font-semibold">Proyecto</h2>
+        <div className="grid gap-3 md:grid-cols-2">
+          {field("Nombre", "name")}
+          {field("Dominio", "domain", { placeholder: "dominio.cl" })}
+          {select("País de búsqueda", "country", COUNTRIES)}
+          {select("Idioma", "language", LANGUAGES)}
+          {field("Tus marcas", "brands", { placeholder: "marca, otra marca", title: "Separadas por coma: las búsquedas que las incluyen se cuentan como tráfico de marca" })}
+          <label className="block">
+            <span className="lbl">Revisión de rankings</span>
+            <select className="input mt-1" value={f.rankFrequency} onChange={set("rankFrequency")}>
+              <option value="weekly">Semanal</option>
+              <option value="daily">Diaria</option>
+            </select>
+          </label>
+        </div>
+        <details className="text-sm">
+          <summary className="cursor-pointer text-ink-500">Opciones avanzadas</summary>
+          <div className="mt-3 space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              {field("Propiedad de Search Console", "gscProperty", { placeholder: "sc-domain:dominio.cl" })}
+              {field("Dominios fuertes extra", "strongDomains", { placeholder: "competidor.cl" })}
+              {field("Código de ubicación", "locationCode", { type: "number", title: "Se ajusta solo al cambiar el país" })}
+            </div>
+            <div>
+              <div className="lbl mb-1">Keywords</div>
+              <div className="grid gap-3 md:grid-cols-3">
+                {field("Máx. keywords", "maxKeywords", { type: "number" })}
+                {field("SERPs por investigación", "serpTop", { type: "number" })}
+                {field("URLs en común para agrupar", "minShared", { type: "number", min: 1, max: 10 })}
+                {field("SERPs 2ª ronda", "serpExpansion", { type: "number", min: 0, title: "PAA/related de las semillas; 0 = desactivado" })}
+                <label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" checked={f.useGsc} onChange={set("useGsc")} />Usar consultas de Search Console</label>
+                <label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" checked={f.autocomplete} onChange={set("autocomplete")} />Usar autocompletado</label>
+              </div>
+            </div>
+            <div>
+              <div className="lbl mb-1">Alertas</div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {field("Avisar caídas de más de (posiciones)", "drop", { type: "number" })}
+                {field("Impresiones mínimas para CTR bajo", "minImpressions", { type: "number" })}
+              </div>
+            </div>
+            <div>
+              <div className="lbl mb-1">Rastreo</div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="md:col-span-2">{field("User-agent del rastreo", "userAgent", { placeholder: "por defecto el de la instalación" })}</div>
+                {field("Máx. URLs por patrón", "maxPerPattern", { type: "number", min: 0, title: "0 = sin límite" })}
+                {field("Parámetros a ignorar", "ignoreParams", { placeholder: "utm_*, gclid, orderby  (* = todos)" })}
+              </div>
+            </div>
+          </div>
+        </details>
+        {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{err}</div>}
+        <button className="btn-p" onClick={save}><Icon name="check" />{saved ? "Guardado" : "Guardar cambios"}</button>
+      </section>
       <GscConnect />
       <TeamCard />
       <AccountCard />
+      <CommercialSettings />
+      <div className="flex justify-end">
+        <button className="btn text-rose-600" onClick={async () => { if (!confirm(`¿Eliminar ${project.domain} y todos sus datos? No se puede deshacer.`)) return; await api(`/api/p/${id}/_`, "DELETE"); router.push("/app"); }}>
+          <Icon name="trash" />Eliminar proyecto
+        </button>
+      </div>
     </div>
   );
 }
