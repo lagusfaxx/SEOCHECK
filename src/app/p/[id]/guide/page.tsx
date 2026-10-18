@@ -134,7 +134,7 @@ export default function Guide() {
     },
   ];
   return (
-    <article className="mx-auto max-w-2xl space-y-4 p-6">
+    <article className="mx-auto w-full max-w-2xl space-y-4 p-4 md:p-6">
       <h1 className="text-xl font-semibold">Conectar Search Console</h1>
       <nav className="flex flex-wrap gap-2" aria-label="Pasos de conexión">
         {steps.map((s, i) => (

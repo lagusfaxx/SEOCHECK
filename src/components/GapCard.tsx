@@ -4,13 +4,14 @@ import { DataTable, Empty, fmt, Hint, useApi, type Col } from "@/components/ui";
 
 const M = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 type Item = { keyword: string; volume: number; peaks: number[]; competitors: { domain: string; position: number; url: string | null }[] };
-type Data = { gap: null | { at: string; competitors: string[]; total: number; items: Item[]; errors: string[] }; upcoming: { keyword: string; volume: number; peaks: string }[] };
+type Data = { configured?: boolean; gap: null | { at: string; competitors: string[]; total: number; items: Item[]; errors: string[] }; upcoming: { keyword: string; volume: number; peaks: string }[] };
 
 /** Keywords de la competencia que el sitio no tiene, y temas que entran en temporada. */
 export function GapCard() {
   const { id } = useProject();
   const { data } = useApi<Data>(`/api/p/${id}/keyword-gap`);
-  if (!data) return null;
+  // sin proveedor en la instalación y sin datos guardados ni temporadas que avisar, la tarjeta no aporta nada
+  if (!data || (data.configured === false && !data.gap && !data.upcoming.length)) return null;
   const cols: Col<Item>[] = [
     { key: "k", label: "Keyword", get: (r) => r.keyword },
     { key: "v", label: "Búsquedas/mes", get: (r) => r.volume, render: (r) => fmt(r.volume), num: true },

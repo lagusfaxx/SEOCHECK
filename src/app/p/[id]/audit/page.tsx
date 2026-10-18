@@ -156,7 +156,7 @@ export default function AuditPage() {
             <Stat label="Externos" value={fmt(st.external)} hint="Dominios externos distintos a los que enlaza tu sitio." />
           </div>
 
-          <p className="text-sm"><span className="text-rose-700">{fmt(st.critical)} errores</span> · <span className="text-amber-700">{fmt(st.warning)} advertencias</span> · {fmt(st.info)} observaciones <Hint text="Las observaciones son recomendaciones y no descuentan puntos de salud técnica. Revisa su relevancia antes de cambiarlas."/></p>
+          <p className="text-sm"><span className="text-rose-700">{fmt(st.critical)} {st.critical === 1 ? "error" : "errores"}</span> · <span className="text-amber-700">{fmt(st.warning)} {st.warning === 1 ? "advertencia" : "advertencias"}</span> · {fmt(st.info)} {st.info === 1 ? "observación" : "observaciones"} <Hint text="Las observaciones son recomendaciones y no descuentan puntos de salud técnica. Revisa su relevancia antes de cambiarlas."/></p>
           <Tabs value={tab} onChange={setTab} items={[{ id: "summary", label: "Páginas", icon: "table" }, { id: "issues", label: "Problemas", icon: "alert" }, { id: "urls", label: "URLs · vista técnica", icon: "table" }, { id: "speed", label: "Velocidad", icon: "bolt" }, { id: "index", label: "Indexación", icon: "search" }]} />
 
           {tab === "summary" && <div className="card overflow-hidden">

@@ -271,6 +271,7 @@ export function CommercialSettings() {
           Costo real por trabajo (solo administradores)
         </summary>
         <p className="my-2 text-xs text-ink-500">{costs?.note}</p>
+        <div className="overflow-x-auto">
         <table className="tbl">
           <thead>
             <tr>
@@ -289,6 +290,8 @@ export function CommercialSettings() {
             ))}
           </tbody>
         </table>
+        </div>
+        <div className="overflow-x-auto">
         <table className="tbl mt-3">
           <thead>
             <tr>
@@ -313,6 +316,7 @@ export function CommercialSettings() {
             ))}
           </tbody>
         </table>
+        </div>
       </details>}
       {error && (
         <p role="alert" className="text-rose-700">

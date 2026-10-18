@@ -77,7 +77,7 @@ export default function Settings() {
   );
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
+    <div className="mx-auto w-full max-w-3xl space-y-4 p-4 md:p-6">
       <section className="card space-y-4 p-4">
         <h2 className="font-semibold">Proyecto</h2>
         <div className="grid gap-3 md:grid-cols-2">

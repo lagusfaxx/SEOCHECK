@@ -112,7 +112,7 @@ const GETS: Record<string, H> = {
     const chain = await volumeChainStatus();
     const providers = {
       serp: Boolean(env.serpentKey), volume: chain.find((c) => c.available)?.provider ?? false, embeddings: env.embeddingsUrl ? "local" : env.openaiKey ? "openai" : "hash",
-      llm: llmStatus().available ? `${env.llmProvider}:${env.llmModel}` : false, gsc: await gscAvailable(id), psi: Boolean(env.psiKey), render: Boolean(env.browserWs), indexnow: Boolean(env.indexNowKey),
+      llm: llmStatus().available ? `${env.llmProvider}:${env.llmModel}` : false, gsc: await gscAvailable(id), psi: Boolean(env.psiKey), render: Boolean(env.browserWs), indexnow: Boolean(env.indexNowKey), social: Boolean(env.metaAppId && env.metaAppSecret),
     };
     // a los clientes solo qué funciones están disponibles, nunca qué proveedor o modelo hay detrás
     if (!admin) return { ...p, admin, volumeChain: [], providers: Object.fromEntries(Object.entries(providers).map(([k, v]) => [k, Boolean(v) && v !== "hash"])) };

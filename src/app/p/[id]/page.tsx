@@ -143,9 +143,9 @@ export default function Overview() {
               </div>
               {data.crawl.status === "partial" && <span className="chip !bg-amber-100 !text-amber-800" title={data.crawl.reason ?? ""}>parcial</span>}
               <div className="space-y-1 text-sm">
-                <div>{fmt(st.critical)} errores</div>
-                <div>{fmt(st.warning)} advertencias</div>
-                <div>{fmt(st.info)} observaciones</div>
+                <div>{fmt(st.critical)} {st.critical === 1 ? "error" : "errores"}</div>
+                <div>{fmt(st.warning)} {st.warning === 1 ? "advertencia" : "advertencias"}</div>
+                <div>{fmt(st.info)} {st.info === 1 ? "observación" : "observaciones"}</div>
                 <div className="text-xs text-ink-400">{fmt(st.pages)} {st.pages === 1 ? "URL revisada" : "URLs revisadas"}</div>
               </div>
             </Link>
@@ -225,7 +225,7 @@ export default function Overview() {
       <GuidanceCard />
       <SetupBanner id={id} />
       <GscConnect compact returnTo={`/p/${id}`} hideWhenConnected />
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <DndContext id="dashboard" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
           <div className="stagger-fade grid grid-cols-1 gap-4 md:grid-cols-3">
             {items.map((w) => {

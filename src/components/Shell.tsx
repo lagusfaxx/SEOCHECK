@@ -216,13 +216,15 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
   // la sección más específica que coincide con la ruta (/content/xyz → Contenido)
   const current = [...ALL_NAV].sort((a, b) => b.href.length - a.href.length).find((n) => (n.href === "" ? path === base : path.startsWith(base + n.href)));
   // tutorial: visible la primera vez que se entra a cada sección; al cerrarlo queda oculto para siempre
-  const [seenIntro, setSeenIntro] = useLocal<string[]>("help:v3:seen", []);
+  const [seenIntro, setSeenIntro, seenLoaded] = useLocal<string[]>("help:v3:seen", []);
   const [forceIntro, setForceIntro] = useState<string | null>(null);
   const introKey = current ? current.href || "home" : "";
-  const showIntro = !!current && (forceIntro === introKey || !seenIntro.includes(introKey));
+  const showIntro = !!current && (forceIntro === introKey || (seenLoaded && !seenIntro.includes(introKey)));
   const closeIntro = () => { setForceIntro(null); if (!seenIntro.includes(introKey)) setSeenIntro([...seenIntro, introKey]); };
   const active = jobs.filter((j) => j.status === "queued" || j.status === "running" || j.status === "error");
 
+  // una función que la instalación no ofrece no ocupa lugar en el menú del cliente (la administración la sigue viendo)
+  const visible = (n: NavItem) => n.href !== "/social" || !project || project.admin || project.providers?.social !== false;
   // función y no componente: definido dentro de Shell, un componente se volvería a montar en cada render
   const navLink = (n: NavItem) => {
     const on = n === current;
@@ -266,7 +268,7 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
               <div key={g.group || "inicio"}>
                 {g.group && <div className={cx("lbl mb-1 px-3", slim && "md:hidden")}>{g.group}</div>}
                 <div className="space-y-0.5">
-                  {g.items.map(navLink)}
+                  {g.items.filter(visible).map(navLink)}
                 </div>
               </div>
             ))}

@@ -122,7 +122,7 @@ export default function Board({ data, reload, setData }: { data: KwData; reload:
   const unassigned = byTopic(null);
 
   return (
-    <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={(e: DragStartEvent) => setDrag(String(e.active.id))} onDragEnd={onEnd} onDragCancel={() => setDrag(null)}>
+    <DndContext id="clusters" sensors={sensors} collisionDetection={pointerWithin} onDragStart={(e: DragStartEvent) => setDrag(String(e.active.id))} onDragEnd={onEnd} onDragCancel={() => setDrag(null)}>
       <div className="flex items-center gap-2 pb-3">
         <button className="btn" onClick={() => setOpen(open.size ? new Set() : new Set(data.clusters.map((c) => c.id)))}>{open.size ? "Contraer" : "Expandir"}</button>
         <button className="btn" onClick={async () => { await api(`/api/p/${id}/keywords/topic`, "POST", { runId: data.runId, name: "nuevo topic" }); reload(); }}><Icon name="plus" />Topic</button>

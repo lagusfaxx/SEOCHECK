@@ -91,14 +91,14 @@ export default function KeywordsPage() {
       {data && data.runs.length > 0 && (
         <div className="flex flex-wrap items-center gap-3">
           <Tabs value={view} onChange={setView} items={[{ id: "table", label: "Tabla", icon: "table" }, { id: "board", label: "Clusters", icon: "board" }, { id: "map", label: "Mapa", icon: "map" }]} />
-          <select className="input w-auto" value={data.runId ?? ""} onChange={(e) => setRun(e.target.value)}>
+          <select className="input w-auto min-w-0 max-w-full" value={data.runId ?? ""} onChange={(e) => setRun(e.target.value)}>
             {data.runs.map((r) => (
               <option key={r.id} value={r.id}>{r.seeds.join(", ")} · {fmtDate(r.createdAt)}</option>
             ))}
           </select>
           {current?.sources?.serp && <SourceBadges s={current.sources} />}
           {current && (
-            <div className="flex gap-3 text-xs text-ink-500">
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-500">
               {current.status !== "done" && <span className={current.status === "error" ? "chip !bg-rose-100 !text-rose-700" : "chip"}>{statusLabel(current.status)}</span>}
               {current.status === "error" && (current.stats as any)?.error && <span className="text-sm text-rose-700">{String((current.stats as any).error)}</span>}
               {Object.entries(current.stats ?? {}).filter(([k]) => STAT_LABEL[k]).map(([k, v]) => (
@@ -164,7 +164,7 @@ function SourceBadges({ s }: { s: RunSources }) {
     ...(s.gsc && s.gsc !== "none" ? [["Search Console", s.gsc === "real" ? "con datos" : "falló", s.gsc === "real", ""] as [string, string, boolean, string]] : []),
   ];
   return (
-    <div className="flex gap-1.5">
+    <div className="flex flex-wrap gap-1.5">
       {items.map(([k, v, ok, extra]) => (
         <span key={k} title={(SOURCE_HELP[k] ?? "") + extra} className={cx("rounded-md px-1.5 py-0.5 text-[11px] font-medium", ok ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300")}>
           {k} · {v}

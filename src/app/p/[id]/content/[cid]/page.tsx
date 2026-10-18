@@ -291,7 +291,7 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-4 md:p-6">
+    <div className="mx-auto w-full max-w-6xl space-y-6 p-4 md:p-6">
       {/* 1. ¿Estoy optimizando la página correcta? */}
       <header className="flex flex-wrap items-end gap-x-6 gap-y-2">
         <div className="min-w-0 flex-1">
@@ -464,7 +464,7 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
                 <span className="lbl">Outline</span>
                 <button className="btn-g ml-auto" onClick={() => addBlock("nueva sección")}><Icon name="plus" />H2</button>
               </div>
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+              <DndContext id="outline" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
                 <SortableContext items={brief.outline.map((b) => b.id)} strategy={verticalListSortingStrategy}>
                   <div className="space-y-1.5">
                     {brief.outline.map((b) => (

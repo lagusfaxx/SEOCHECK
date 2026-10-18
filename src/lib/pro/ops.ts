@@ -1,3 +1,4 @@
+import { kindOf } from "../audit/insights";
 import { randomBytes } from "node:crypto";
 import { db } from "../db";
 import { admin, text, project } from "./data";
@@ -16,15 +17,17 @@ export async function today(id: string) {
     day: "2-digit",
   }).format(new Date());
   const until = new Date(new Date(day + "T00:00:00Z").getTime() + 864e5);
-  return db.projectTask.findMany({
+  const tasks = await db.projectTask.findMany({
     where: {
       projectId: id,
       status: { in: OPEN },
       OR: [{ dueAt: null }, { dueAt: { lt: until } }],
     },
     orderBy: [{ dueAt: "asc" }, { priority: "desc" }],
-    take: 100,
+    take: 200,
   });
+  // «qué hago hoy» es lo que hay que corregir: las mejoras opcionales (largo de title/meta…) quedan en Tareas
+  return tasks.filter((t) => !(t.source === "crawl" && t.code && kindOf(t.code) === "opportunity")).slice(0, 100);
 }
 async function daily(id: string) {
   const [p, tasks] = await Promise.all([project(id), today(id)]);

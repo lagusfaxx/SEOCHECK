@@ -39,9 +39,7 @@ export default function ProPage() {
   const Cur = (TABS.find((t) => t.id === tab) ?? TABS[0]).C;
   return (
     <div className="space-y-4 p-4 md:p-6">
-      <div className="overflow-x-auto">
-        <Tabs value={tab} onChange={setTab} items={TABS.map((t) => ({ id: t.id, label: t.label }))} />
-      </div>
+      <Tabs wrap value={tab} onChange={setTab} items={TABS.map((t) => ({ id: t.id, label: t.label }))} />
       <Cur />
     </div>
   );
