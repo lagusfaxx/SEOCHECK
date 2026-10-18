@@ -109,3 +109,6 @@ export function metricHelp(label: string) {
     METRIC_HELP[label.replace(/ (lab|campo|28d|90d)$/, "")]
   );
 }
+
+/** Detalle de un módulo que la instalación no ofrece (sin credenciales del servidor): el cliente no puede activarlo. */
+export const UNAVAILABLE = "No disponible en esta instalación";

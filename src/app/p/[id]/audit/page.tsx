@@ -25,7 +25,7 @@ const short = (t: string) => {
 const path = (u: string) => u.replace(/^https?:\/\/[^/]+/, "") || "/";
 /** Estado legible: una URL bloqueada por robots.txt no se pidió, no es que «no responda». */
 const statusText = (p: Pick<PageRow, "status" | "blocked" | "clientRedirect" | "error">) =>
-  p.blocked ? "Bloqueada (robots.txt)" : p.error === "blocked_by_waf" ? `${p.status} · firewall` : p.clientRedirect ? "200 · redirige" : p.status ? String(p.status) : "Sin respuesta";
+  p.blocked ? "Bloqueada" : p.error === "blocked_by_waf" ? `${p.status} · firewall` : p.clientRedirect ? "200 · redirige" : p.status ? String(p.status) : "Sin respuesta";
 /** Solo se cuentan palabras de páginas HTML que respondieron 200 y no redirigen. */
 const hasContent = (p: PageRow) => p.status === 200 && !p.blocked && !p.clientRedirect && !(p.redirects ?? []).length;
 const statusCls = (s: number) => (s === 200 ? "text-emerald-600" : s >= 300 && s < 400 ? "text-amber-600" : "text-rose-600");
@@ -341,7 +341,7 @@ function PageDrawer({ crawlId, url, onClose, onUrl, run, inline = false }: { inl
             {data.issues.length ? data.issues.map((i:any)=><div key={i.id} className="border-b border-ink-100 pb-2 text-sm"><span className={SEVERITY_TEXT[i.severity]}>{SEVERITY_LABEL[i.severity]}</span> · <b>{i.label}</b>{i.detail?` · ${i.detail}`:''}<details className="mt-1 text-xs"><summary>Cómo corregirlo</summary><p>{ISSUE_WHY[i.code]} {ISSUE_FIX[i.code]}</p></details></div>):<p className="text-sm">Sin incidencias detectadas en esta página.</p>}
           </div>
           <div className="mt-4 divide-y divide-ink-100 dark:divide-ink-800">
-            {row("Estado", <span className={p.blocked ? "text-ink-500" : statusCls(p.clientRedirect ? 301 : p.status)}>{statusText(p)}{p.blocked ? " · no se pidió" : ` · ${p.responseMs} ms`}{p.fetchError ? ` · ${p.fetchError}` : ""}</span>)}
+            {row("Estado", <span className={p.blocked ? "text-ink-500" : statusCls(p.clientRedirect ? 301 : p.status)}>{statusText(p)}{p.blocked ? " por robots.txt · no se pidió" : ` · ${p.responseMs} ms`}{p.fetchError ? ` · ${p.fetchError}` : ""}</span>)}
             {p.clientRedirect && row("Redirige a", p.clientRedirect)}
             {(p.redirects as any[]).length > 0 && row("Redirecciones", (p.redirects as any[]).map((r) => `${r.status} ${r.url}`).concat(p.finalUrl).join(" → "))}
             {row("Título", <>{p.title} <span className="text-ink-400">({p.titleLen} caracteres)</span></>)}
