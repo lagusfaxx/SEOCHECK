@@ -397,6 +397,8 @@ model Page {
   xRobots           String?
   /// motivo de una falla de red: timeout | dns | refused | reset | tls | other
   fetchError        String?
+  /// responde 200 pero redirige desde el HTML (meta refresh o redirect de Next.js): URL de destino
+  clientRedirect    String?
   /// cabeceras relevantes de la respuesta (evidencia)
   headers           Json      @default("{}")
   /// HTML recibido (hasta 2 MiB); responseTruncated indica si fue recortado.

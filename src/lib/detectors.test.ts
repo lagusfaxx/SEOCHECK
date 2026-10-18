@@ -118,6 +118,27 @@ test("robots: comodines, $, grupo de Googlebot y precedencia", () => {
   assert.equal(robotsAllows(parseRobots(""), `${S}/lo-que-sea`), true);
 });
 
+test("redirección desde el HTML: meta refresh y redirect() de Next.js en streaming (taupoc.cl/lineas)", () => {
+  // Next.js mandó el 200 con el esqueleto y después pidió redirigir: el contenido medido es el de la página de paso
+  const next = parseHtml(
+    `<html><head><title>Líneas</title><meta id="__next-page-redirect" http-equiv="refresh" content="1;url=/catalogo"/></head>
+    <body><!--$?--><template id="B:1"></template><div class="skeleton"></div><!--/$-->
+    <script>$RX("B:1","NEXT_REDIRECT;replace;/catalogo;307;")</script></body></html>`,
+    "https://tienda.cl/lineas",
+  );
+  assert.equal(next.clientRedirect, "https://tienda.cl/catalogo");
+  assert.ok(next.links.includes("https://tienda.cl/catalogo"), "el destino se rastrea");
+  const meta = parseHtml(`<html><head><meta http-equiv="Refresh" content="0; URL='https://tienda.cl/nuevo'"></head><body></body></html>`, "https://tienda.cl/viejo");
+  assert.equal(meta.clientRedirect, "https://tienda.cl/nuevo");
+  // recargar la misma página cada 5 minutos no es una redirección
+  assert.equal(parseHtml(`<html><head><meta http-equiv="refresh" content="300"></head><body></body></html>`, "https://tienda.cl/").clientRedirect, null);
+  assert.equal(parseHtml(`<html><head><meta http-equiv="refresh" content="600;url=/otra"></head><body></body></html>`, "https://tienda.cl/").clientRedirect, null);
+
+  const p = page({ url: `${S}/lineas`, clientRedirect: `${S}/catalogo`, h1: [], wordCount: 0, orphan: true, inSitemap: true } as Partial<Page> & { url: string });
+  const issues = codes([p]).filter((i) => i.url === p.url).map((i) => i.code);
+  assert.deepEqual(issues, ["client_redirect"], "solo la redirección: sin «sin H1», «poco texto» ni «huérfana»");
+});
+
 // ---------- computeIssues: un caso por regla ----------
 
 test("detectores de estado HTTP, WAF, SSRF, fetch y redirects", () => {

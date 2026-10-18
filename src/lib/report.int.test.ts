@@ -207,9 +207,9 @@ test("correr todo: sigue aunque un paso falle y salta lo que no tiene credencial
   assert.equal(c.status, "failed");
   assert.equal((c.stats as any).health, null);
   assert.equal(by.gsc.status, "skipped");
-  assert.equal(by.psi.detail, "falta PAGESPEED_API_KEY");
+  assert.equal(by.psi.detail, "no disponible en esta instalación");
   assert.equal(by.keywords.detail, "sin semillas");
-  assert.equal(by.rank.detail, "sin keywords trackeadas");
+  assert.equal(by.rank.detail, "sin keywords monitoreadas");
   assert.equal(by.backlinks.status, "skipped");
   assert.equal(by.alerts.status, "ok");
   // sin proveedor de IA configurado la orientación se salta con motivo, no falla

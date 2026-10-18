@@ -9,7 +9,14 @@ export const dynamic = "force-dynamic";
 
 export default async function Home({ searchParams }: { searchParams: Record<string, string | undefined> }) {
   const u = await pageUser();
-  const p = await db.project.findFirst({ where: { workspaceId: { in: await userWorkspaceIds(u.id) } }, orderBy: { createdAt: "asc" } });
+  // mismo filtro que la lista de proyectos: con acceso restringido no se entra a un proyecto que no le toca
+  const p = await db.project.findFirst({
+    where: {
+      workspaceId: { in: await userWorkspaceIds(u.id) },
+      OR: [{ workspace: { members: { some: { userId: u.id, role: { in: ["owner", "admin"] } } } } }, { access: { none: {} } }, { access: { some: { userId: u.id } } }],
+    },
+    orderBy: { createdAt: "asc" },
+  });
   // conserva avisos como ?verified=1 al entrar al proyecto
   const q = new URLSearchParams(Object.entries(searchParams).filter((e): e is [string, string] => typeof e[1] === "string" && ["verified", "verify_error"].includes(e[0])));
   if (p) redirect(`/p/${p.id}${q.size ? `?${q}` : ""}`);

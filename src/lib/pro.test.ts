@@ -216,6 +216,25 @@ test("ecommerce: stock indexable y canonical conservador", () => {
   assert.equal(ecommerceAnalysis([p]).rows.length, 1);
   assert.equal(ecommerceAnalysis([{ ...p, noindex: true }]).rows.length, 0);
 });
+test("ecommerce: SKU repetido en productos distintos no es «variantes» y varias ofertas no es «agotado» (taupoc.cl)", () => {
+  const a = page({ url: "https://taupoc.cl/producto/jammer-negro", template: "product", commerce: { sku: "9192", mpn: "TS703" } });
+  const b = page({ url: "https://taupoc.cl/producto/knee-negro", template: "product", commerce: { sku: "9192", mpn: "TS704" } });
+  const rows = ecommerceAnalysis([a, b]).rows;
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every((r) => r.tipo === "SKU repetido en productos distintos"));
+  const v = ecommerceAnalysis([{ ...a, commerce: { sku: "1" } }, { ...b, commerce: { sku: "1" } }]).rows;
+  assert.ok(v.every((r) => String(r.tipo).startsWith("Variantes")));
+  // una talla agotada no deja agotada la ficha
+  const html = (offers: string, body = "") =>
+    `<html><head><script type="application/ld+json">{"@type":"Product","name":"Jammer","sku":"1","offers":${offers}}</script></head><body><main><h1>Jammer</h1>${body}</main></body></html>`;
+  const two = parseHtml(html(`[{"@type":"Offer","price":1,"availability":"https://schema.org/OutOfStock"},{"@type":"Offer","price":1,"availability":"https://schema.org/InStock"}]`), "https://taupoc.cl/p");
+  assert.match(String(two.parsedExtra.commerce.availability), /InStock/);
+  // sin oferta: «agotado» en un texto cualquiera no cuenta; en el botón de compra sí
+  const loose = parseHtml(`<html><body><main><h1>Jammer</h1><p>La talla 26 está agotado hasta marzo.</p></main></body></html>`, "https://taupoc.cl/p");
+  assert.equal(loose.parsedExtra.commerce.availability, null);
+  const button = parseHtml(`<html><body><main><h1>Jammer</h1><button disabled>Agotado</button></main></body></html>`, "https://taupoc.cl/p");
+  assert.equal(button.parsedExtra.commerce.availability, "OutOfStock");
+});
 test("FAQ y Breadcrumb se comprueban contra texto visible", () => {
   const issues = checkStructuredData(
     [

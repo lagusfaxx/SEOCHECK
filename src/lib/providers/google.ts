@@ -78,7 +78,7 @@ export function gscError(e: any, site: string, who: Who = { kind: "sa", email: s
   const status = e?.response?.status ?? e?.status ?? e?.code;
   const apiMsg = e?.response?.data?.error?.message ?? e?.response?.data?.error_description ?? e?.message ?? String(e);
   const grant = e?.response?.data?.error === "invalid_grant" || /invalid_grant/.test(String(e?.message ?? ""));
-  if (grant) return new Error("La conexión con Google venció o el cliente quitó el acceso: vuelve a conectar Search Console en Ajustes.");
+  if (grant) return new Error("La conexión con Google venció o el cliente quitó el acceso: vuelve a conectarla en la sección Search Console.");
   if (status === 403)
     return new Error(
       who.kind === "oauth"

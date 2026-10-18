@@ -1,9 +1,13 @@
 import { db } from "./db";
 import { ISSUE_LABELS } from "./audit/issues";
+import { kindOf, splitIntentional } from "./audit/insights";
+import { SEVERITY_LABEL } from "./presentation";
 import { hostOf, normUrl } from "./util";
 import { nodeId, type GEdge, type GNode, type GResult, type GType } from "./graph-types";
 
 const f0 = (n: number | null | undefined) => (n == null ? "–" : Math.round(n).toLocaleString("es-CL"));
+/** Volumen de búsquedas: 0 en un cluster o topic es «sin dato medido», no «nadie lo busca». */
+const vol = (n: number | null | undefined) => (n ? `${f0(n)} búsq./mes` : "sin volumen");
 const pathOf = (u: string) => {
   const p = u.replace(/^https?:\/\/[^/]+/, "") || "/";
   try {
@@ -31,7 +35,7 @@ function pageNode(ctx: Ctx, url: string, sub?: string) {
 }
 
 async function latestCrawl(projectId: string) {
-  return db.crawl.findFirst({ where: { projectId, private: false, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" }, select: { id: true } });
+  return db.crawl.findFirst({ where: { projectId, private: false, status: { in: ["completed", "partial"] } }, orderBy: { startedAt: "desc" }, select: { id: true, stats: true } });
 }
 
 async function latestRun(projectId: string) {
@@ -73,7 +77,7 @@ export async function expand(projectId: string, type: GType, key: string, t: str
       if (!run) return empty("Sin research de keywords");
       const topics = await db.topic.findMany({ where: { runId: run.id }, include: { clusters: { select: { volume: true } } } });
       for (const tp of topics.sort((a, b) => b.clusters.reduce((s, c) => s + c.volume, 0) - a.clusters.reduce((s, c) => s + c.volume, 0)))
-        link(mk("topic", tp.id, tp.name, { sub: `${tp.clusters.length} clusters · ${f0(tp.clusters.reduce((s, c) => s + c.volume, 0))} vol.` }));
+        link(mk("topic", tp.id, tp.name, { sub: `${tp.clusters.length} clusters · ${vol(tp.clusters.reduce((s, c) => s + c.volume, 0))}` }));
       break;
     }
     case "site.competitors": {
@@ -98,10 +102,20 @@ export async function expand(projectId: string, type: GType, key: string, t: str
     case "site.issues": {
       const crawl = await latestCrawl(projectId);
       if (!crawl) return empty("Sin crawl");
-      const g = await db.issue.groupBy({ by: ["code", "severity"], where: { crawlId: crawl.id }, _count: true });
+      // los mismos problemas que el informe: sin lo intencional (filtros con noindex, canonical de variantes…)
+      const [all, pgs] = await Promise.all([
+        db.issue.findMany({ where: { crawlId: crawl.id }, select: { url: true, code: true, severity: true, detail: true } }),
+        db.page.findMany({ where: { crawlId: crawl.id }, select: { url: true, status: true, depth: true, error: true, canonical: true } }),
+      ]);
+      const { real } = splitIntentional(all, pgs, { hitLimit: Boolean((crawl.stats as { limitReached?: boolean } | null)?.limitReached) });
+      const g = new Map<string, { code: string; severity: string; n: number }>();
+      for (const i of real) {
+        const k = `${i.code}|${i.severity}`;
+        g.set(k, { code: i.code, severity: i.severity, n: (g.get(k)?.n ?? 0) + 1 });
+      }
       const order = { critical: 0, warning: 1, info: 2 } as Record<string, number>;
-      for (const i of g.sort((a, b) => order[a.severity] - order[b.severity] || b._count - a._count))
-        link(mk("issue", i.code, ISSUE_LABELS[i.code] ?? i.code, { sub: `${i.severity === "critical" ? "crítico" : i.severity} · ${f0(i._count)} URL${i._count === 1 ? "" : "s"}` }));
+      for (const i of [...g.values()].sort((a, b) => order[a.severity] - order[b.severity] || b.n - a.n))
+        link(mk("issue", i.code, ISSUE_LABELS[i.code] ?? i.code, { sub: `${kindOf(i.code) === "opportunity" ? "Opcional" : SEVERITY_LABEL[i.severity] ?? i.severity} · ${f0(i.n)} URL${i.n === 1 ? "" : "s"}` }));
       break;
     }
     case "site.gsc_queries":
@@ -115,12 +129,12 @@ export async function expand(projectId: string, type: GType, key: string, t: str
     }
     case "topic.clusters": {
       const cs = await db.cluster.findMany({ where: { projectId, topicId: key }, orderBy: { volume: "desc" }, include: { _count: { select: { keywords: true } } } });
-      for (const c of cs) link(mk("cluster", c.id, c.name, { sub: `${f0(c.volume)} vol. · ${c._count.keywords} kw` }));
+      for (const c of cs) link(mk("cluster", c.id, c.name, { sub: `${vol(c.volume)} · ${c._count.keywords} keywords` }));
       break;
     }
     case "cluster.keywords": {
       const ks = await db.keyword.findMany({ where: { projectId, clusterId: key, excluded: false }, orderBy: [{ volume: { sort: "desc", nulls: "last" } }], take: 30 });
-      for (const k of ks) link(mk("keyword", k.term, k.term, { sub: k.volume != null ? `${f0(k.volume)} vol.` : undefined }));
+      for (const k of ks) link(mk("keyword", k.term, k.term, { sub: k.volume != null ? vol(k.volume) : undefined }));
       break;
     }
     case "cluster.serp": {
@@ -156,7 +170,7 @@ export async function expand(projectId: string, type: GType, key: string, t: str
     case "keyword.cluster": {
       const k = await db.keyword.findFirst({ where: { projectId, term: key }, include: { cluster: true } });
       if (!k?.cluster) return empty("No está en un cluster");
-      link(mk("cluster", k.cluster.id, k.cluster.name, { sub: `${f0(k.cluster.volume)} vol.` }), undefined, true);
+      link(mk("cluster", k.cluster.id, k.cluster.name, { sub: vol(k.cluster.volume) }), undefined, true);
       break;
     }
     case "page.inlinks":
@@ -226,8 +240,8 @@ export async function graphSearch(projectId: string, q: string): Promise<GNode[]
     crawl ? db.page.findMany({ where: { crawlId: crawl.id, url: { contains: term, mode: "insensitive" } }, take: 8, select: { url: true } }) : [],
   ]);
   const out: GNode[] = [
-    ...kws.map((k) => mk("keyword", k.term, k.term, { sub: k.volume != null ? `${f0(k.volume)} vol.` : undefined })),
-    ...cls.map((c) => mk("cluster", c.id, c.name, { sub: `${f0(c.volume)} vol.` })),
+    ...kws.map((k) => mk("keyword", k.term, k.term, { sub: k.volume != null ? vol(k.volume) : undefined })),
+    ...cls.map((c) => mk("cluster", c.id, c.name, { sub: vol(c.volume) })),
     ...pages.map((x) => pageNode(ctx, x.url)),
   ];
   // un dominio escrito tal cual

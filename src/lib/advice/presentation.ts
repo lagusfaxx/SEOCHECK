@@ -104,7 +104,8 @@ export function visibleColumns(kind: string, keys: string[], view: View) {
   return useful.length ? useful : all.slice(0, 6);
 }
 export function displayValue(key: string, value: unknown) {
-  if (value == null) return "Sin datos";
+  // en una métrica, vacío es «Sin datos» (no 0); en responsable o fecha límite es simplemente «sin asignar»
+  if (value == null) return ["responsable", "vence", "assignee", "dueAt"].includes(key) ? "—" : "Sin datos";
   if (typeof value === "boolean") return value ? "Sí" : "No";
   const values: Record<string, string> = {
     product: "Ficha de producto",

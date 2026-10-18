@@ -169,7 +169,7 @@ export async function generateAdvice(
       reason: !plan.profile.aiEnabled
         ? "desactivada"
         : !provider
-          ? "IA no configurada"
+          ? "explicaciones con IA no disponibles en esta instalación"
           : "sin acciones que explicar",
     };
   const cache = await cached(id, hash);

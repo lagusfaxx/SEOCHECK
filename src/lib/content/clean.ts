@@ -66,7 +66,7 @@ export function classifyPage(url: string, p: PageData, editorial: number): PageT
   const has = (...xs: string[]) => xs.some((x) => types.includes(x));
   const h2 = p.headings.filter((h) => h.tag === "h2").length;
   const s = p.signals;
-  if (has("article", "blogposting", "newsarticle", "techarticle")) return "article";
+  if (has("article", "blogposting", "newsarticle", "techarticle", "howto", "faqpage")) return "article";
   if (has("product", "offer", "aggregateoffer")) return "detail";
   if (has("itemlist", "collectionpage", "searchresultspage")) return "listing";
   if (s.linkGroup >= 8 && editorial < 600) return "listing";
@@ -77,7 +77,8 @@ export function classifyPage(url: string, p: PageData, editorial: number): PageT
   if (editorial >= 700 && h2 >= 3) return "article";
   if (s.linkGroup >= 8) return "listing";
   if (has("person", "profilepage", "localbusiness") || s.price) return "detail";
-  return editorial >= 400 ? "article" : "detail";
+  // sin precio, carrito ni perfil no es una ficha: una guía corta con varias secciones es contenido
+  return editorial >= 400 || h2 >= 3 ? "article" : "detail";
 }
 
 /** Tipo mayoritario; en empate gana el de mejor posición promedio. */
@@ -148,4 +149,18 @@ export function cleanTitle(title: string | null, siblingTitles: (string | null)[
   const common = mine.filter((seg) => others.every((o) => o.includes(seg)));
   const kept = mine.filter((seg) => !common.includes(seg));
   return (kept.length ? kept : mine).join(" ");
+}
+
+/** Palabras muy frecuentes de cada idioma: bastan para distinguir un texto en español de uno en inglés o portugués. */
+const LANG_WORDS: Record<string, Set<string>> = {
+  es: new Set("de la que el en los del las por con para una es se lo como más pero sus le ya o este sí porque esta entre cuando muy sin sobre también hasta hay donde desde todo nos durante uno ni contra ese eso".split(" ")),
+  en: new Set("the and of to in is for with you your that this it are on be as at by from or an have not can will more our all".split(" ")),
+  pt: new Set("de que não uma para com os no se na por mais as dos como mas ao ele das à seu sua ou quando muito nos já também só pelo pela até isso".split(" ")),
+};
+/** Idioma predominante del texto (es | en | pt) o null si no hay señales suficientes. */
+export function textLang(text: string): string | null {
+  const words = text.toLowerCase().split(/[^a-záéíóúñüçãõâêô]+/).filter(Boolean).slice(0, 3000);
+  const score = Object.entries(LANG_WORDS).map(([l, set]) => [l, words.filter((w) => set.has(w)).length] as const).sort((a, b) => b[1] - a[1]);
+  const [best, second] = score;
+  return best[1] >= 15 && best[1] >= second[1] * 1.5 ? best[0] : null;
 }

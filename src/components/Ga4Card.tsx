@@ -19,6 +19,8 @@ export function Ga4Card({ data, onChange }: { data: Ga4Data; onChange: () => voi
   const { id, project } = useProject();
   const domain = project?.domain ?? "el sitio";
   const { data: st, mutate } = useApi<Status>(`/api/p/${id}/ga4/status`);
+  // sin la conexión con Google en la instalación el botón no puede funcionar: no se ofrece
+  const { data: conn } = useApi<{ oauthConfigured: boolean }>(`/api/p/${id}/gsc/connection`);
   const [pick, setPick] = useState(false);
   type Prop = { property: string; displayName: string; account: string; sites: string[] };
   const { data: props, error: propsErr } = useApi<Prop[]>(pick ? `/api/p/${id}/ga4/properties` : null);
@@ -73,7 +75,7 @@ export function Ga4Card({ data, onChange }: { data: Ga4Data; onChange: () => voi
                 ? "La conexión de Google no incluye permiso de Analytics: vuelve a conectar y marca la casilla de Google Analytics."
                 : "Conecta tu cuenta de Google para ver ventas y contactos que trae el SEO."}
           </span>
-          <button className="btn-p" disabled={connecting} onClick={connect}>{st.connected ? "Volver a conectar Google" : "Conectar Google"}</button>
+          {conn?.oauthConfigured && <button className="btn-p" disabled={connecting} onClick={connect}>{st.connected ? "Volver a conectar Google" : "Conectar Google"}</button>}
         </div>
       )}
       {!st ? null : (!st.connected || !st.hasScope) && (!data || data.empty) ? null : !st.property || pick ? (

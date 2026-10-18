@@ -38,7 +38,7 @@ function ClusterCard({ c, kws, open, onToggle, onPillar, onRename, onUnlock }: {
         <IntentChip intent={c.intent} />
       </div>
       <button onClick={onToggle} className="mt-1 flex w-full items-center gap-2 text-xs text-ink-500">
-        <span className="tabular-nums">{fmt(c.volume)} vol</span>
+        <span className="tabular-nums" title={c.volume == null ? "Sin datos de volumen para estas keywords" : "Búsquedas al mes (suma del cluster)"}>{c.volume == null ? "sin volumen" : `${fmt(c.volume)} búsq./mes`}</span>
         <span>·</span>
         <span>{kws.length} kw</span>
         <Icon name={open ? "up" : "down"} className="ml-auto h-3 w-3" />
@@ -50,7 +50,7 @@ function ClusterCard({ c, kws, open, onToggle, onPillar, onRename, onUnlock }: {
 
 function TopicCol({ t, clusters, children, onRename, onDelete, onUnlock }: { t: Tp | null; clusters: Cl[]; children: React.ReactNode; onRename?: (n: string) => void; onDelete?: () => void; onUnlock?: () => void }) {
   const drop = useDroppable({ id: `t:${t?.id ?? "none"}` });
-  const vol = clusters.reduce((s, c) => s + c.volume, 0);
+  const vol = clusters.some((c) => c.volume != null) ? clusters.reduce((s, c) => s + (c.volume ?? 0), 0) : null;
   return (
     <div ref={drop.setNodeRef} className={cx("flex w-72 shrink-0 flex-col rounded-xl bg-ink-100/70 p-2 dark:bg-ink-900/60", t?.forcedSplit && "border border-dashed border-amber-400/70 bg-amber-50/40 dark:bg-amber-950/10", drop.isOver && "ring-2 ring-acc")}>
       <div className="flex items-center gap-1 px-1 pb-2">
@@ -60,7 +60,7 @@ function TopicCol({ t, clusters, children, onRename, onDelete, onUnlock }: { t: 
           <span className="flex-1 text-sm font-semibold text-ink-400">sin topic</span>
         )}
         {t && <Lock on={t.nameLocked} onUnlock={() => onUnlock?.()} title="nombre fijado" />}
-        {t?.forcedSplit && <span className="rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" title="split forzado: HDBSCAN no separó, agrupado por average linkage">forzado</span>}
+        {t?.forcedSplit && <span className="rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" title="Agrupado de forma aproximada: el algoritmo no encontró una separación clara">forzado</span>}
         <span className="text-xs tabular-nums text-ink-400">{fmt(vol)}</span>
         {onDelete && <button className="btn-g p-0.5" onClick={onDelete}><Icon name="x" className="h-3 w-3" /></button>}
       </div>
@@ -79,7 +79,7 @@ export default function Board({ data, reload, setData }: { data: KwData; reload:
     for (const k of data.keywords) if (k.clusterId && !k.excluded) m.set(k.clusterId, [...(m.get(k.clusterId) ?? []), k]);
     return m;
   }, [data.keywords]);
-  const byTopic = (tid: string | null) => data.clusters.filter((c) => c.topicId === tid).sort((a, b) => Number(b.isPillar) - Number(a.isPillar) || b.volume - a.volume);
+  const byTopic = (tid: string | null) => data.clusters.filter((c) => c.topicId === tid).sort((a, b) => Number(b.isPillar) - Number(a.isPillar) || (b.volume ?? 0) - (a.volume ?? 0));
   const patch = (body: object) => api(`/api/p/${id}/keywords`, "PATCH", body);
 
   const onEnd = async (e: DragEndEvent) => {
@@ -122,7 +122,7 @@ export default function Board({ data, reload, setData }: { data: KwData; reload:
   const unassigned = byTopic(null);
 
   return (
-    <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={(e: DragStartEvent) => setDrag(String(e.active.id))} onDragEnd={onEnd} onDragCancel={() => setDrag(null)}>
+    <DndContext id="clusters" sensors={sensors} collisionDetection={pointerWithin} onDragStart={(e: DragStartEvent) => setDrag(String(e.active.id))} onDragEnd={onEnd} onDragCancel={() => setDrag(null)}>
       <div className="flex items-center gap-2 pb-3">
         <button className="btn" onClick={() => setOpen(open.size ? new Set() : new Set(data.clusters.map((c) => c.id)))}>{open.size ? "Contraer" : "Expandir"}</button>
         <button className="btn" onClick={async () => { await api(`/api/p/${id}/keywords/topic`, "POST", { runId: data.runId, name: "nuevo topic" }); reload(); }}><Icon name="plus" />Topic</button>
@@ -131,7 +131,7 @@ export default function Board({ data, reload, setData }: { data: KwData; reload:
       <div className="flex h-[calc(100vh-240px)] gap-3 overflow-x-auto pb-4">
         {data.topics
           .map((t) => ({ t, cs: byTopic(t.id) }))
-          .sort((a, b) => b.cs.reduce((s, c) => s + c.volume, 0) - a.cs.reduce((s, c) => s + c.volume, 0))
+          .sort((a, b) => b.cs.reduce((s, c) => s + (c.volume ?? 0), 0) - a.cs.reduce((s, c) => s + (c.volume ?? 0), 0))
           .map(({ t, cs }) => (
             <TopicCol
               key={t.id}

@@ -7,7 +7,7 @@ import { llmProvider } from "../providers";
 import { getSerp } from "../serp";
 import { ngrams, tf, tokens } from "../text";
 import { hostOf, median, urlKey } from "../util";
-import { boilerplateOf, brandOf, classifyPage, cleanTitle, contentText, detectLocation, editorialWords, majorityType, PAGE_TYPE_LABEL, polishTitle, properNounLeads, STOP_UI, type PageType } from "./clean";
+import { textLang, boilerplateOf, brandOf, classifyPage, cleanTitle, contentText, detectLocation, editorialWords, majorityType, PAGE_TYPE_LABEL, polishTitle, properNounLeads, STOP_UI, type PageType } from "./clean";
 import { jobProgress } from "../queue";
 import { jobLog } from "../jobctx";
 import { storeBrief } from "./brief-tools";
@@ -210,8 +210,13 @@ export async function analyzeContent(id: string, jobRunId?: string) {
       return r.pd && r.pd.status === 200 && r.pd.wordCount > 100 ? { o, pd: r.pd, boiler: r.boiler, title: r.title } : null;
     }),
   ]);
-  const competitors = compR.filter(Boolean) as { o: (typeof top)[number]; pd: PageData; boiler: Set<string>; title: string }[];
-  if (!competitors.length) throw new Error("No se pudo leer ningún competidor");
+  const read = compR.filter(Boolean) as { o: (typeof top)[number]; pd: PageData; boiler: Set<string>; title: string }[];
+  if (!read.length) throw new Error("No se pudo leer ningún competidor");
+  // páginas en otro idioma (sitios de marcas extranjeras) no sirven de referencia: sus términos no son los del cliente
+  const competitors = read.filter((c) => { const l = textLang(c.pd.text); return !l || l === p.language; });
+  const otherLang = read.length - competitors.length;
+  if (otherLang) await jobLog("info", `${otherLang} competidor(es) en otro idioma no se usan como referencia`);
+  if (!competitors.length) throw new Error("Los resultados de Google que se pudieron leer están en otro idioma: no hay páginas comparables para esta keyword");
   const minePd = mineR.pd && mineR.pd.status === 200 ? mineR.pd : null;
   const mineBoiler = mineR.boiler;
 
@@ -298,16 +303,19 @@ export async function analyzeContent(id: string, jobRunId?: string) {
   const schema = [...schemaCount.entries()].sort((x, y) => y[1] - x[1]).map(([type, count]) => ({ type, count, mine: mySchema.has(type) }));
 
   // Largo: mediana del texto editorial del top 10 del mismo tipo de página
+  // con menos de 3 páginas comparables la «mediana» es una o dos páginas (p. ej. Wikipedia): no se fija un largo.
+  // 0 = no medible (no penaliza ni se recomienda alargar)
   const sameType = comps.filter((c) => c.type === pageType);
-  let targetWords = Math.round(median((sameType.length ? sameType : comps).map((c) => c.editorial)));
+  const lengthBasis = sameType.length >= 3 ? sameType : comps.length >= 3 ? comps : [];
+  let targetWords = lengthBasis.length ? Math.round(median(lengthBasis.map((c) => c.editorial))) : 0;
   // listados de puras tarjetas dan ~0: igual conviene una intro corta arriba del listado
-  if (pageType === "listing") targetWords = Math.max(targetWords, 60);
+  if (pageType === "listing" && lengthBasis.length) targetWords = Math.max(targetWords, 60);
   const wsum = terms.reduce((s, t) => s + t.weight, 0) || 1;
   const sTerms = terms.reduce((s, t) => s + (t.mine ? t.weight * Math.min(1, t.mine / t.target) : 0), 0) / wsum;
   const sLen = targetWords ? Math.min(1, myEditorial / (targetWords * 0.9)) : 1;
   const sSec = sections.length ? sections.filter((s) => s.covered).length / sections.length : 1;
   const sPaa = paa.length ? paa.filter((x) => x.answered).length / paa.length : 1;
-  const common = schema.filter((s) => s.count >= Math.ceil(N * 0.3));
+  const common = schema.filter((s) => s.count >= Math.max(2, Math.ceil(N * 0.3)));
   const sSchema = common.length ? common.filter((s) => s.mine).length / common.length : 1;
   // en listados las secciones H2 pesan menos que en artículos
   const wSec = pageType === "listing" ? 10 : 20;
@@ -451,7 +459,7 @@ async function generateBrief(r: ContentResult, language: string, country: string
     if (listing) {
       const out = await llm.json<{ titles: string[]; metas: string[]; intro: string; filters: string[]; links: { anchor: string; to: string }[]; faq: { q: string; a: string }[]; notes: string[] }>(
         system,
-        `El top 10 de Google para esta keyword son mayormente LISTADOS/directorios. No escribas un artículo: genera el brief de una página de listado.\n\nFormato:\n{"titles": [5 strings], "metas": [3 strings], "intro": "texto de introducción de 60 a 120 palabras, sobre el listado, que use los términos clave sin repetirlos", "filters": [4 a 8 filtros/facetas útiles para este listado], "links": [{"anchor": texto del link, "to": ruta exacta tomada de urls_internas_existentes}] (0 a 8, solo rutas que existan), "faq": [{"q": string, "a": respuesta de 1-2 frases}] (3 a 5), "notes": [máx 4 indicaciones concretas]}\n\nEl objetivo de palabras editoriales (sin contar tarjetas) es ~${r.targetWords}.\n\n${JSON.stringify(input)}`,
+        `El top 10 de Google para esta keyword son mayormente LISTADOS/directorios. No escribas un artículo: genera el brief de una página de listado.\n\nFormato:\n{"titles": [5 strings], "metas": [3 strings], "intro": "texto de introducción de 60 a 120 palabras, sobre el listado, que use los términos clave sin repetirlos", "filters": [4 a 8 filtros/facetas útiles para este listado], "links": [{"anchor": texto del link, "to": ruta exacta tomada de urls_internas_existentes}] (0 a 8, solo rutas que existan), "faq": [{"q": string, "a": respuesta de 1-2 frases}] (3 a 5), "notes": [máx 4 indicaciones concretas]}\n\n${r.targetWords ? `El objetivo de palabras editoriales (sin contar tarjetas) es ~${r.targetWords}.` : "No hay un largo de referencia: no alargues el texto, agrega solo información útil."}\n\n${JSON.stringify(input)}`,
         12000,
         "medium"
       );
@@ -470,7 +478,7 @@ async function generateBrief(r: ContentResult, language: string, country: string
     }
     const out = await llm.json<Omit<Brief, "outline"> & { outline: { tag: "h2" | "h3"; text: string; notes?: string }[] }>(
       system,
-      `Con este análisis de SERP genera el brief.\n\nFormato:\n{"titles": [5 strings], "metas": [3 strings], "outline": [{"tag":"h2"|"h3","text": string,"notes": string corto con términos a cubrir}], "faq": [{"q": string,"a": respuesta de 2-3 frases}], "notes": [máx 5 indicaciones concretas]}\n\nEl outline cubre las secciones comunes, los términos faltantes y las PAA sin responder. FAQ de 4 a 8 preguntas. Objetivo de palabras editoriales: ~${r.targetWords}.\n\n${JSON.stringify(input)}`,
+      `Con este análisis de SERP genera el brief.\n\nFormato:\n{"titles": [5 strings], "metas": [3 strings], "outline": [{"tag":"h2"|"h3","text": string,"notes": string corto con términos a cubrir}], "faq": [{"q": string,"a": respuesta de 2-3 frases}], "notes": [máx 5 indicaciones concretas]}\n\nEl outline cubre las secciones comunes, los términos faltantes y las PAA sin responder. FAQ de 4 a 8 preguntas. ${r.targetWords ? `Objetivo de palabras editoriales: ~${r.targetWords}.` : "No hay un largo de referencia: no alargues el texto, agrega solo información útil."}\n\n${JSON.stringify(input)}`,
       16000,
       "medium"
     );

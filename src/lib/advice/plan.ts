@@ -1,4 +1,5 @@
 /** Recomendaciones deterministas: la IA solo puede explicar estas acciones y citar su evidencia. */
+import { kindOf } from "../audit/insights";
 export type SiteType =
   | "auto"
   | "ecommerce"
@@ -25,6 +26,8 @@ export type Action = {
   href: string;
   taskId?: string;
   affected: number;
+  /** sección del sitio (/producto/*) cuando la misma acción aparece en varias */
+  pattern?: string | null;
   evidence: Evidence[];
   ai?: {
     explanation: string;
@@ -110,7 +113,7 @@ export type Input = {
   /** cómo verificar cada código de issue (ISSUE_VERIFY), para no caer en un texto genérico */
   verify?: Record<string, string>;
 };
-export const RULES_VERSION = "advice-2026-10-16-v1";
+export const RULES_VERSION = "advice-2026-10-18-v2";
 export const SITE_LABELS: Record<SiteType, string> = {
   auto: "Detectar según el sitio",
   ecommerce: "Tienda online",
@@ -246,14 +249,18 @@ export function buildPlan(input: Input): Plan {
         : articles.length && articles.length >= live.length / 2
           ? "content"
           : "general";
+  // las mejoras opcionales (largo de title/meta, alt…) quedan en Tareas: el plan es para lo que sí conviene corregir
+  const confirmedFirst = (code: string | null) => (code && kindOf(code) === "confirmed" ? 1 : 0);
   const actions: Action[] = input.groups
     .filter((g) =>
-      g.members.some((t) => !["resolved", "ignored"].includes(t.status)),
+      g.members.some((t) => !["resolved", "ignored"].includes(t.status)) &&
+      !(g.code && kindOf(g.code) === "opportunity" && g.members.every((t) => t.source === "crawl")),
     )
     .sort(
       (a, b) =>
         (({ critical: 3, warning: 2, info: 1 })[b.severity] ?? 1) -
           ({ critical: 3, warning: 2, info: 1 }[a.severity] ?? 1) ||
+        confirmedFirst(b.code) - confirmedFirst(a.code) ||
         b.priority - a.priority,
     )
     .slice(0, 20)
@@ -265,7 +272,7 @@ export function buildPlan(input: Input): Plan {
         "orphan",
         "category_no_main",
         "main_duplicate",
-      ].includes(g.code ?? "")
+      ].includes(g.code ?? "") || (g.code && g.members.every((t) => t.source === "crawl") && kindOf(g.code) === "possible")
         ? "hipótesis"
         : g.members.every((t) => t.source === "manual")
           ? "revisión manual"
@@ -292,6 +299,7 @@ export function buildPlan(input: Input): Plan {
         href: `tasks?task=${encodeURIComponent(g.id)}`,
         taskId: g.id,
         affected: g.affected,
+        pattern: g.pattern,
         evidence: g.members
           .filter((t) => !["resolved", "ignored"].includes(t.status))
           .slice(0, 3)

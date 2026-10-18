@@ -3,6 +3,7 @@
  * si falta configurarlo o si nunca se corrió. Así el informe y el resumen no confunden "sin datos" con "falló".
  */
 import { db } from "./db";
+import { UNAVAILABLE } from "./presentation";
 import { env } from "./env";
 import { QUEUES } from "./queue";
 import { gscAvailable } from "./providers/google";
@@ -50,7 +51,7 @@ export async function coverage(projectId: string): Promise<Module[]> {
   // PageSpeed
   const psiCount = await db.psiResult.count({ where: { projectId } });
   const psiJob = await lastJob(projectId, QUEUES.psi);
-  if (!env.psiKey && !psiCount) out.push({ key: "psi", label: "PageSpeed", state: "missing", detail: "Falta PAGESPEED_API_KEY" });
+  if (!env.psiKey && !psiCount) out.push({ key: "psi", label: "PageSpeed", state: "missing", detail: UNAVAILABLE });
   else if (psiJob?.status === "error") out.push({ key: "psi", label: "PageSpeed", state: "failed", detail: `La última medición falló: ${psiJob.message ?? "sin detalle"}` });
   else if (psiCount) out.push({ key: "psi", label: "PageSpeed", state: "ok", detail: `${psiCount} mediciones` });
   else out.push({ key: "psi", label: "PageSpeed", state: "never", detail: "Disponible, sin medir aún" });
@@ -75,7 +76,7 @@ export async function coverage(projectId: string): Promise<Module[]> {
   const tracked = await db.trackedKeyword.count({ where: { projectId, active: true } });
   const rankJob = await lastJob(projectId, QUEUES.rankOne);
   const lastCheck = await db.rankCheck.findFirst({ where: { tracked: { projectId } }, orderBy: { date: "desc" }, select: { date: true } });
-  if (!env.serpentKey) out.push({ key: "rank", label: "Rankings", state: "missing", detail: "Falta SERPENT_API_KEY" });
+  if (!env.serpentKey) out.push({ key: "rank", label: "Rankings", state: "missing", detail: UNAVAILABLE });
   else if (!tracked) out.push({ key: "rank", label: "Rankings", state: "never", detail: "Sin keywords trackeadas" });
   else if (rankJob?.status === "error") out.push({ key: "rank", label: "Rankings", state: "failed", detail: `La última revisión falló: ${rankJob.message ?? "sin detalle"}` });
   else if (lastCheck) out.push({ key: "rank", label: "Rankings", state: "ok", detail: `${tracked} keywords, revisadas el ${day(lastCheck.date)}` });
@@ -94,22 +95,22 @@ export async function coverage(projectId: string): Promise<Module[]> {
   const aiLast = await db.aiCheck.findFirst({ where: { projectId }, orderBy: { checkedAt: "desc" }, select: { checkedAt: true } });
   const localLast = await db.localRank.findFirst({ where: { projectId }, orderBy: { checkedAt: "desc" }, select: { checkedAt: true } });
   const localCfg = ((p.settings ?? {}) as any).local ?? {};
-  if (!env.serpentKey) out.push({ key: "ai", label: "Visibilidad en IA", state: "missing", detail: "No disponible en este servidor" });
+  if (!env.serpentKey) out.push({ key: "ai", label: "Visibilidad en IA", state: "missing", detail: UNAVAILABLE });
   else if (aiLast) out.push({ key: "ai", label: "Visibilidad en IA", state: "ok", detail: `Revisada el ${day(aiLast.checkedAt)}` });
   else out.push({ key: "ai", label: "Visibilidad en IA", state: "never", detail: tracked ? "Se revisa al ejecutar el análisis completo" : "Requiere keywords en Rankings" });
-  if (!env.serpentKey) out.push({ key: "local", label: "SEO local", state: "missing", detail: "No disponible en este servidor" });
+  if (!env.serpentKey) out.push({ key: "local", label: "SEO local", state: "missing", detail: UNAVAILABLE });
   else if (localLast) out.push({ key: "local", label: "SEO local", state: "ok", detail: `Revisado el ${day(localLast.checkedAt)}` });
   else out.push({ key: "local", label: "SEO local", state: "never", detail: localCfg.location && localCfg.keywords?.length ? "Se revisa al ejecutar el análisis completo" : "Falta configurar ciudad y keywords (Resultados)" });
 
   // Keyword gap (DataForSEO Labs, mensual)
   const gapLast = await db.keywordGap.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { createdAt: true, errors: true } });
-  if (!env.dfsLogin || !env.dfsPassword) out.push({ key: "gap", label: "Keyword gap", state: "missing", detail: "No disponible en este servidor" });
+  if (!env.dfsLogin || !env.dfsPassword) out.push({ key: "gap", label: "Keyword gap", state: "missing", detail: UNAVAILABLE });
   else if (gapLast) out.push({ key: "gap", label: "Keyword gap", state: gapLast.errors.length ? "partial" : "ok", detail: `Calculado el ${day(gapLast.createdAt)}` });
   else out.push({ key: "gap", label: "Keyword gap", state: "never", detail: "Se calcula al ejecutar el análisis completo" });
 
   // Backlinks (cuenta DataForSEO del servidor: el cliente no configura nada)
   const bl = await db.backlinkSnapshot.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { createdAt: true, errors: true } });
-  if (!env.dfsLogin || !env.dfsPassword) out.push({ key: "backlinks", label: "Backlinks", state: "missing", detail: "No disponible en este servidor" });
+  if (!env.dfsLogin || !env.dfsPassword) out.push({ key: "backlinks", label: "Backlinks", state: "missing", detail: UNAVAILABLE });
   else if (!bl) out.push({ key: "backlinks", label: "Backlinks", state: "never", detail: "Se obtienen al ejecutar el análisis completo" });
   else out.push({ key: "backlinks", label: "Backlinks", state: bl.errors.length ? "partial" : "ok", detail: `Foto del ${day(bl.createdAt)}${bl.errors.length ? ` (${bl.errors.length} parte(s) sin datos)` : ""}` });
 

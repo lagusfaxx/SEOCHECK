@@ -51,7 +51,7 @@ let rawLogsLeft = Number(process.env.SERPENT_LOG_RAW ?? 3);
 
 export class SerpentProvider implements SerpProvider {
   private async call(path: "/api/search" | "/api/search/quick", q: string, params: Record<string, string>) {
-    if (!env.serpentKey) throw new ProviderError("Serpent", "not_configured", "Falta SERPENT_API_KEY");
+    if (!env.serpentKey) throw new ProviderError("Serpent", "not_configured", "Las búsquedas en Google no están habilitadas en esta instalación (falta SERPENT_API_KEY)");
     const p = new URLSearchParams({ q, ...params });
     let last: unknown;
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -100,7 +100,7 @@ export class SerpentProvider implements SerpProvider {
  * informa tal cual. El host de Maps puede ser api.apiserpent.com: si el principal da 404 se prueba ese.
  */
 export async function serpentGet(path: string, params: Record<string, string>): Promise<any> {
-  if (!env.serpentKey) throw new ProviderError("Serpent", "not_configured", "Falta SERPENT_API_KEY");
+  if (!env.serpentKey) throw new ProviderError("Serpent", "not_configured", "Las búsquedas en Google no están habilitadas en esta instalación (falta SERPENT_API_KEY)");
   const qs = new URLSearchParams(params).toString();
   const hosts = [env.serpentBase, ...(env.serpentBase === "https://apiserpent.com" ? ["https://api.apiserpent.com"] : [])];
   let lastErr: unknown;

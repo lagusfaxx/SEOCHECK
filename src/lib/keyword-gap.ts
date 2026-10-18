@@ -83,7 +83,7 @@ export function relevantGap<T extends { keyword: string }>(items: T[], vocab: It
 // ---------- llamadas ----------
 
 export async function runKeywordGap(projectId: string, opts: { force?: boolean } = {}) {
-  if (!backlinksConfigured()) return { skipped: "no disponible en este servidor" };
+  if (!backlinksConfigured()) return { skipped: "no disponible en esta instalación" };
   const p = await db.project.findUniqueOrThrow({ where: { id: projectId } });
   const recent = await db.keywordGap.findFirst({ where: { projectId, createdAt: { gte: new Date(Date.now() - GAP_REFRESH_DAYS * DAY) } } });
   if (recent && !opts.force) return { reused: true };
@@ -137,6 +137,8 @@ export async function gapOverview(projectId: string) {
   const { relevant, discarded } = vocab.length ? relevantGap(all, vocab) : { relevant: all, discarded: [] as GapItem[] };
   const items = relevant;
   return {
+    /** sin proveedor la brecha no se va a calcular: la pantalla no promete datos que no llegarán */
+    configured: backlinksConfigured(),
     gap: g
       ? {
           at: g.createdAt.toISOString(),

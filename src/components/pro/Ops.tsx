@@ -97,7 +97,7 @@ export default function Ops() {
         ]}
       />
       {data && (
-        <section className="rounded border p-4">
+        <section className="card p-4">
           <h3 className="font-medium">Canales configurados</h3>
           {!data.hooks.length && <p>No hay canales configurados.</p>}
           {data.hooks.map((h: any) => (
@@ -124,7 +124,7 @@ export default function Ops() {
         </section>
       )}
       {access && (
-        <section className="rounded border p-4">
+        <section className="card p-4">
           <h3>Acceso restringido</h3>
           {access.map((a) => (
             <p key={a.userId}>
@@ -140,7 +140,7 @@ export default function Ops() {
         </section>
       )}
       {tokens && (
-        <section className="rounded border p-4">
+        <section className="card p-4">
           <h3>Tokens de lectura</h3>
           {tokens.map((t) => (
             <p key={t.id}>

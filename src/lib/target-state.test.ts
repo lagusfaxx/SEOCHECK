@@ -73,3 +73,11 @@ test("5. nunca se envía en silencio una URL sugerida para otra keyword", () => 
     }
   }
 });
+
+test("6. keyword de 3+ palabras: una palabra en común con la URL basta (taupoc.cl /guia-de-tallas)", () => {
+  const s = run({ type: "typeUrl", url: "https://taupoc.cl/guia-de-tallas" }, { type: "keyword", keyword: "talla traje natacion" });
+  assert.equal(lowRelevanceWarning(s), false);
+  assert.equal(canSubmit(s).ok, true);
+  const t = run({ type: "typeUrl", url: "https://taupoc.cl/contacto" }, { type: "keyword", keyword: "talla traje natacion" });
+  assert.equal(lowRelevanceWarning(t), true);
+});

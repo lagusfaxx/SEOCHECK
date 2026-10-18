@@ -36,8 +36,10 @@ export async function auditComparison(projectId: string) {
       .filter((p) => p.status === 200 && !p.error && !p.blocked)
       .map((p) => p.url),
   );
+  // con otras reglas de análisis, lo que aparece o desaparece puede ser un cambio de criterio y no del sitio
+  const rulesChanged = Boolean(prev && prev.rulesVersion !== now.rulesVersion);
   const resolved =
-    prev && now.status === "completed"
+    prev && now.status === "completed" && !rulesChanged
       ? prev.issues.filter(
           (i) =>
             !current.has(issueIdentity(i.code, i.url)) && observed.has(i.url),
@@ -52,11 +54,12 @@ export async function auditComparison(projectId: string) {
     previousAt: prev?.finishedAt ?? null,
     health: stats.health ?? null,
     previousHealth: before?.health ?? null,
-    new: prev ? [...current].filter((k) => !old.has(k)).length : null,
+    new: prev && !rulesChanged ? [...current].filter((k) => !old.has(k)).length : null,
     resolved,
+    rulesChanged,
     total: current.size,
     partial: now.status === "partial",
-    comparable: !!prev && now.status === "completed",
+    comparable: !!prev && now.status === "completed" && !rulesChanged,
     pages: now.pages.length,
   };
 }
@@ -288,6 +291,10 @@ export function executivePdf(
       path.join(process.cwd(), "src/assets/fonts/OpenSans-Bold.ttf"),
     );
     doc.font("ReportRegular");
+    // Open Sans no trae flechas: «→» salía como un hueco en la evidencia («/lineas —    /catalogo»)
+    const rawText = doc.text.bind(doc) as (...a: unknown[]) => PDFKit.PDFDocument;
+    (doc as unknown as { text: (...a: unknown[]) => PDFKit.PDFDocument }).text = (t: unknown, ...rest: unknown[]) =>
+      rawText(typeof t === "string" ? t.replace(/\s*→\s*/g, " » ").replace(/[←↑↓]/g, "") : t, ...rest);
     const chunks: Buffer[] = [];
     doc.on("data", (c) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
@@ -344,7 +351,9 @@ export function executivePdf(
     if (c && unmeasured.length) doc.fillColor("#9a3412").text(`Sin medir en esta versión: ${unmeasured.join(", ")}. La salud no incluye esas áreas.`).fillColor("#222222");
     if (c?.previousId)
       doc.text(
-        `${c.new ?? "—"} incidencias nuevas. ${c.resolved ?? "No confirmado"} solucionadas.${c.partial ? " Auditoría parcial: no se confirma la desaparición de problemas." : ""}`,
+        c.rulesChanged
+          ? "Las reglas de análisis se actualizaron desde la auditoría anterior: la comparación de incidencias nuevas y solucionadas vuelve en la próxima auditoría."
+          : `${c.new ?? "—"} incidencias nuevas. ${c.resolved ?? "No confirmado"} solucionadas.${c.partial ? " Auditoría parcial: no se confirma la desaparición de problemas." : ""}`,
       );
     doc.text(
       r.traffic.impressions != null && r.traffic.period
@@ -366,6 +375,9 @@ export function executivePdf(
           `${a.kind ? `${a.kind} · ` : ""}${a.affected} ${a.affected === 1 ? "URL" : "URLs"} · ${({ detected: "detectado", pending: "pendiente", reappeared: "reapareció", resolved: "solucionado", ignored: "ignorado" } as Record<string, string>)[a.status] ?? a.status}`,
         )
         .text(technicalMarkdown ? a.reason : a.reason.split(" Prioridad:")[0].split(" Evidencia (")[0]);
+      // qué hacer, en una línea (el ejecutivo ya no repite las acciones en otra sección)
+      const why = a.reason.split(" Prioridad:")[0].split(" Evidencia (")[0];
+      if (!technicalMarkdown && a.fix && !why.includes(a.fix)) doc.font("ReportBold").text("Qué hacer: ", { continued: true }).font("ReportRegular").text(a.fix);
       if (a.evidence?.length) doc.fillColor("#666666").fontSize(9).text(`Evidencia${r.crawledAt ? ` (crawl del ${r.crawledAt.slice(0, 10)})` : ""}:\n${a.evidence.join("\n")}`).fillColor("#222222");
     }
     if (!r.actions.length)
@@ -384,7 +396,8 @@ export function executivePdf(
         .text(title);
       doc.fillColor("#222222").font("ReportRegular").fontSize(10);
     };
-    if (r.guidance) {
+    // el ejecutivo es breve: los pasos del plan repiten las próximas acciones salvo que traigan una explicación con IA
+    if (r.guidance && (technicalMarkdown || r.guidance.actions.some((a) => a.ai))) {
       heading("Pasos sugeridos para el negocio");
       doc.text(`Objetivo: ${r.guidance.goal}.`);
       for (const action of r.guidance.actions) {
@@ -397,6 +410,8 @@ export function executivePdf(
       }
       for (const check of r.guidance.checks.slice(0, 4)) doc.moveDown(.4).text(`Pendiente: ${check.title}. ${check.detail}`);
     }
+    // diagnóstico completo y alcance por fuente: en el informe técnico (en el ejecutivo repetían las acciones)
+    if (technicalMarkdown) {
     heading("Diagnóstico y plan de corrección");
     const findings = r.findings ?? [];
     doc.text(
@@ -427,6 +442,7 @@ export function executivePdf(
       doc
         .fontSize(10)
         .text(`Verificación: ${f.verify ?? "repetir la auditoría y revisar la URL."}`);
+    }
     }
     if (r.intentional?.length) {
       heading("Revisado: comportamiento intencional");
@@ -460,6 +476,7 @@ export function executivePdf(
         );
       }
     }
+    if (technicalMarkdown) {
     heading("Alcance y datos pendientes");
     for (const s of r.sources ?? [])
       doc.text(
@@ -468,6 +485,7 @@ export function executivePdf(
     doc.text(
       "Las fuentes pendientes limitan el diagnóstico. Completar esos datos permite evaluar tráfico, indexación, velocidad y oportunidades con mayor precisión.",
     );
+    }
     if (technicalMarkdown) {
       doc.addPage();
       heading("Evidencia técnica e instrucciones de implementación");

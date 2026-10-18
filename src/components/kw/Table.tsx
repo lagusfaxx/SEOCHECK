@@ -18,14 +18,14 @@ export default function KwTable({ data, reload }: { data: KwData; reload: () => 
   const clusterName = useMemo(() => new Map(data.clusters.map((c) => [c.id, c.name])), [data.clusters]);
   const tracked = useMemo(() => new Set(data.tracked), [data.tracked]);
 
-  const rows = data.keywords.filter((k) => (showEx || !k.excluded) && (!q || k.term.includes(q.toLowerCase())) && (!intent || k.intent === intent) && (k.volume ?? 0) >= minVol);
+  const rows = data.keywords.filter((k) => (showEx || !k.excluded) && (!q || k.term.includes(q.toLowerCase())) && (!intent || (intent === "none" ? !k.intent : k.intent === intent)) && (k.volume ?? 0) >= minVol);
   const toggle = (kid: string) => setSel((s) => { const n = new Set(s); n.has(kid) ? n.delete(kid) : n.add(kid); return n; });
   const selected = data.keywords.filter((k) => sel.has(k.id));
 
   const cols: Col<Kw>[] = [
     { key: "sel", label: <input type="checkbox" checked={sel.size > 0 && sel.size === rows.length} onChange={(e) => setSel(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} />, get: (k) => (sel.has(k.id) ? 1 : 0), render: (k) => <input type="checkbox" checked={sel.has(k.id)} onChange={() => toggle(k.id)} onClick={(e) => e.stopPropagation()} /> },
     { key: "term", label: "Keyword", get: (k) => k.term, render: (k) => <span className={cx(k.excluded && "text-ink-400 line-through")}>{k.term}{tracked.has(k.term) && <Icon name="rank" className="ml-1 inline h-3 w-3 text-acc" />}</span> },
-    { key: "intent", label: "Intención", get: (k) => k.intent, render: (k) => <IntentChip intent={k.intent} /> },
+    { key: "intent", label: "Intención", get: (k) => k.intent, render: (k) => (k.intent ? <IntentChip intent={k.intent} /> : <span className="text-ink-400" title="Sin señales suficientes para clasificarla: no se inventa una intención">–</span>) },
     { key: "volume", label: "Volumen", get: (k) => k.volume, render: (k) => (k.volumeMin != null && k.volumeMax != null && k.volumeMin !== k.volumeMax ? <span title={`estimado ${fmt(k.volume)}`}>{short(k.volumeMin)}–{short(k.volumeMax)}</span> : fmt(k.volume)), num: true },
     { key: "vsrc", label: "Fuente del volumen", get: (k) => k.volumeSource, render: (k) => (k.volumeSource ? <span className={cx("chip", k.volumeSource === "gsc" && "!bg-emerald-100 !text-emerald-700")} title={k.volumeAt ? `dato del ${fmtDate(k.volumeAt)}` : ""}>{VSRC[k.volumeSource] ?? k.volumeSource}</span> : <span className="text-ink-300">—</span>) },
     { key: "cpc", label: "CPC", get: (k) => k.cpc, render: (k) => fmt(k.cpc, 2), num: true },
@@ -52,13 +52,14 @@ export default function KwTable({ data, reload }: { data: KwData; reload: () => 
       <div className="flex flex-wrap items-center gap-2 border-b border-ink-200 p-3 dark:border-ink-800">
         <div className="relative w-56">
           <Icon name="search" className="absolute left-2.5 top-2 h-4 w-4 text-ink-400" />
-          <input className="input pl-8" placeholder="filtrar" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input className="input pl-8" placeholder="Filtrar" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <select className="input w-36" value={intent} onChange={(e) => setIntent(e.target.value)}>
-          <option value="">intent</option>
+          <option value="">Toda intención</option>
           {Object.entries(INTENT).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          <option value="none">sin clasificar</option>
         </select>
-        <input className="input w-28" type="number" min={0} placeholder="vol. mín" value={minVol || ""} onChange={(e) => setMinVol(Number(e.target.value))} />
+        <input className="input w-28" type="number" min={0} placeholder="Vol. mín." value={minVol || ""} onChange={(e) => setMinVol(Number(e.target.value))} />
         <label className="flex items-center gap-1 text-xs text-ink-500"><input type="checkbox" checked={showEx} onChange={(e) => setShowEx(e.target.checked)} />excluidas</label>
         <span className="text-xs text-ink-400">{fmt(rows.length)}</span>
         <div className="ml-auto flex gap-2">

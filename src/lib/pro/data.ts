@@ -56,6 +56,7 @@ async function loadPages(crawlId: string): Promise<a.Page[]> {
       finalUrl: true,
       status: true,
       redirects: true,
+      clientRedirect: true,
       contentType: true,
       title: true,
       titleLen: true,
@@ -215,7 +216,7 @@ export async function build(kind: string, id: string): Promise<Analysis> {
   return {
     ...result,
     source:
-      result.source + (crawl ? ` · ${crawl.startedAt.toISOString()}` : ""),
+      result.source + (crawl ? ` · crawl del ${crawl.startedAt.toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}` : ""),
     notes: [...note, ...result.notes],
   };
 }

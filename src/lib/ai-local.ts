@@ -73,7 +73,7 @@ export function findOwnPlace(places: Place[], domain: string, businessName?: str
 // ---------- ejecución ----------
 
 export async function runAiVisibility(projectId: string, opts: { force?: boolean } = {}) {
-  if (!env.serpentKey) return { skipped: "no disponible en este servidor" };
+  if (!env.serpentKey) return { skipped: "no disponible en esta instalación" };
   const p = await db.project.findUniqueOrThrow({ where: { id: projectId } });
   const recent = await db.aiCheck.findFirst({ where: { projectId, checkedAt: { gte: new Date(Date.now() - 7 * DAY) } } });
   if (recent && !opts.force) return { reused: true };
@@ -99,7 +99,7 @@ export async function runAiVisibility(projectId: string, opts: { force?: boolean
 }
 
 export async function runLocal(projectId: string, opts: { force?: boolean } = {}) {
-  if (!env.serpentKey) return { skipped: "no disponible en este servidor" };
+  if (!env.serpentKey) return { skipped: "no disponible en esta instalación" };
   const p = await db.project.findUniqueOrThrow({ where: { id: projectId } });
   const cfg = localOf(p.settings);
   const keywords = (cfg.keywords ?? []).slice(0, MAX_LOCAL_KEYWORDS);

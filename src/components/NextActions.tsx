@@ -75,8 +75,10 @@ export function NextActions({ all = false }: { all?: boolean }) {
         (t: any) =>
           filter === "all" ||
           (filter === "open"
-            ? !["resolved", "ignored"].includes(t.status)
-            : t.status === filter),
+            ? !["resolved", "ignored"].includes(t.status) && !t.optional
+            : filter === "optional"
+              ? !["resolved", "ignored"].includes(t.status) && t.optional
+              : t.status === filter),
       )
     : (data?.actions ?? []).slice(0, 3);
   const lastPage = Math.max(0, Math.ceil(rows.length / PAGE_SIZE) - 1);
@@ -119,7 +121,8 @@ export function NextActions({ all = false }: { all?: boolean }) {
                 setPage(0);
               }}
             >
-              <option value="open">Pendientes</option>
+              <option value="open">Por corregir</option>
+              <option value="optional">Mejoras opcionales</option>
               <option value="all">Todas</option>
               {Object.entries(STATUS_LABEL).map(([v, label]) => (
                 <option key={v} value={v}>
@@ -144,7 +147,12 @@ export function NextActions({ all = false }: { all?: boolean }) {
         <p className="px-4 pb-4 text-sm text-ink-500">Cargando…</p>
       ) : !rows.length ? (
         <p className="px-4 pb-4 text-sm text-ink-500">
-          No hay tareas en esta vista.
+          {filter === "open" ? "Nada por corregir en la última revisión." : "No hay tareas en esta vista."}
+          {filter === "open" && ((raw ? data?.tasks : data?.groups) ?? []).some((t: any) => t.optional && !["resolved", "ignored"].includes(t.status)) && (
+            <button className="ml-2 text-acc hover:underline" onClick={() => { setFilter("optional"); setPage(0); }}>
+              Ver mejoras opcionales
+            </button>
+          )}
         </p>
       ) : (
         <>

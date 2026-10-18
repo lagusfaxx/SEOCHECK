@@ -23,7 +23,9 @@ export type Analysis = {
   rows: Row[];
 };
 export const json = (x: unknown): any => (x && typeof x === "object" ? x : {});
-export const live = (p: Page) => p.status === 200 && !p.blocked && !p.error;
+/** Respondió 200 con contenido propio: una URL que redirige (servidor o HTML) se mide en su destino, no aquí. */
+export const live = (p: Page) =>
+  p.status === 200 && !p.blocked && !p.error && !p.clientRedirect && !(Array.isArray(p.redirects) && p.redirects.length);
 export const indexable = (p: Page) =>
   live(p) && !p.noindex && p.canonicalType !== "other";
 export const pathOf = (u: string) => {
@@ -233,7 +235,11 @@ export function indexationAnalysis(
           )
         : p.blocked
           ? "robots.txt impide el rastreo"
-          : p.noindex
+          : p.clientRedirect
+            ? `Responde 200 y redirige desde el HTML a ${p.clientRedirect}`
+            : Array.isArray(p.redirects) && p.redirects.length
+              ? `Redirige a ${p.finalUrl}`
+              : p.noindex
             ? "Directiva noindex observada"
             : p.status >= 400
               ? `HTTP ${p.status} observado`
@@ -243,7 +249,8 @@ export function indexationAnalysis(
       return {
         url: p.url,
         sitemap: p.inSitemap,
-        clics: clicks.get(key(p.url)) ?? 0,
+        // sin datos de Search Console no hay clics que informar: «0» se leería como «sin tráfico»
+        clics: traffic.length ? clicks.get(key(p.url)) ?? 0 : null,
         estadoGoogle: i
           ? indexed
             ? "Indexada según inspección"
@@ -255,7 +262,7 @@ export function indexationAnalysis(
         ultimoRastreo: i?.lastCrawl?.toISOString() ?? null,
       };
     })
-    .sort((a, b) => b.clics - a.clics);
+    .sort((a, b) => (b.clics ?? 0) - (a.clics ?? 0));
   return {
     title: "Sitemap e indexación",
     source: "Crawl + Search Console URL Inspection",
@@ -304,16 +311,24 @@ export function ecommerceAnalysis(pages: Page[]): Analysis {
           "Verificar demanda e intención; controlar enlaces y canonical si duplica la categoría",
       });
   }
-  for (const [sku, ps] of skus)
-    if (ps.filter(indexable).length > 1)
-      for (const p of ps.filter(indexable))
-        rows.push({
-          url: p.url,
-          tipo: "Variantes con SKU compartido: posible canibalización",
-          sku,
-          variantes: ps.length,
-          accion: "Comprobar intención por variante y estrategia de canonical",
-        });
+  for (const [sku, ps] of skus) {
+    const idx = ps.filter(indexable);
+    if (idx.length < 2) continue;
+    // distinto código de fabricante = productos distintos: el SKU repetido es un error del dato, no variantes
+    const mpns = new Set(idx.map((p) => json(p.commerce).mpn).filter(Boolean));
+    const distinct = mpns.size > 1;
+    for (const p of idx)
+      rows.push({
+        url: p.url,
+        tipo: distinct ? "SKU repetido en productos distintos" : "Variantes con el mismo SKU, indexables por separado",
+        sku,
+        ...(distinct ? { mpn: json(p.commerce).mpn } : {}),
+        variantes: idx.length,
+        accion: distinct
+          ? `El JSON-LD usa el SKU «${sku}» en productos con distinto código (${[...mpns].join(", ")}): asignar a cada producto su SKU real para que Google no los confunda`
+          : "Hipótesis: si son variantes del mismo producto (color, talla), decidir si cada una debe posicionar sola o consolidarlas con canonical",
+      });
+  }
   return {
     title: "Ecommerce",
     source: "HTML, Product/Offer y canonical del crawl",

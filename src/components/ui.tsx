@@ -276,11 +276,11 @@ export function Delta({ from, to, lowerIsBetter }: { from: number | null | undef
   return <span className={cx("text-xs tabular-nums", d > 0 ? "text-emerald-600" : "text-rose-600")}>{d > 0 ? "▲" : "▼"}{fmt(Math.abs(d), Math.abs(d) < 10 ? 1 : 0)}</span>;
 }
 
-export function Tabs<T extends string>({ value, onChange, items }: { value: T; onChange: (v: T) => void; items: { id: T; label: ReactNode; icon?: string; title?: string }[] }) {
+export function Tabs<T extends string>({ value, onChange, items, wrap }: { value: T; onChange: (v: T) => void; items: { id: T; label: ReactNode; icon?: string; title?: string }[]; /** muchas pestañas: pasan a otra línea en vez de cortarse */ wrap?: boolean }) {
   return (
-    <div className="inline-flex rounded-lg border border-ink-200 bg-white p-0.5 dark:border-ink-800 dark:bg-ink-900">
+    <div className={cx("rounded-lg border border-ink-200 bg-white p-0.5 dark:border-ink-800 dark:bg-ink-900", wrap ? "flex flex-wrap gap-y-0.5" : "inline-flex max-w-full overflow-x-auto")}>
       {items.map((it) => (
-        <button key={it.id} title={it.title} onClick={() => onChange(it.id)} className={cx("inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition", value === it.id ? "bg-ink-900 text-white dark:bg-ink-100 dark:text-ink-900" : "text-ink-500 hover:text-ink-900 dark:hover:text-ink-100")}>
+        <button key={it.id} title={it.title} onClick={() => onChange(it.id)} className={cx("inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-sm transition", value === it.id ? "bg-ink-900 text-white dark:bg-ink-100 dark:text-ink-900" : "text-ink-500 hover:text-ink-900 dark:hover:text-ink-100")}>
           {it.icon && <Icon name={it.icon} className="h-3.5 w-3.5" />}
           {it.label}
         </button>
@@ -384,16 +384,21 @@ export function DataTable<T>({ rows, cols, initial, onRow, rowKey, max = 500, se
   );
 }
 
-export function useLocal<T>(key: string, init: T): [T, (v: T) => void] {
-  const [v, setV] = useState<T>(() => {
-    if (typeof window === "undefined") return init;
+/**
+ * Preferencia guardada en este navegador. El primer render usa `init` (igual que el servidor) y lo guardado se carga
+ * al montar: leerlo antes hacía que el HTML del servidor no calzara con el del navegador («Hydration failed»).
+ * El tercer valor dice si ya se cargó, para no mostrar un instante algo que el usuario ya cerró.
+ */
+export function useLocal<T>(key: string, init: T): [T, (v: T) => void, boolean] {
+  const [v, setV] = useState<T>(init);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
     try {
       const s = localStorage.getItem(key);
-      return s ? (JSON.parse(s) as T) : init;
-    } catch {
-      return init;
-    }
-  });
+      if (s) setV(JSON.parse(s) as T);
+    } catch {}
+    setLoaded(true);
+  }, [key]);
   return [
     v,
     (nv: T) => {
@@ -402,6 +407,7 @@ export function useLocal<T>(key: string, init: T): [T, (v: T) => void] {
         localStorage.setItem(key, JSON.stringify(nv));
       } catch {}
     },
+    loaded,
   ];
 }
 

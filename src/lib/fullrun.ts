@@ -76,7 +76,7 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
     try {
       const st = await runCrawl(crawl.id);
       if (st.status === "paused") return `en pausa · ${st.pages} URLs leídas`;
-      return `${st.status === "partial" ? "parcial · " : ""}${st.pages} URL${st.pages === 1 ? "" : "s"} · ${st.critical} críticos · ${st.warning} warnings`;
+      return `${st.status === "partial" ? "parcial · " : ""}${st.pages} URL${st.pages === 1 ? "" : "s"} · ${st.critical} errores · ${st.warning} advertencias`;
     } catch (e) {
       await db.crawl.updateMany({ where: { id: crawl.id, status: { in: ["queued", "running"] } }, data: { status: "failed", reason: e instanceof Error ? e.message : String(e), finishedAt: new Date() } });
       throw e;
@@ -86,7 +86,7 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
   const gscReady = Boolean(p.gscProperty && (await gscAvailable(projectId)));
   await step("gsc", "Search Console", async () => {
     if (opts.gsc === false) return skip("gsc", "desactivado");
-    if (!gscReady) return skip("gsc", p.gscProperty ? "Search Console no está conectado" : "sin propiedad GSC en el proyecto");
+    if (!gscReady) return skip("gsc", "Search Console no está conectado");
     await syncGsc(projectId, 90);
   });
 
@@ -111,7 +111,7 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
 
   await step("inspect", "indexación", async () => {
     if (opts.inspect === false) return skip("inspect", "desactivado");
-    if (!gscReady) return skip("inspect", "requiere GSC");
+    if (!gscReady) return skip("inspect", "requiere Search Console");
     const urls = await topUrls(20);
     if (!urls.length) return skip("inspect", "sin URLs del crawl");
     await runInspection(projectId, urls);
@@ -120,7 +120,7 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
 
   await step("psi", "PageSpeed", async () => {
     if (opts.psi === false) return skip("psi", "desactivado");
-    if (!env.psiKey) return skip("psi", "falta PAGESPEED_API_KEY");
+    if (!env.psiKey) return skip("psi", "no disponible en esta instalación");
     const urls = await topUrls(5);
     if (!urls.length) return skip("psi", "sin URLs del crawl");
     await runPsi(projectId, urls, ["mobile"]);
@@ -144,7 +144,7 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
   await step("rank", "rankings", async () => {
     if (opts.rank === false) return skip("rank", "desactivado");
     const tracked = await db.trackedKeyword.findMany({ where: { projectId, active: true }, select: { id: true } });
-    if (!tracked.length) return skip("rank", "sin keywords trackeadas");
+    if (!tracked.length) return skip("rank", "sin keywords monitoreadas");
     await assertBudget({ serpent: est.serpCalls(tracked.length) }, `Rank tracking (${tracked.length} keywords)`);
     let fails = 0;
     for (const t of tracked) await checkRank(t.id).catch(() => fails++);
@@ -154,7 +154,7 @@ export async function runFull(projectId: string, opts: FullRunOpts, jobRunId?: s
 
   await step("backlinks", "backlinks", async () => {
     if (opts.backlinks === false) return skip("backlinks", "desactivado");
-    if (!backlinksConfigured()) return skip("backlinks", "no disponible en este servidor");
+    if (!backlinksConfigured()) return skip("backlinks", "no disponible en esta instalación");
     const r = await runBacklinks(projectId);
     if ("reused" in r) return "se usa la foto de esta semana";
     if ("skipped" in r) return skip("backlinks", r.skipped!);

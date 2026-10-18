@@ -9,5 +9,11 @@ export const CRAWL_STATUS: Record<string, { label: string; cls: string }> = {
 };
 
 /** Estados de jobs, análisis de contenido y research de keywords, en español para la UI. */
-export const JOB_STATUS: Record<string, string> = { queued: "en cola", running: "en curso", brief: "generando brief", done: "listo", error: "falló", cancelled: "cancelado" };
+export const JOB_STATUS: Record<string, string> = {
+  queued: "en cola", running: "en curso", brief: "generando brief", done: "listo", error: "falló", cancelled: "cancelado",
+  // pasos de la investigación de keywords
+  autocomplete: "buscando sugerencias de Google", gsc: "leyendo Search Console", "serp seeds": "revisando Google",
+  embeddings: "comparando significado", volumen: "buscando volúmenes", intent: "clasificando intención", guardando: "guardando",
+  clusters: "agrupando", topics: "agrupando en temas",
+};
 export const statusLabel = (s: string | null | undefined) => (s ? JOB_STATUS[s] ?? s : "–");

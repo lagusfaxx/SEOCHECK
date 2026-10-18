@@ -41,7 +41,10 @@ test("2ª ronda: PAA y related de los términos descubiertos, con límite", { sk
   const terms = (await db.keyword.findMany({ where: { projectId } })).map((k) => k.term);
   assert.ok(terms.includes("botas barato chile"), "related de 2ª ronda");
   assert.ok(terms.includes("¿qué es botas barato?"), "PAA de 2ª ronda");
-  assert.equal(stats.expanded, 1 + 4 + 3 * 4);
+  // 1 + 4 + 3×4 = 17, menos 4 que nadie busca así y se descartan: «botas barato barato», «botas chile chile»,
+  // «¿qué es ¿qué es botas??» y «¿cómo elegir ¿qué es botas??»
+  assert.equal(stats.expanded, 1 + 4 + 3 * 4 - 4);
+  assert.ok(!terms.some((t) => /¿.*¿/.test(t) || / (\S+) \1$/.test(t)), "sin términos mal formados");
   const r = await db.keywordRun.findUniqueOrThrow({ where: { id: run.id } });
   const src = r.sources as any;
   assert.deepEqual([src.serp, src.embeddings, src.volumes, src.gsc], ["real", "trigram-hash", "none", "none"]);

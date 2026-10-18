@@ -1,7 +1,9 @@
 import type { OrganicResult } from "../providers";
 import { cosine, urlKey } from "../util";
 
-export type KwSerp = { term: string; volume: number; intent: string; urls: string[] };
+export type KwSerp = { term: string; volume: number; intent: string | null; urls: string[] };
+/** Sin intención conocida (null) no se separa de ninguna: no se inventa una diferencia que no se midió. */
+const sameIntent = (a: string | null, b: string | null) => a == null || b == null || a === b;
 
 /**
  * Clustering por overlap de URLs del top 10 con índice invertido URL → keywords.
@@ -26,7 +28,7 @@ export function overlapClusters(items: KwSerp[], minShared = 3) {
     const shared = new Map<number, number>();
     for (const u of sorted[i].urls) for (const j of index.get(u) ?? []) if (j !== i) shared.set(j, (shared.get(j) ?? 0) + 1);
     for (const [j, c] of shared) {
-      if (c >= minShared && assigned[j] < 0 && sorted[j].intent === sorted[i].intent) {
+      if (c >= minShared && assigned[j] < 0 && sameIntent(sorted[j].intent, sorted[i].intent)) {
         assigned[j] = cid;
         cl.members.push(original.get(sorted[j].term)!);
       }
@@ -46,7 +48,7 @@ export function embeddingClusters(items: (KwSerp & { vec: number[] })[], th = 0.
     used[i] = 1;
     const cl = { primary: sorted[i], members: [sorted[i]] as KwSerp[] };
     for (let j = i + 1; j < sorted.length; j++) {
-      if (!used[j] && sorted[j].intent === sorted[i].intent && cosine(sorted[i].vec, sorted[j].vec) >= th) {
+      if (!used[j] && sameIntent(sorted[j].intent, sorted[i].intent) && cosine(sorted[i].vec, sorted[j].vec) >= th) {
         used[j] = 1;
         cl.members.push(sorted[j]);
       }

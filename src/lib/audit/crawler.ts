@@ -19,7 +19,7 @@ import { assertUrlAllowed, RedirectLoopError, safeFetch, SsrfError } from "../ne
 import { DEFAULT_IGNORE_PARAMS, detectWaf, PatternLimiter, stripParams,
 } from "./guards";
 import { hostOf, normUrl } from "../util";
-import { computeIssues } from "./issues";
+import { computeIssues, SLOW_MS } from "./issues";
 import { detectCms, type Cms } from "./cms";
 import { checkStructuredData } from "./structured";
 import { fetchSitemapUrls, parseRobots, robotsAllows, type Robots,
@@ -110,6 +110,8 @@ export type PageData = {
   renderDiff?: RenderDiff[];
   /** motivo de la falla de red (timeout, DNS, bucle de redirecciones…) */
   fetchError?: string | null;
+  /** responde 200 pero manda al usuario a otra URL desde el HTML (meta refresh o redirect de Next.js en streaming) */
+  clientRedirect?: string | null;
 };
 
 export type TextBlock = {
@@ -597,10 +599,32 @@ export const isCdnInternal = (u: string) => {
   }
 };
 
+/**
+ * Redirección desde el HTML: la respuesta es 200 pero el navegador termina en otra URL. Casos: <meta http-equiv="refresh"
+ * content="0;url=…"> y el redirect() de Next.js dentro de Suspense, que ya mandó el 200 y redirige con
+ * $RX("B:n","NEXT_REDIRECT;replace;/destino;307;"). Medir el contenido de esas páginas da falsos «sin H1» y «0 palabras».
+ */
+export function clientRedirectOf($: cheerio.CheerioAPI, url: string): string | null {
+  const refresh = $('meta[http-equiv="refresh" i]').attr("content") ?? "";
+  const m = refresh.match(/^\s*(\d+(?:\.\d+)?)?\s*[;,]\s*url\s*=\s*['"]?([^'"\s]+)/i);
+  // un refresh con demora larga es una recarga programada, no una redirección
+  if (m && Number(m[1] ?? 0) <= 10) {
+    const to = normUrl(m[2], url);
+    if (to && to !== url) return to;
+  }
+  let next: string | null = null;
+  $("script").each((_, el) => {
+    const r = $(el).text().match(/NEXT_REDIRECT;[a-z]*;([^;"]+);\d*;?/);
+    if (r && !next) next = normUrl(r[1], url);
+  });
+  return next && next !== url ? next : null;
+}
+
 export function parseHtml(html: string, url: string, options: FetchOpts = {}) {
   const $ = cheerio.load(html);
   resolveReactStreaming($);
   resolveCloudflareEmails($);
+  const clientRedirect = clientRedirectOf($, url);
   const canonicalRaw = $('link[rel="canonical"]').attr("href");
   const canonical = canonicalRaw ? normUrl(canonicalRaw, url) : null;
   const robotsMeta = $('meta[name="robots" i], meta[name="googlebot" i]')
@@ -641,9 +665,17 @@ export function parseHtml(html: string, url: string, options: FetchOpts = {}) {
     const u = normUrl($(el).attr("href")!, url);
     if (u && !rel.includes("nofollow") && !isCdnInternal(u)) links.add(u);
   });
+  // el destino de la redirección se rastrea como cualquier link
+  if (clientRedirect) links.add(clientRedirect);
   const headings: { tag: string; text: string }[] = [];
   $("h1,h2,h3").each((_, el) => {
-    const t = $(el).text().replace(/\s+/g, " ").trim();
+    // los títulos del menú y del pie («Ayuda», «Contacto», el nombre de la marca) no son secciones del contenido;
+    // un <header> dentro de <article>/<main> sí es parte de la página
+    const $el = $(el);
+    if ($el.closest("footer, nav, aside, [role=contentinfo], [role=navigation]").length) return;
+    const head = $el.closest("header");
+    if (head.length && !head.closest("main, article").length) return;
+    const t = $el.text().replace(/\s+/g, " ").trim();
     if (t) headings.push({ tag: el.tagName.toLowerCase(), text: t });
   });
   // sin atributo alt (alt="" es correcto en imágenes decorativas); fuera píxeles de seguimiento y ocultas
@@ -701,6 +733,7 @@ export function parseHtml(html: string, url: string, options: FetchOpts = {}) {
   return {
     // el <title> de la página, no el de un <svg> del body
     robotsMeta,
+    clientRedirect,
     parsedExtra: {
       template: classifyTemplate(
         {
@@ -836,6 +869,7 @@ export async function fetchPage(
         : 0,
     rawWordCount: raw ? raw.wordCount : null,
     schemaIssues: parsed?.schemaIssues ?? [],
+    clientRedirect: r.status === 200 ? parsed?.clientRedirect ?? null : null,
   };
 }
 
@@ -893,6 +927,7 @@ function pageRow(crawlId: string, p: PageData, x: RowCtx) {
     linkDetails: (p.parsedExtra?.linkDetails ?? []).filter((l) => x.isInternal(l.to)).slice(0, 500),
     extracted: p.parsedExtra?.extracted ?? {},
     fetchError: p.fetchError ?? null,
+    clientRedirect: p.clientRedirect ?? null,
     renderDiff: JSON.parse(JSON.stringify(p.renderDiff ?? [])),
   };
 }
@@ -931,6 +966,7 @@ export function pageFromRow(r: import("@prisma/client").Page): PageData {
     schemaIssues: r.schemaIssues,
     renderDiff: (r.renderDiff as RenderDiff[]) ?? [],
     fetchError: r.fetchError,
+    clientRedirect: r.clientRedirect,
     evidence: {
       robotsMeta: r.robotsMeta ?? "",
       xRobots: r.xRobots,
@@ -1204,6 +1240,16 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
       ),
   );
 
+  // Un tiempo alto puede ser solo la carga del propio crawl (varias páginas en paralelo): las lentas se vuelven a medir
+  // de a una y queda el mejor tiempo, para no marcar «respuesta lenta» por una sola medición con el servidor ocupado
+  await jobProgress(jobRunId, 88, "midiendo de nuevo las respuestas lentas");
+  for (const p of pages.filter((x) => x.status === 200 && !x.error && x.responseMs > SLOW_MS).sort((a, b) => b.responseMs - a.responseMs).slice(0, 20)) {
+    try {
+      const again = await fetchFollow(p.url, fetchOpts);
+      if (again.status === 200) p.responseMs = Math.min(p.responseMs, again.ms);
+    } catch {}
+  }
+
   // Inlinks
   const inlinks = new Map<string, number>();
   for (const p of pages)
@@ -1247,7 +1293,7 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     pages: saved.length,
     ok: saved.filter((p) => p.status === 200).length,
     redirects: saved.filter(
-      (p) => p.redirects && (p.redirects as unknown[]).length,
+      (p) => (p.redirects && (p.redirects as unknown[]).length) || p.clientRedirect,
     ).length,
     // errores HTTP = 4xx + 5xx + sin respuesta; lo bloqueado por robots.txt no se pidió y no es un error
     errors: saved.filter(
@@ -1266,7 +1312,8 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([pattern, skipped]) => ({ pattern, skipped })),
-    orphans: linkLimitHit ? 0 : orphans.length,
+    // una URL que redirige no es una página huérfana: su problema es la redirección
+    orphans: linkLimitHit ? 0 : orphans.length - saved.filter((p) => p.orphan && p.clientRedirect).length,
     /** URLs del sitemap que no se alcanzaron porque el crawl tocó el máximo (no son huérfanas confirmadas) */
     sitemapNotReached: linkLimitHit ? orphans.length : 0,
     sitemap: sitemapUrls.size,
