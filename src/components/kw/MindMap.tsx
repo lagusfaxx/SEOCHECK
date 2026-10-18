@@ -48,9 +48,9 @@ function layout(data: KwData, showKw: boolean, rootLabel: string) {
   const kwBy = new Map<string, Kw[]>();
   for (const k of data.keywords) if (k.clusterId && !k.excluded) kwBy.set(k.clusterId, [...(kwBy.get(k.clusterId) ?? []), k]);
   const topics = data.topics
-    .map((t) => ({ t, cs: data.clusters.filter((c) => c.topicId === t.id).sort((a, b) => Number(b.isPillar) - Number(a.isPillar) || b.volume - a.volume) }))
+    .map((t) => ({ t, cs: data.clusters.filter((c) => c.topicId === t.id).sort((a, b) => Number(b.isPillar) - Number(a.isPillar) || (b.volume ?? 0) - (a.volume ?? 0)) }))
     .filter((x) => x.cs.length)
-    .sort((a, b) => b.cs.reduce((s, c) => s + c.volume, 0) - a.cs.reduce((s, c) => s + c.volume, 0));
+    .sort((a, b) => b.cs.reduce((s, c) => s + (c.volume ?? 0), 0) - a.cs.reduce((s, c) => s + (c.volume ?? 0), 0));
   const orphan = data.clusters.filter((c) => !c.topicId);
   nodes.push({ id: "root", type: "m", position: { x: 0, y: 0 }, data: { label: rootLabel, kind: "root" }, draggable: true });
   const T = topics.length + (orphan.length ? 1 : 0);
@@ -58,7 +58,7 @@ function layout(data: KwData, showKw: boolean, rootLabel: string) {
   const placeTopic = (tid: string, name: string, cs: Cl[], i: number, saved: { x: number; y: number } | null, forced = false) => {
     const ang = (i / Math.max(1, T)) * Math.PI * 2 - Math.PI / 2;
     const tp = saved ?? { x: Math.cos(ang) * R1, y: Math.sin(ang) * R1 };
-    nodes.push({ id: `t:${tid}`, type: "m", position: tp, data: { label: name, kind: "topic", vol: cs.reduce((s, c) => s + c.volume, 0), n: cs.length, forced } });
+    nodes.push({ id: `t:${tid}`, type: "m", position: tp, data: { label: name, kind: "topic", vol: cs.some((c) => c.volume != null) ? cs.reduce((s, c) => s + (c.volume ?? 0), 0) : undefined, n: cs.length, forced } });
     edges.push({ id: `e:root:${tid}`, source: "root", target: `t:${tid}`, type: "simplebezier", style: { stroke: "#5b5bf6", strokeWidth: 2 } });
     const pillar = cs.find((c) => c.isPillar);
     cs.forEach((c, j) => {
@@ -66,7 +66,7 @@ function layout(data: KwData, showKw: boolean, rootLabel: string) {
       const a2 = ang + (cs.length > 1 ? -spread / 2 + (spread * j) / (cs.length - 1) : 0);
       const R2 = 240 + cs.length * 14 + (j % 2) * 70;
       const cp = c.pos ?? { x: tp.x + Math.cos(a2) * R2, y: tp.y + Math.sin(a2) * R2 };
-      nodes.push({ id: `c:${c.id}`, type: "m", position: cp, data: { label: c.name, kind: "cluster", vol: c.volume, pillar: c.isPillar, intent: c.intent, n: kwBy.get(c.id)?.length ?? 0 } });
+      nodes.push({ id: `c:${c.id}`, type: "m", position: cp, data: { label: c.name, kind: "cluster", vol: c.volume ?? undefined, pillar: c.isPillar, intent: c.intent, n: kwBy.get(c.id)?.length ?? 0 } });
       const src = c.isPillar || !pillar ? `t:${tid}` : `c:${pillar.id}`;
       edges.push({ id: `e:${src}:${c.id}`, source: src, target: `c:${c.id}`, type: "simplebezier", style: { stroke: c.isPillar ? "#5b5bf6" : "#b5b5c3", strokeDasharray: c.isPillar ? undefined : "4 3" } });
       if (showKw) {
@@ -154,7 +154,7 @@ export default function MindMap({ data, reload }: { data: KwData; reload: () => 
             <span className="font-semibold">{selCluster.name}</span>
             <IntentChip intent={selCluster.intent} />
           </div>
-          <div className="mt-1 text-xs text-ink-500">{fmt(selCluster.volume)} vol · score {fmt(selCluster.score)}</div>
+          <div className="mt-1 text-xs text-ink-500">{selCluster.volume == null ? "sin volumen" : `${fmt(selCluster.volume)} búsq./mes`} · score {fmt(selCluster.score)}</div>
           <div className="mt-3 space-y-1">
             {selKws.map((k) => (
               <div key={k.id} className="flex justify-between gap-2 text-sm">

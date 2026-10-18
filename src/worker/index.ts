@@ -31,7 +31,12 @@ async function handle(boss: PgBoss, name: QueueName, d: Data) {
   switch (name) {
     case QUEUES.advice: return (await import("../lib/advice/service")).generateAdvice(d.projectId);
     case QUEUES.keywords:
-      return runKeywordPipeline(d.runId, d.jobRunId);
+      // si falla, la investigación queda «falló» con el motivo (antes se quedaba en el último paso, p. ej. «embeddings»)
+      return runKeywordPipeline(d.runId, d.jobRunId).catch(async (e) => {
+        const run = await db.keywordRun.findUnique({ where: { id: d.runId }, select: { stats: true } });
+        await db.keywordRun.updateMany({ where: { id: d.runId }, data: { status: "error", stats: { ...((run?.stats as object) ?? {}), error: e instanceof Error ? e.message : String(e) } } });
+        throw e;
+      });
     case QUEUES.crawl:
       return runCrawl(d.crawlId, d.jobRunId).catch(async (e) => {
         // si ya quedó fallido/cancelado con su motivo, no pisarlo

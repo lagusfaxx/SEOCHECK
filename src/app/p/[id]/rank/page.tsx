@@ -56,7 +56,7 @@ export default function RankPage() {
   const cols: Col<R>[] = [
     { key: "sel", label: "", get: (r) => (checked.has(r.t.id) ? 1 : 0), render: (r) => <input type="checkbox" checked={checked.has(r.t.id)} onClick={(e) => e.stopPropagation()} onChange={() => setChecked((s) => { const n = new Set(s); n.has(r.t.id) ? n.delete(r.t.id) : n.add(r.t.id); return n; })} /> },
     { key: "kw", label: "Keyword", get: (r) => r.t.keyword },
-    { key: "pos", label: "Posición", get: (r) => r.pos, render: (r) => <b className={cx("tabular-nums", r.pos != null && r.pos <= 3 && "text-emerald-600")}>{r.pos ?? (r.last ? ">100" : "…")}</b>, num: true },
+    { key: "pos", label: "Posición", get: (r) => r.pos, render: (r) => <b className={cx("tabular-nums", r.pos != null && r.pos <= 3 && "text-emerald-600")}>{r.pos ?? (r.last ? ">100" : checking ? "…" : <span className="font-normal text-ink-400" title="Todavía no se revisa: se revisa en la próxima revisión programada o con «Revisar todas»">sin revisar</span>)}</b>, num: true },
     { key: "d", label: "Cambio", get: (r) => (r.prev?.position ?? 101) - (r.pos ?? 101), render: (r) => <Delta from={r.prev?.position ?? null} to={r.pos} lowerIsBetter />, num: true },
     { key: "best", label: "Mejor", get: (r) => r.best, num: true },
     { key: "trend", label: "", get: () => 0, render: (r) => <Spark data={r.t.checks.map((c) => c.position)} invert /> },
@@ -69,15 +69,15 @@ export default function RankPage() {
   const unseen = (data?.alerts ?? []).filter((a) => !a.seen).length;
 
   return (
-    <div className="grid gap-4 p-4 md:p-6 xl:grid-cols-[1fr_380px]">
-      <div className="space-y-4">
+    <div className="grid gap-4 p-4 md:p-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="min-w-0 space-y-4">
         <RankingExtras />
         <div className="card flex flex-wrap items-start gap-2 p-3">
-          <textarea className="input min-h-[38px] flex-1" rows={add.includes("\n") ? 4 : 1} placeholder="keywords a monitorear (una por línea)" value={add} onChange={(e) => setAdd(e.target.value)} />
+          <textarea className="input min-h-[38px] flex-1" rows={add.includes("\n") ? 4 : 1} placeholder="Keywords a monitorear, separadas por coma" value={add} onChange={(e) => setAdd(e.target.value)} />
           <select className="input w-auto" value={freq} onChange={(e) => setFreq(e.target.value)} title="frecuencia (por defecto la del proyecto)">
-            <option value="">{(project?.settings?.rank?.frequency ?? "weekly") === "daily" ? "diario (proyecto)" : "semanal (proyecto)"}</option>
-            <option value="daily">diario</option>
-            <option value="weekly">semanal</option>
+            <option value="">{(project?.settings?.rank?.frequency ?? "weekly") === "daily" ? "Diaria (la del proyecto)" : "Semanal (la del proyecto)"}</option>
+            <option value="daily">Diaria</option>
+            <option value="weekly">Semanal</option>
           </select>
           <button className="btn-p" disabled={adding || !add.trim()} onClick={() => submit()}><Icon name="plus" />{adding ? <><Spinner className="h-3.5 w-3.5" />Agregando…</> : "Agregar"}</button>
         </div>
@@ -105,7 +105,7 @@ export default function RankPage() {
           {unseen > 0 && <span className="rounded-full bg-rose-500 px-1.5 text-[11px] text-white">{unseen}</span>}
           <button className="btn-g ml-auto text-xs" onClick={async () => { await api(`/api/p/${id}/alerts`, "PATCH", {}); mutate(); }}>marcar vistas</button>
         </div>
-        <Tabs value={atab} onChange={setAtab} items={[{ id: "all", label: "Todas" }, { id: "drop", label: "Caídas", title: "Keywords que bajaron más de 3 posiciones" }, { id: "cannibal", label: "Canibalización", title: "Dos páginas tuyas compiten por la misma keyword" }, { id: "lowctr", label: "CTR bajo", title: "Pocas personas hacen clic para la posición que tienes" }]} />
+        <div className="overflow-x-auto"><Tabs value={atab} onChange={setAtab} items={[{ id: "all", label: "Todas" }, { id: "drop", label: "Caídas", title: "Keywords que bajaron más de 3 posiciones" }, { id: "cannibal", label: "Canibalización", title: "Dos páginas tuyas compiten por la misma keyword" }, { id: "lowctr", label: "CTR bajo", title: "Pocas personas hacen clic para la posición que tienes" }]} /></div>
         <div className="mt-3 max-h-[calc(100vh-240px)] space-y-2 overflow-y-auto">
           {alerts.map((a) => (
             <div key={a.id} className={cx("rounded-lg border p-2.5 text-sm", a.seen ? "border-ink-100 opacity-60 dark:border-ink-800" : "border-ink-200 dark:border-ink-700")}>
@@ -172,7 +172,7 @@ function RankDetail({ t, onChange }: { t: Tracked; onChange: () => void }) {
           <div className="lbl mb-1"><Metric label="Competencia"/> · Top 10 · {fmtDate(last.date)}</div>
           <table className="tbl">
             <tbody>
-              {[...last.competitors, ...(last.position && last.position <= 10 ? [{ domain: "Tu sitio", position: last.position, url: last.url! }] : [])]
+              {[...last.competitors.map((c) => ((c as { own?: boolean }).own ? { ...c, domain: "Tu sitio" } : c)), ...(last.position && last.position <= 10 ? [{ domain: "Tu sitio", position: last.position, url: last.url! }] : [])]
                 .sort((a, b) => a.position - b.position)
                 .map((c) => (
                   <tr key={c.position + c.url}>

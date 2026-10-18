@@ -24,13 +24,15 @@ export default function KeywordsPage() {
   const [th, setTh] = useState(0.45);
   const running = jobs.some((j) => j.kind === "keywords.run" && (j.status === "running" || j.status === "queued"));
 
+  const split = (v: string) => v.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
   const addSeed = (v: string) => {
-    const parts = v.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+    const parts = split(v);
     if (parts.length) setSeeds([...new Set([...seeds, ...parts])]);
     setDraft("");
   };
   const [start, starting] = useAction(async () => {
-    const all = draft.trim() ? [...seeds, draft.trim()] : seeds;
+    // lo escrito sin apretar Enter también se separa por comas (pegar «a, b, c» son tres semillas, no una)
+    const all = [...new Set([...seeds, ...split(draft)])];
     if (!all.length) return;
     await api(`/api/p/${id}/keywords/run`, "POST", { seeds: all, threshold: th });
     setSeeds([]);
@@ -57,7 +59,7 @@ export default function KeywordsPage() {
             className="min-w-[160px] flex-1 bg-transparent py-1 text-sm outline-none"
             placeholder={seeds.length ? "" : "ej: muebles infantiles, torre montessori"}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => (/[,;\n]/.test(e.target.value) && e.target.value.length - draft.length > 1 ? addSeed(e.target.value) : setDraft(e.target.value))}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addSeed(draft); }
               if (e.key === "Backspace" && !draft && seeds.length) setSeeds(seeds.slice(0, -1));
@@ -97,7 +99,8 @@ export default function KeywordsPage() {
           {current?.sources?.serp && <SourceBadges s={current.sources} />}
           {current && (
             <div className="flex gap-3 text-xs text-ink-500">
-              {current.status !== "done" && <span className="chip">{statusLabel(current.status)}</span>}
+              {current.status !== "done" && <span className={current.status === "error" ? "chip !bg-rose-100 !text-rose-700" : "chip"}>{statusLabel(current.status)}</span>}
+              {current.status === "error" && (current.stats as any)?.error && <span className="text-sm text-rose-700">{String((current.stats as any).error)}</span>}
               {Object.entries(current.stats ?? {}).filter(([k]) => STAT_LABEL[k]).map(([k, v]) => (
                 <span key={k} title={STAT_LABEL[k][1]} className="cursor-help">{STAT_LABEL[k][0]} <b className="text-ink-800 dark:text-ink-200">{fmt(v)}</b></span>
               ))}
@@ -144,23 +147,26 @@ const STAT_LABEL: Record<string, [string, string]> = {
 const PROVIDER_NAME: Record<string, string> = { dataforseo: "DataForSEO", apify: "Apify", csv: "CSV Keyword Planner" };
 
 const SOURCE_HELP: Record<string, string> = {
-  SERP: "Si se consultaron resultados reales de Google para agrupar las keywords en clusters.",
-  Embeddings: "Método para medir qué tan parecidas son las keywords. «trigram-hash» es el respaldo básico, menos preciso.",
+  Google: "Si se consultaron resultados reales de Google para agrupar las keywords en clusters.",
+  Agrupación: "Cómo se midió qué keywords se parecen. «Aproximada» compara palabras, no significado: es menos precisa.",
   Volumen: "De dónde salieron las búsquedas mensuales.",
-  GSC: "Si se sumaron consultas reales de tu Search Console.",
+  "Search Console": "Si se sumaron consultas reales de tu Search Console.",
 };
 
 function SourceBadges({ s }: { s: RunSources }) {
-  const items: [string, string, boolean][] = [
-    ["SERP", s.serp === "real" ? "real" : "sin SERP", s.serp === "real"],
-    ["Embeddings", s.embeddings === "trigram-hash" ? "trigram-hash" : s.embeddings ?? "?", s.embeddings !== "trigram-hash"],
-    ["Volumen", (s.volumes === "real" ? PROVIDER_NAME[s.volumeProvider ?? ""] ?? s.volumeProvider ?? "real" : s.volumes === "gsc" ? "solo GSC" : "sin volumen") + (s.volumeSkipped?.length ? ` (saltado: ${s.volumeSkipped.join("; ")})` : ""), (s.volumes === "real" || s.volumes === "gsc") && !s.volumeSkipped?.length],
-    ...(s.gsc && s.gsc !== "none" ? [["GSC", s.gsc === "real" ? "real" : "error", s.gsc === "real"] as [string, string, boolean]] : []),
+  const { project } = useProject();
+  // en palabras del cliente; el motivo técnico (variables del servidor) solo lo ve la administración, en el tooltip
+  const why = project?.admin && s.volumeSkipped?.length ? ` · ${s.volumeSkipped.join("; ")}` : "";
+  const items: [string, string, boolean, string][] = [
+    ["Google", s.serp === "real" ? "resultados reales" : "sin resultados", s.serp === "real", ""],
+    ["Agrupación", s.embeddings === "trigram-hash" ? "aproximada (por palabras)" : "por significado", s.embeddings !== "trigram-hash", ""],
+    ["Volumen", s.volumes === "real" ? PROVIDER_NAME[s.volumeProvider ?? ""] ?? "con datos" : s.volumes === "gsc" ? "solo Search Console" : "sin datos de volumen", s.volumes === "real" || s.volumes === "gsc", why],
+    ...(s.gsc && s.gsc !== "none" ? [["Search Console", s.gsc === "real" ? "con datos" : "falló", s.gsc === "real", ""] as [string, string, boolean, string]] : []),
   ];
   return (
     <div className="flex gap-1.5">
-      {items.map(([k, v, ok]) => (
-        <span key={k} title={SOURCE_HELP[k]} className={cx("rounded-md px-1.5 py-0.5 text-[11px] font-medium", ok ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300")}>
+      {items.map(([k, v, ok, extra]) => (
+        <span key={k} title={(SOURCE_HELP[k] ?? "") + extra} className={cx("rounded-md px-1.5 py-0.5 text-[11px] font-medium", ok ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300")}>
           {k} · {v}
         </span>
       ))}

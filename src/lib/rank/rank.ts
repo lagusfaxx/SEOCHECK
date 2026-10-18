@@ -12,8 +12,14 @@ export async function checkRank(trackedId: string) {
   // Quick con num=100: una sola unidad facturada por keyword, top 100 completo.
   const serp = await serpProvider().quick(t.keyword, { country: p.country, language: p.language, projectId: p.id, num: 100 });
   await db.serpSnapshot.create({ data: { projectId: p.id, keyword: t.keyword, depth: 100, source: "quick", organic: serp.organic, paa: serp.paa, related: serp.related, features: serp.features, aiOverview: (serp.aiOverview ?? undefined) as any } });
-  const hit = serp.organic.find((o) => o.domain === own || o.domain.endsWith("." + own));
-  const competitors = serp.organic.slice(0, 10).filter((o) => o.domain !== own).map((o) => ({ domain: o.domain, position: o.position, url: o.url }));
+  // el mismo criterio para «es mío» en todo: www.sitio.cl no es un competidor de sitio.cl
+  const isOwn = (d: string) => d === own || d.endsWith("." + own);
+  const hit = serp.organic.find((o) => isOwn(o.domain));
+  // el top 10 completo: las otras URLs propias quedan marcadas (dos páginas tuyas por la misma búsqueda se ven aquí)
+  const competitors = serp.organic
+    .slice(0, 10)
+    .filter((o) => o !== hit)
+    .map((o) => ({ domain: o.domain, position: o.position, url: o.url, ...(isOwn(o.domain) ? { own: true } : {}) }));
   return db.rankCheck.create({
     data: { trackedId, position: hit?.position ?? null, url: hit?.url ?? null, features: serp.features, competitors },
   });

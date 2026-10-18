@@ -64,7 +64,7 @@ export function targetReducer(s: TargetState, a: TargetAction): TargetState {
 /**
  * ¿La URL manual calza razonablemente con la keyword? Sí si está entre las sugerencias de esta keyword
  * o si su ruta contiene más de la mitad de las palabras de la keyword (compartir solo «montessori» no basta
- * para «torre montessori»). La portada tiene su propio aviso (no se duplica aquí).
+ * para «torre montessori»); con keywords de 3+ palabras basta una en común. La portada tiene su propio aviso (no se duplica aquí).
  */
 export function manualRelevant(url: string, keyword: string, suggestionUrls: string[] = []): boolean {
   if (suggestionUrls.includes(url)) return true;
@@ -79,7 +79,9 @@ export function manualRelevant(url: string, keyword: string, suggestionUrls: str
     return false;
   }
   const inPath = new Set(kwTokens(path.replace(/[-_/.]/g, " ")));
-  return kw.filter((t) => inPath.has(t)).length / kw.length > 0.5;
+  const shared = kw.filter((t) => inPath.has(t)).length;
+  // con 3+ palabras las URLs casi nunca las repiten todas: /guia-de-tallas es la página de «talla traje natación»
+  return shared / kw.length > 0.5 || (kw.length >= 3 && shared >= 1);
 }
 
 /** Advertencia «Esta página parece poco relacionada con la nueva keyword». */

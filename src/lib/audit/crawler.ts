@@ -669,7 +669,13 @@ export function parseHtml(html: string, url: string, options: FetchOpts = {}) {
   if (clientRedirect) links.add(clientRedirect);
   const headings: { tag: string; text: string }[] = [];
   $("h1,h2,h3").each((_, el) => {
-    const t = $(el).text().replace(/\s+/g, " ").trim();
+    // los títulos del menú y del pie («Ayuda», «Contacto», el nombre de la marca) no son secciones del contenido;
+    // un <header> dentro de <article>/<main> sí es parte de la página
+    const $el = $(el);
+    if ($el.closest("footer, nav, aside, [role=contentinfo], [role=navigation]").length) return;
+    const head = $el.closest("header");
+    if (head.length && !head.closest("main, article").length) return;
+    const t = $el.text().replace(/\s+/g, " ").trim();
     if (t) headings.push({ tag: el.tagName.toLowerCase(), text: t });
   });
   // sin atributo alt (alt="" es correcto en imágenes decorativas); fuera píxeles de seguimiento y ocultas

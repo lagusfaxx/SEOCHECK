@@ -29,38 +29,29 @@ export function RankingExtras() {
           : 0,
     };
   });
+  const winners = movers.filter((m: any) => m.delta > 0).sort((a: any, b: any) => b.delta - a.delta).slice(0, 5);
+  const losers = movers.filter((m: any) => m.delta < 0).sort((a: any, b: any) => a.delta - b.delta).slice(0, 5);
+  const gscOn = Boolean(project?.gscProperty && project?.providers?.gsc);
   return (
     <section className="card mb-4 space-y-3 p-4">
-      <h2 className="font-semibold">Oportunidades y movimientos</h2>
-      <div className="grid gap-3 text-sm md:grid-cols-2">
-        <div>
-          <b>Ganadores</b>
-          {movers
-            .filter((m: any) => m.delta > 0)
-            .sort((a: any, b: any) => b.delta - a.delta)
-            .slice(0, 5)
-            .map((m: any) => (
-              <p key={m.keyword}>
-                {m.keyword} · +{m.delta} posiciones
-              </p>
-            ))}
+      {(winners.length > 0 || losers.length > 0) && (
+        <div className="grid gap-3 text-sm md:grid-cols-2">
+          <div>
+            <b className="text-emerald-700">Suben</b>
+            {winners.map((m: any) => <p key={m.keyword}>{m.keyword} · +{m.delta} posiciones</p>)}
+            {!winners.length && <p className="text-ink-400">—</p>}
+          </div>
+          <div>
+            <b className="text-rose-700">Bajan</b>
+            {losers.map((m: any) => <p key={m.keyword}>{m.keyword} · {m.delta} posiciones</p>)}
+            {!losers.length && <p className="text-ink-400">—</p>}
+          </div>
         </div>
-        <div>
-          <b>Perdedores</b>
-          {movers
-            .filter((m: any) => m.delta < 0)
-            .sort((a: any, b: any) => a.delta - b.delta)
-            .slice(0, 5)
-            .map((m: any) => (
-              <p key={m.keyword}>
-                {m.keyword} · {m.delta} posiciones
-              </p>
-            ))}
-        </div>
-      </div>
+      )}
+      {gscOn && (
       <details>
         <summary className="cursor-pointer text-sm">
-          Consultas GSC en posiciones 4–20 sin monitorear ({data?.length ?? 0})
+          Consultas de Search Console en posiciones 4–20 sin monitorear ({data?.length ?? 0})
         </summary>
         {data?.length ? (
           <>
@@ -95,11 +86,11 @@ export function RankingExtras() {
           </>
         ) : (
           <p className="mt-2 text-sm text-ink-500">
-            Conecta y sincroniza Search Console para encontrar consultas reales
-            con margen de mejora.
+            Ninguna consulta en posiciones 4–20 queda sin monitorear.
           </p>
         )}
       </details>
+      )}
       <details>
         <summary className="cursor-pointer text-sm">
           Alertas configurables

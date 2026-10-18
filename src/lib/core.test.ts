@@ -182,3 +182,30 @@ test("crawl: fallido si no se pudo leer el sitio, parcial con motivo, completado
   o = classifyCrawl({ pages: [ok(S), ok(S + "a"), { url: S + "login", finalUrl: S + "login", status: 0, contentType: null, robotsBlocked: true }, { url: S + "x", finalUrl: S + "x", status: 404, contentType: html }], start: S, wafAbort: false });
   assert.deepEqual(o, { status: "completed", reason: null });
 });
+
+test("keywords: sin regla ni LLM la intención queda sin clasificar y no separa clusters", async () => {
+  const { classifyIntents } = await import("./keywords/intent");
+  const { malformed } = await import("./keywords/pipeline");
+  const r = await classifyIntents([{ term: "traje de natacion competicion", features: [] }, { term: "comprar traje de natacion", features: [] }]);
+  assert.equal(r.get("traje de natacion competicion"), undefined, "no se inventa «informacional»");
+  assert.equal(r.get("comprar traje de natacion"), "transactional");
+  const urls = ["https://a.cl/1", "https://b.cl/2", "https://c.cl/3"];
+  const groups = overlapClusters([
+    { term: "traje de natacion competicion", volume: 100, intent: null, urls },
+    { term: "comprar traje de natacion", volume: 50, intent: "transactional", urls },
+  ]);
+  assert.equal(groups.length, 1);
+  assert.ok(malformed("¿qué es ¿cómo elegir traje homologado??"));
+  assert.ok(malformed("traje de natacion chile chile"));
+  assert.ok(!malformed("bora bora viajes"));
+  assert.ok(!malformed("¿qué es un traje homologado?"));
+});
+
+test("contenido: idioma del competidor (no se comparan términos en inglés con una página en español)", async () => {
+  const { textLang } = await import("./content/clean");
+  const es = "La talla de un traje de competición se elige con las medidas del cuerpo. Para medirse bien, use una cinta y anote el contorno del pecho y de la cadera, porque el traje se usa más ajustado que uno de entrenamiento y la talla correcta es una o dos más chica.";
+  const en = "The swimsuit is a garment worn for swimming. In the past it was made of wool and you can see that the style of the suits changed with the times, and for competition they are tighter than those used for leisure at the beach or the pool.";
+  assert.equal(textLang(es), "es");
+  assert.equal(textLang(en), "en");
+  assert.equal(textLang("Comprar ahora"), null);
+});

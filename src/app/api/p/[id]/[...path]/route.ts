@@ -173,7 +173,9 @@ const GETS: Record<string, H> = {
       db.topic.findMany({ where: scope }),
       db.trackedKeyword.findMany({ where: { projectId: id }, select: { keyword: true } }),
     ]);
-    return { runs, runId, keywords, clusters, topics, tracked: tracked.map((t) => t.keyword) };
+    // sin volumen medido en ninguna keyword el total no es «0 búsquedas»: es un dato que falta
+    const measured = new Set(keywords.filter((k) => k.volume != null).map((k) => k.clusterId));
+    return { runs, runId, keywords, clusters: clusters.map((c) => ({ ...c, volume: measured.has(c.id) ? c.volume : null })), topics, tracked: tracked.map((t) => t.keyword) };
   },
 
   audit: async ({ id, url }) => {
@@ -362,8 +364,11 @@ const GETS: Record<string, H> = {
 const POSTS: Record<string, H> = {
   ...PRODUCT_POSTS,
   "keywords/run": async ({ id, body }) => {
-    const seeds: string[] = (Array.isArray(body.seeds) ? body.seeds : []).map((s: string) => normTerm(String(s))).filter(Boolean).slice(0, 20);
+    // «a, b, c» en una sola entrada son tres semillas
+    const seeds: string[] = [...new Set<string>((Array.isArray(body.seeds) ? body.seeds : []).flatMap((s: string) => String(s).split(/[,;\n]/)).map((s: string) => normTerm(s)).filter(Boolean))].slice(0, 20);
     if (!seeds.length) throw new HttpError(400, "Escribe al menos una semilla");
+    const long = seeds.find((x) => x.length > 80);
+    if (long) throw new HttpError(400, `La semilla «${long.slice(0, 40)}…» es muy larga: usa frases cortas (hasta 80 caracteres) separadas por coma`);
     await assertIdle(id, QUEUES.keywords, "una investigación de keywords");
     await assertResource(id, "keywords", 0);
     await assertResource(id, "research", 1);

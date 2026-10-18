@@ -329,7 +329,7 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
                 )}
               </p>
             )}
-            <p className="mt-1 text-ink-500">{fmt(r.mine?.editorial ?? r.mine?.words)} palabras · el top 10 usa ~{fmt(r.targetWords)}</p>
+            <p className="mt-1 text-ink-500">{fmt(r.mine?.editorial ?? r.mine?.words)} palabras{r.targetWords ? <> · el top 10 usa ~{fmt(r.targetWords)}</> : " · sin largo de referencia"}</p>
           </div>
         </section>
       )}

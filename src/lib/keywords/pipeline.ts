@@ -36,6 +36,13 @@ export function clampKeywordOpts<T extends Opts>(o: T): T {
   return { ...o, maxKeywords: c(o.maxKeywords, KW_MAX.maxKeywords, 400), serpTop: c(o.serpTop, KW_MAX.serpTop, 150), serpExpansion: c(o.serpExpansion, KW_MAX.serpExpansion, 20) };
 }
 
+/**
+ * Términos que nadie busca así: preguntas anidadas («¿qué es ¿cómo…??») o una sugerencia que repite la última palabra
+ * («traje chile chile»). Solo al final y en un término de 3+ palabras: «bora bora viajes» o «tom tom» son reales.
+ */
+export const malformed = (k: string) =>
+  (k.match(/[¿?]/g) ?? []).length > 2 || (k.split(" ").length >= 3 && /\s(\p{L}{3,})\s+\1$/u.test(k));
+
 export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   const run = await db.keywordRun.findUniqueOrThrow({ where: { id: runId }, include: { project: true } });
   const p = run.project;
@@ -65,7 +72,7 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
   const sources = new Map<string, Set<string>>();
   const add = (t: string, s: string) => {
     const k = normTerm(t);
-    if (!k || k.length > 80) return;
+    if (!k || k.length > 80 || malformed(k)) return;
     if (!sources.has(k)) sources.set(k, new Set());
     sources.get(k)!.add(s);
   };
@@ -178,6 +185,9 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
     .filter(k=>existingTerms.has(k.term) || remaining>0)
     .slice(0, opts.maxKeywords);
   stats.relevant = kept.length;
+  // sin ninguna keyword no hay nada que agrupar: «listo» con 0 resultados confunde más que un aviso claro
+  if (!kept.length)
+    throw Object.assign(new Error("No se encontró ninguna keyword relacionada con estas semillas. Prueba con palabras más cortas y concretas, como «traje de natación»."), { noRetry: true });
 
   // 3. Volumen
   await step(35, "volumen");
@@ -273,19 +283,22 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
     });
   }
   });
+  // al volver a correr, lo que esta vez ya no se encontró (y nadie fijó a mano) sale de la investigación: si no, la tabla
+  // mezcla keywords de corridas viejas, sin cluster y con datos de otra fecha
+  await db.keyword.deleteMany({ where: { projectId: p.id, runId, locked: false, term: { notIn: rows.map((r) => r.term) } } });
   const free = rows.filter((r) => !lockedTerms.has(r.term) && !lockedElsewhere.has(r.term));
 
   // 5. Clustering por overlap (solo keywords no bloqueadas)
   await step(88, "clusters");
   const withSerp = free
     .filter((r) => serps.has(r.term))
-    .map((r) => ({ term: r.term, volume: r.volume ?? 0, intent: r.intent ?? "informational", urls: serps.get(r.term)!.organic.slice(0, 10).map((o) => o.url) }));
+    .map((r) => ({ term: r.term, volume: r.volume ?? 0, intent: r.intent ?? null, urls: serps.get(r.term)!.organic.slice(0, 10).map((o) => o.url) }));
   const groups = overlapClusters(withSerp, opts.minShared);
   // Sin SERP: agrupación por similitud de embeddings para las restantes
   const inSerp = new Set(withSerp.map((w) => w.term));
   groups.push(
     ...embeddingClusters(
-      free.filter((r) => !inSerp.has(r.term)).map((r) => ({ term: r.term, volume: r.volume ?? 0, intent: r.intent ?? "informational", urls: [], vec: r.embedding })),
+      free.filter((r) => !inSerp.has(r.term)).map((r) => ({ term: r.term, volume: r.volume ?? 0, intent: r.intent ?? null, urls: [], vec: r.embedding })),
       emb.name === "trigram-hash" ? 0.7 : 0.8
     )
   );
@@ -298,7 +311,7 @@ export async function runKeywordPipeline(runId: string, jobRunId?: string) {
     let cid = match[i];
     if (!cid) {
       const c = await db.cluster.create({
-        data: { projectId: p.id, runId, name: g.primary.term, primary: g.primary.term, intent: g.primary.intent, urls: g.primary.urls },
+        data: { projectId: p.id, runId, name: g.primary.term, primary: g.primary.term, intent: g.primary.intent ?? null, urls: g.primary.urls },
       });
       cid = c.id;
     }

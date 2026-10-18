@@ -23,7 +23,7 @@ export function ruleIntent(term: string, features: string[] = [], brands: string
   return null;
 }
 
-/** Clasifica con reglas; los dudosos van al LLM en lotes. */
+/** Clasifica con reglas; los dudosos van al LLM en lotes. Los que quedan sin clasificar no van en el mapa. */
 export async function classifyIntents(items: { term: string; features: string[] }[], brands: string[] = []) {
   const out = new Map<string, Intent>();
   const doubtful: string[] = [];
@@ -44,10 +44,10 @@ export async function classifyIntents(items: { term: string; features: string[] 
         );
         for (const [k, v] of Object.entries(res)) if (["informational", "commercial", "transactional", "navigational"].includes(v)) out.set(k, v);
       } catch (e) {
-        await jobLog("warn", "intent con LLM falló; esos casos quedan como informational", { error: e instanceof Error ? e.message : String(e), batch: batch.length });
+        await jobLog("warn", "intent con LLM falló; esos casos quedan sin clasificar", { error: e instanceof Error ? e.message : String(e), batch: batch.length });
       }
     }
   }
-  for (const t of doubtful) if (!out.has(t)) out.set(t, "informational");
+  // lo que ni las reglas ni el LLM pudieron clasificar queda sin intención: una etiqueta por defecto sería inventada
   return out;
 }

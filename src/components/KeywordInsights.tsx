@@ -23,7 +23,7 @@ export function KeywordInsights({ runId }: { runId?: string }) {
               {c.status === "potential-cannibal"
                 ? "Posible canibalización"
                 : c.status === "mapped"
-                  ? "Con página"
+                  ? c.pages?.[0] ? <>Página: <a className="text-acc hover:underline" href={c.pages[0]} target="_blank" rel="noreferrer">{c.pages[0].replace(/^https?:\/\/[^/]+/, "") || "/"}</a></> : "Con página"
                   : "Sin página detectada"}{" "}
               ·{" "}
               <b>
@@ -36,15 +36,20 @@ export function KeywordInsights({ runId }: { runId?: string }) {
                       : "Evaluar página nueva"}
               </b>
             </p>
-            <p className="text-xs text-ink-500">{c.note}</p>
-            {c.overlaps.slice(0, 5).map((o: any) => (
-              <p className="text-xs" key={o.keyword}>
-                {o.keyword}:{" "}
-                {o.shared == null
-                  ? "sin evidencia SERP"
-                  : `${o.shared} de ${o.denominator} resultados de Google en común`}
-              </p>
-            ))}
+            {c.overlaps.length > 0 && (
+              <details className="mt-1 text-xs">
+                <summary className="cursor-pointer text-ink-500">Por qué van juntas</summary>
+                <p className="mt-1 text-ink-500">{c.note}</p>
+                {c.overlaps.slice(0, 5).map((o: any) => (
+                  <p key={o.keyword}>
+                    {o.keyword}:{" "}
+                    {o.shared == null
+                      ? "sin evidencia SERP"
+                      : `${o.shared} de ${o.denominator} resultados de Google en común`}
+                  </p>
+                ))}
+              </details>
+            )}
             <button
               className="btn mt-2 mr-2"
               onClick={async () => {

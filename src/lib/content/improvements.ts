@@ -4,7 +4,7 @@
  * Reglas (cubiertas por tests):
  * - El color/estado sale SIEMPRE de los puntos de esa parte del score (`breakdown`), nunca del texto.
  * - Los conteos del texto salen de las mismas listas con que analyze.ts calculó esos puntos
- *   (terms, sections, paa, schema con umbral ⌈N·0,3⌉, mine.editorial vs targetWords).
+ *   (terms, sections, paa, schema con umbral máx(2, ⌈N·0,3⌉): un solo competidor no marca tendencia, mine.editorial vs targetWords).
  * - Sin datos (análisis en curso o campo ausente) → estado «pending», nunca se interpreta 0 como resultado.
  * - Nunca «Faltan …» con 0 faltantes; nunca verde con menos del 80% de los puntos.
  */
@@ -48,7 +48,7 @@ const num = (v: number) => v.toLocaleString("es-CL");
 /** Schema «frecuente» con el mismo umbral que usa el score. */
 export function commonSchema(r: R) {
   const N = r.competitors?.length ?? 0;
-  return (r.schema ?? []).filter((s) => N > 0 && s.count >= Math.ceil(N * 0.3));
+  return (r.schema ?? []).filter((s) => N > 0 && s.count >= Math.max(2, Math.ceil(N * 0.3)));
 }
 
 export function improvements(r: R, opts: { ready?: boolean } = {}): Improvement[] {
@@ -116,13 +116,15 @@ export function improvements(r: R, opts: { ready?: boolean } = {}): Improvement[
   // Extensión: palabras editoriales vs. mediana del top 10
   const words = r.mine?.editorial ?? r.mine?.words;
   if (!has("length", words) || r.targetWords === undefined) out.push(pending("Extensión", "length"));
+  else if (!r.targetWords)
+    out.push({ area: "Extensión", level: "good", points: b.length ?? max.length, max: max.length, title: "Sin largo de referencia", detail: `${num(words!)} palabras. Hay muy pocas páginas comparables en el top 10 para fijar un largo: agrega solo información que falte.` });
   else {
     const p = b.length!, level = levelOf(p, max.length);
     out.push({
       area: "Extensión", level, points: p, max: max.length,
       ...(level === "good"
         ? { title: "Extensión correcta", detail: `${num(words!)} palabras. No necesitas alargar el contenido solo por alargarlo.` }
-        : { title: "Contenido corto", detail: `${num(words!)} palabras; las páginas mejor posicionadas usan ~${num(r.targetWords)}.` }),
+        : { title: "Menos texto que el top 10", detail: `${num(words!)} palabras; la mediana de las páginas comparables es ~${num(r.targetWords)}. Agrega la información que falte, no relleno.` }),
     });
   }
 
