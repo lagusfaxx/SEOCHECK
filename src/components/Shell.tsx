@@ -23,6 +23,10 @@ const NAV: { group: string; items: NavItem[] }[] = [
     items: [
       { href: "", icon: "home", label: "Resumen", desc: "Estado del proyecto y qué hacer ahora", intro: "Lo más importante del sitio y qué hacer ahora. Puedes arrastrar los bloques para ordenarlos." },
       {
+        href: "/fixes", icon: "wand", label: "Correcciones", desc: "Cambios listos para publicar", jobs: ["fixes.improve"],
+        intro: "Los cambios concretos de cada página, ya escritos: revisa, aprueba y publícalos en el sitio con una línea de código o como archivos.",
+      },
+      {
         href: "/tasks", icon: "check", label: "Tareas", desc: "Qué arreglar primero",
         intro: "Las correcciones ordenadas por impacto. Márcalas al resolverlas: la próxima auditoría confirma si quedaron bien.",
       },
@@ -183,7 +187,7 @@ const countryName = (cc?: string) => {
 const JOB_LABEL: Record<string, string> = {
   "keywords.run": "keywords", "audit.crawl": "crawl", "audit.psi": "pagespeed", "audit.inspect": "inspección",
   "content.section": "sección del brief", "content.rebrief": "regeneración del brief", "report.snapshot": "informe programado",
-  "rank.check": "rankings", "gsc.sync": "gsc", "alerts.compute": "alertas", "content.analyze": "contenido", "report.full": "informe",
+  "rank.check": "rankings", "fixes.improve": "redacción con IA", "gsc.sync": "gsc", "alerts.compute": "alertas", "content.analyze": "contenido", "report.full": "informe",
 };
 
 export default function Shell({ id, children }: { id: string; children: ReactNode }) {
