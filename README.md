@@ -27,6 +27,18 @@ Límites mensuales en USD por proveedor (mes calendario en `TZ`): `SERPENT_MONTH
 
 Las cotas son estimaciones conservadoras: la caché de SERP y de volumen hace que el gasto real suela ser menor. Dos jobs simultáneos se validan por separado.
 
+## Correcciones (cambios listos para publicar)
+
+`/p/{id}/fixes`. Después de cada crawl, FSV Search escribe el cambio concreto de cada página y lo deja para revisar, aprobar y publicar. Lo aprobado, descartado o editado nunca se pisa al regenerar.
+
+- **Qué propone** (`src/lib/fixes/generate.ts`, reglas puras): título (faltante, duplicado, corto, cortado, o sin la consulta de Search Console con más impresiones en posición 3–20), meta description desde el texto propio de la página, H1, canonical, Open Graph, JSON-LD (Organization en la home, Product solo con precio y moneda visibles, Article, FAQPage con las preguntas visibles), alt de imágenes, hreflang autorreferente, reemplazo de links rotos y redirecciones 301 hacia la página equivalente (nunca a la home). No inventa precios, reseñas ni promesas.
+- **IA opcional**: «Reescribir con IA» mejora hasta 30 títulos/descripciones por vez con el LLM configurado (`LLM_PROVIDER`), contra el cupo `ai` del plan y `LLM_MONTHLY_USD`. Cada texto se valida: largo, sin enlaces, sin promesas y sin cifras que la página no trae.
+- **Publicar en vivo**: una línea `<script async src="{APP_URL}/api/live/{clave}/s.js">` en el `<head>` del sitio aplica lo aprobado (title, description, canonical, Open Graph, JSON-LD, alt, hreflang y links rotos). Escribe con `textContent`/`setAttribute`: un valor no puede inyectar HTML ni JavaScript. Pausar o quitar la línea deja el sitio como estaba. Con el plan vencido deja de publicar.
+- **Desde el servidor (SSR)**: `GET /api/live/{clave}/page.json?u=/ruta` devuelve `head` (title, description, canonical, openGraph, jsonLd, hreflang, imageAlt, links) para escribirlo en el HTML. Público, con CORS y caché de 5 minutos.
+- **Archivos**: redirecciones para Apache, Nginx, Next.js, Vercel, Netlify/Cloudflare Pages, Shopify y WordPress; `sitemap.xml` solo con páginas indexables; `robots.txt` que conserva las reglas actuales; CSV de títulos y descripciones; instrucciones `.md` para un programador o asistente de código.
+- **Verificación**: cuando el HTML del sitio ya trae el valor nuevo, la corrección pasa a «Ya en el sitio» en el siguiente crawl. El crawl sin render JS no ve lo aplicado por el script: esas siguen como «publicadas» hasta que el cambio se haga en el origen.
+- `APP_URL` debe ser la URL pública HTTPS: es la que va en el script. Requiere la migración `20261114090000_fixes`.
+
 ## Informe completo
 
 `Informe` → **Correr todo** encola un solo job (`report.full`) que corre en orden: crawl → Search Console (90 días) → inspección de las 20 URLs más enlazadas → PageSpeed mobile de 5 URLs → keywords (si se dan semillas) → rankings de las trackeadas → alertas. Cada paso sin credenciales o sin presupuesto se salta y el resto sigue; el resultado por paso queda en el log del job.

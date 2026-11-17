@@ -1367,6 +1367,11 @@ export async function runCrawl(crawlId: string, jobRunId?: string) {
     },
   });
   if (!crawl.private) await syncCrawlTasks(crawlId);
+  // correcciones listas para publicar: no deben tirar el crawl si fallan
+  if (!crawl.private && outcome.status !== "failed")
+    await import("../fixes/service")
+      .then((f) => f.syncFixes(crawl.projectId))
+      .catch((e) => console.error("[fixes]", e));
   // avisos inmediatos (home caída, noindex o errores nuevos en páginas con tráfico, cambios masivos): no deben tirar el crawl
   if (!crawl.private)
     await import("../watch")
