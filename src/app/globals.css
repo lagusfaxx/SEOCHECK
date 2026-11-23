@@ -79,3 +79,18 @@ body { @apply bg-ink-50 text-ink-900 antialiased dark:bg-ink-950 dark:text-ink-1
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
+
+/* Cuerpo de los artículos redactados (vista y edición) */
+.prose-article { @apply text-[15px] leading-relaxed text-ink-800 dark:text-ink-100; }
+.prose-article h2 { @apply mb-2 mt-6 text-xl font-semibold text-ink-900 dark:text-ink-50; }
+.prose-article h3 { @apply mb-1.5 mt-4 text-lg font-semibold text-ink-900 dark:text-ink-50; }
+.prose-article h4 { @apply mb-1 mt-3 font-semibold; }
+.prose-article p { @apply my-3; }
+.prose-article ul { @apply my-3 list-disc pl-6; }
+.prose-article ol { @apply my-3 list-decimal pl-6; }
+.prose-article li { @apply my-1; }
+.prose-article a { @apply text-acc underline; }
+.prose-article blockquote { @apply my-3 border-l-4 border-ink-200 pl-4 italic dark:border-ink-700; }
+.prose-article table { @apply my-3 w-full border-collapse text-sm; }
+.prose-article th, .prose-article td { @apply border border-ink-200 px-2 py-1 text-left dark:border-ink-700; }
+.prose-article > :first-child { @apply mt-0; }

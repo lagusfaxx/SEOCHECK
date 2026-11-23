@@ -1,5 +1,5 @@
 import { livePayload, recordPing } from "@/lib/fixes/service";
-import { headFor, liveScript, opsFor } from "@/lib/fixes/live";
+import { headFor, liveScript, opsFor, redirectFor } from "@/lib/fixes/live";
 import { appBaseUrl } from "@/lib/util";
 import { memLimit } from "@/lib/auth";
 
@@ -29,8 +29,10 @@ export async function GET(req: Request, { params }: { params: { key: string; fil
   }
   if (params.file === "page.json") {
     if (!entry) return Response.json({ error: "no existe" }, { status: 404, headers: CORS });
+    // el plugin de WordPress se identifica: cuenta como instalación vista
+    if (req.headers.get("x-fsv-plugin")) await recordPing(params.key, `${url.searchParams.get("u") ?? "/"} (plugin WordPress)`).catch(() => {});
     const u = url.searchParams.get("u") ?? url.searchParams.get("url") ?? "/";
-    const body = entry.payload ? { ops: opsFor(entry.payload, u), head: headFor(entry.payload, u) } : { ops: [], head: null };
+    const body = entry.payload ? { ops: opsFor(entry.payload, u), head: headFor(entry.payload, u), redirect: redirectFor(entry.payload, u) } : { ops: [], head: null, redirect: null };
     return Response.json(body, { headers: { ...CORS, "cache-control": "public, max-age=300, stale-while-revalidate=3600" } });
   }
   if (params.file === "ping") {

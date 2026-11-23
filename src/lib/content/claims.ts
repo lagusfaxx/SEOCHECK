@@ -75,7 +75,7 @@ export function validateGeneratedClaims(brief: Brief, source: string): Brief {
  * Afirmaciones comerciales y de público que el brief no puede introducir si la página propia no las respalda:
  * superlativos de rendimiento ("rendimiento óptimo") y líneas o públicos ("oferta infantil", "para hombre").
  */
-const SOFT_CLAIMS: { re: RegExp; what: string }[] = [
+export const SOFT_CLAIMS: { re: RegExp; what: string }[] = [
   { re: /\b(rendimiento|desempeño|calidad|resultado)s? (óptim[oa]s?|superior(es)?|máxim[oa]s?|insuperables?)\b/gi, what: "superlativo de rendimiento" },
   { re: /\b(el|la|los|las) mejor(es)?\b[^.,;"]{0,40}/gi, what: "superlativo" },
   { re: /\bl[ií]der(es)? (en|del)\b[^.,;"]{0,40}/gi, what: "liderazgo de mercado" },
@@ -86,7 +86,7 @@ const SOFT_CLAIMS: { re: RegExp; what: string }[] = [
   { re: /\bdespacho (gratis|el mismo día|en 24 ?h(oras)?)\b/gi, what: "condición de despacho" },
 ];
 
-const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+export const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 export type BriefCheckInput = {
   /** texto de la página propia (y de lo que se sepa del sitio) */
@@ -168,4 +168,27 @@ export function verifyBrief(brief: Brief, input: BriefCheckInput): Brief {
   };
   if (removed.size) warnings.push(`Se quitó texto con afirmaciones sin respaldo en la página: ${[...removed.values()].join(", ")}. Agrégalas solo si el negocio las ofrece de verdad.`);
   return { ...out, warnings: [...new Set(warnings)] };
+}
+
+/** Datos comerciales duros (precios, descuentos, garantías, envío gratis, certificaciones) que el texto afirma y la fuente no trae. */
+export function hardClaims(text: string, source: string): string[] {
+  const hay = source.toLocaleLowerCase();
+  return [...text.matchAll(/(?:[$€£]\s?\d[\d.,]*|\d[\d.,]*\s?(?:CLP|USD|EUR|%)|(?:garant[ií]a|descuento|env[ií]o gratis|despacho gratis|devoluci[oó]n gratuita|certificad[oa])[^.\n]{0,60})/gi)]
+    .map((m) => m[0].trim())
+    .filter((c) => !hay.includes(c.toLocaleLowerCase()));
+}
+
+/** Afirmaciones de rendimiento, liderazgo o público que el texto hace y la fuente no respalda. */
+export function softClaims(text: string, source: string): { claim: string; what: string }[] {
+  const own = norm(source);
+  const found: { claim: string; what: string }[] = [];
+  for (const { re, what } of SOFT_CLAIMS)
+    for (const m of text.matchAll(new RegExp(re.source, re.flags))) {
+      const claim = m[0].trim();
+      if (own.includes(norm(claim))) continue;
+      const key = norm(claim).replace(/^(para|el|la|los|las) /, "").split(" ")[0];
+      if (what === "público o línea de producto" && own.includes(key)) continue;
+      found.push({ claim, what });
+    }
+  return found;
 }

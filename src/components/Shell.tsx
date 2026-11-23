@@ -65,6 +65,10 @@ const NAV: { group: string; items: NavItem[] }[] = [
         intro: "Escribe 3 a 5 semillas y descubre qué busca la gente, agrupado en las páginas que conviene crear u optimizar.",
       },
       {
+        href: "/articles", icon: "doc", label: "Artículos", desc: "Artículos completos listos para publicar", jobs: ["content.article"],
+        intro: "Escribe artículos completos para las búsquedas que analizaste: con la estructura de lo que Google muestra arriba, links a tus páginas y sin datos inventados. Envíalos como borrador a WordPress o Shopify.",
+      },
+      {
         href: "/content", icon: "content", label: "Contenido", desc: "Optimizar una página", jobs: ["content.analyze"],
         intro: "Compara una página con el top 10 de Google para una keyword y obtén qué le falta y un brief para reescribirla.",
       },
@@ -187,7 +191,7 @@ const countryName = (cc?: string) => {
 const JOB_LABEL: Record<string, string> = {
   "keywords.run": "keywords", "audit.crawl": "crawl", "audit.psi": "pagespeed", "audit.inspect": "inspección",
   "content.section": "sección del brief", "content.rebrief": "regeneración del brief", "report.snapshot": "informe programado",
-  "rank.check": "rankings", "fixes.improve": "redacción con IA", "gsc.sync": "gsc", "alerts.compute": "alertas", "content.analyze": "contenido", "report.full": "informe",
+  "rank.check": "rankings", "fixes.improve": "redacción con IA", "content.article": "artículo", "gsc.sync": "gsc", "alerts.compute": "alertas", "content.analyze": "contenido", "report.full": "informe",
 };
 
 export default function Shell({ id, children }: { id: string; children: ReactNode }) {

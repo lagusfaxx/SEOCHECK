@@ -4,7 +4,7 @@ import { db } from "../db";
 import { brandOf } from "../content/clean";
 import { gscPeriod } from "../gsc-period";
 import { resolvePlan } from "../plans";
-import { currentValue, generateFixes, LIVE_KINDS, type FixPage, type FixQuery, type Proposal } from "./generate";
+import { currentValue, generateFixes, LIVE_KINDS, SERVER_KINDS, type FixPage, type FixQuery, type Proposal } from "./generate";
 import { buildPayload, type LivePayload } from "./live";
 
 export class FixError extends Error {
@@ -234,7 +234,7 @@ export async function livePayload(key: string): Promise<Cached | null> {
   if (!site) entry = { at: Date.now(), projectId: null, payload: null };
   else if (!site.enabled || resolvePlan(site.project.workspace).expired) entry = { at: Date.now(), projectId: site.projectId, payload: null };
   else {
-    const fixes = await db.fix.findMany({ where: { projectId: site.projectId, status: "approved", kind: { in: [...LIVE_KINDS] } }, select: { url: true, kind: true, target: true, after: true }, take: 20_000 });
+    const fixes = await db.fix.findMany({ where: { projectId: site.projectId, status: "approved", kind: { in: [...SERVER_KINDS] } }, select: { url: true, kind: true, target: true, after: true }, take: 20_000 });
     entry = { at: Date.now(), projectId: site.projectId, payload: buildPayload(fixes) };
   }
   if (cache.size > 2000) cache.clear();

@@ -168,6 +168,8 @@ model Project {
   access           ProjectAccess[]
   fixes            Fix[]
   liveSite         LiveSite?
+  cms              CmsConnection?
+  articles         Article[]
 }
 
 /// Conexión OAuth de Google Search Console del proyecto (la cuenta de Google del cliente). Token cifrado.
@@ -1222,6 +1224,10 @@ model Fix {
   approvedAt DateTime?
   approvedBy String?
   verifiedAt DateTime?
+  /// envío directo al CMS (Shopify): cuándo, a qué recurso y el error si falló
+  pushedAt   DateTime?
+  pushedTo   String?
+  pushError  String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
@@ -1240,4 +1246,52 @@ model LiveSite {
   lastSeenUrl String?
   hits        Int       @default(0)
   createdAt   DateTime  @default(now())
+}
+
+/// Conexión directa con el CMS del sitio: aplica las correcciones en el origen y recibe artículos como borrador.
+model CmsConnection {
+  projectId   String    @id
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// wordpress | shopify
+  kind        String
+  /// URL del sitio (WordPress) o dominio myshopify.com (Shopify)
+  siteUrl     String
+  /// credenciales cifradas (AES-256-GCM con TOKEN_ENC_KEY): secreto del plugin o token de la API de Shopify
+  secret      String
+  /// connected | error
+  status      String    @default("connected")
+  lastError   String?
+  lastCheckAt DateTime?
+  lastPushAt  DateTime?
+  /// datos que devolvió el CMS al verificar: nombre, versión, plugin SEO detectado
+  info        Json      @default("{}")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+/// Artículo completo redactado a partir de un análisis de contenido.
+model Article {
+  id          String    @id @default(cuid())
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contentId   String?
+  keyword     String
+  /// queued | writing | done | error
+  status      String    @default("queued")
+  title       String    @default("")
+  meta        String    @default("")
+  slug        String    @default("")
+  html        String    @default("")
+  words       Int       @default(0)
+  /// avisos de la validación: afirmaciones sin respaldo, links quitados
+  warnings    String[]
+  error       String?
+  /// edited = la persona cambió el texto
+  edited      Boolean   @default(false)
+  /// a dónde se envió como borrador: { kind, id, url, at }
+  published   Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([projectId, createdAt])
 }

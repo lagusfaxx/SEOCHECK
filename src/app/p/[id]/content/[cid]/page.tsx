@@ -210,6 +210,30 @@ function ImplementationSummary({ brief, url, onDownload }: { brief: Brief; url: 
   );
 }
 
+/** Del brief al artículo completo, listo para publicar. */
+function WriteArticle({ cid }: { cid: string }) {
+  const { id, refreshJobs } = useProject();
+  const { data } = useApi<{ rows: { id: string; contentId: string | null; status: string; title: string; words: number }[]; ai: boolean }>(`/api/p/${id}/articles`);
+  const [write, busy] = useAction(async () => {
+    const a = await api<{ id: string }>(`/api/p/${id}/articles`, "POST", { cid });
+    refreshJobs();
+    window.location.href = `/p/${id}/articles?aid=${a.id}`;
+  });
+  if (!data?.ai) return null;
+  const mine = data.rows.filter((r) => r.contentId === cid);
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-acc/30 bg-acc-soft/40 px-4 py-3 text-sm dark:bg-acc/10">
+      <Icon name="sparkle" className="h-4 w-4 text-acc" />
+      <div className="min-w-0 flex-1 basis-full sm:basis-0">
+        <div className="font-medium">¿Prefieres el artículo ya escrito?</div>
+        <div className="text-ink-500">Lo redactamos completo con este brief, con links a tus páginas y sin datos inventados.{mine.length ? ` Ya tienes ${mine.length === 1 ? "uno" : mine.length}.` : ""}</div>
+      </div>
+      {mine[0] && <a className="btn-g" href={`/p/${id}/articles?aid=${mine[0].id}`}>Ver artículo</a>}
+      <button className="btn-p" disabled={busy} onClick={() => write()}>{busy ? <Spinner className="h-3.5 w-3.5" /> : null}{mine.length ? "Escribir otra versión" : "Escribir artículo completo"}</button>
+    </div>
+  );
+}
+
 export default function ContentDetail({ params }: { params: { cid: string } }) {
   const { id, refreshJobs } = useProject();
   const {mutate:invalidate}=useSWRConfig();
@@ -503,6 +527,7 @@ export default function ContentDetail({ params }: { params: { cid: string } }) {
             </div>
           </div>
         )}
+        <WriteArticle cid={params.cid} />
         <details className="text-sm">
           <summary className="cursor-pointer text-ink-500">Más herramientas: regenerar una sección, comparar con lo publicado, historial de versiones</summary>
           <div className="mt-3"><ContentTools cid={params.cid} brief={brief} onChange={setBrief} /></div>

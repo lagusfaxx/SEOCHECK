@@ -39,6 +39,23 @@ Las cotas son estimaciones conservadoras: la caché de SERP y de volumen hace qu
 - **Verificación**: cuando el HTML del sitio ya trae el valor nuevo, la corrección pasa a «Ya en el sitio» en el siguiente crawl. El crawl sin render JS no ve lo aplicado por el script: esas siguen como «publicadas» hasta que el cambio se haga en el origen.
 - `APP_URL` debe ser la URL pública HTTPS: es la que va en el script. Requiere la migración `20261114090000_fixes`.
 
+### Conexión directa con WordPress y Shopify
+
+En **Correcciones → Publicar → Conecta tu WordPress o Shopify**. Requiere la migración `20261123090000_cms_articles`.
+
+- **WordPress (plugin)**: la app genera `fsv-search.zip` para ese sitio (con su clave y un secreto propio, cifrado en la base con `TOKEN_ENC_KEY`). Instalado y activado, el plugin reescribe el HTML final de cada página pública con las correcciones aprobadas (title, description, canonical, Open Graph, hreflang, JSON-LD, alt y links rotos) y hace las redirecciones 301 aprobadas antes de que WordPress responda 404. Al cambiar del lado del servidor, Google y los asistentes de IA lo ven sin ejecutar JavaScript y la verificación del crawl las marca «Ya en el sitio». Funciona con Yoast, Rank Math, All in One SEO o sin plugin SEO. Guarda 5 minutos cada página; al aprobar, la app le pide limpiar su caché. Si la API no responde, la página sale como siempre.
+- La app le habla al plugin por `/?rest_route=/fsv-search/v1/{status|flush|draft}` con firma HMAC-SHA256 (tiempo, método, ruta y cuerpo; vence a los 5 minutos). Requiere que el servidor de la app llegue al sitio (salida HTTPS).
+- **Shopify (API de Admin)**: dominio `*.myshopify.com` y token `shpat_…` de una app personalizada con `write_products`, `write_content`, `write_online_store_navigation` y `write_files`. «Aplicar en Shopify» escribe título y descripción SEO de productos y colecciones (`seo`) y de páginas y artículos (metacampos `global.title_tag`/`description_tag`), el alt de imágenes de producto (`fileUpdate`) y las redirecciones (`urlRedirectCreate`). Canonical, Open Graph, JSON-LD y hreflang siguen por la línea de código en `theme.liquid`. Lo ya aplicado no se reenvía salvo que cambie; cambiar de tienda o desconectar reinicia el estado. `SHOPIFY_API_VERSION` (def. `2026-07`).
+
+## Artículos
+
+`/p/{id}/articles`, o «Escribir artículo completo» en un análisis de Contenido. El worker (`content.article`) redacta con el LLM configurado a partir del brief, las preguntas de Google, los términos del top 10 y el texto del sitio; largo objetivo = mediana del top 10 (700–2.200 palabras). Descuenta 1 del cupo `briefs` y su costo va contra `LLM_MONTHLY_USD`.
+
+- Antes de guardar se limpia el HTML (solo h2–h4, p, listas, negritas, links, tablas; sin scripts, estilos, iframes ni atributos), los links internos solo pueden ir a URLs que existen en el sitio y se quitan las frases con precios, descuentos, garantías o autopromoción que el sitio no respalda. Todo queda listado como aviso.
+- Editor visual o HTML; descarga en HTML o Markdown; «Enviar como borrador» a WordPress (con título y descripción para Yoast/Rank Math) o al blog de Shopify, nunca publicado directamente.
+
+Las **Tareas** muestran si ya hay una corrección escrita para ellas y llevan directo a revisarla.
+
 ## Informe completo
 
 `Informe` → **Correr todo** encola un solo job (`report.full`) que corre en orden: crawl → Search Console (90 días) → inspección de las 20 URLs más enlazadas → PageSpeed mobile de 5 URLs → keywords (si se dan semillas) → rankings de las trackeadas → alertas. Cada paso sin credenciales o sin presupuesto se salta y el resto sigue; el resultado por paso queda en el log del job.

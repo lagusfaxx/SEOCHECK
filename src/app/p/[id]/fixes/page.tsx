@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSWRConfig } from "swr";
 import { useProject } from "@/components/Shell";
+import { CmsConnect } from "@/components/CmsConnect";
 import { api, CopyBtn, cx, Empty, fmt, fmtDate, Icon, plural, Spinner, Tabs, toast, useAction, useApi } from "@/components/ui";
 
 type Fix = { id: string; url: string; kind: string; target: string; before: string | null; after: string; reason: string; code: string | null; source: string; status: string; edited: boolean; html: string; live: boolean };
@@ -194,7 +195,11 @@ function Publish({ summary, onChange }: { summary: Summary; onChange: () => void
   if (!live) return <div className="p-6"><Spinner /></div>;
   return (
     <div className="space-y-4">
-      <Step n={1} title="Publica en el sitio con una línea de código" done={live.installed}>
+      <Step n={1} title="Conecta tu WordPress o Shopify (recomendado)">
+        <CmsConnect onChange={onChange} />
+      </Step>
+
+      <Step n={2} title="O publica en cualquier sitio con una línea de código" done={live.installed}>
         <p className="text-ink-600 dark:text-ink-300">
           Pega esta línea una sola vez dentro del <code>&lt;head&gt;</code> de tu sitio (en WordPress, Shopify, Wix o Webflow va en «código personalizado» o en el tema). Desde ahí, cada corrección que apruebes se publica sola: títulos, descripciones, canonical, datos estructurados, textos de imagen y links rotos.
         </p>
@@ -216,7 +221,7 @@ function Publish({ summary, onChange }: { summary: Summary; onChange: () => void
         <p className="mt-3 text-xs text-ink-500">Google aplica estos cambios cuando procesa la página con JavaScript. Pausar la publicación o quitar la línea devuelve el sitio a su estado original: no se modifica nada en tu servidor.</p>
       </Step>
 
-      <Step n={2} title="Archivos listos para subir">
+      <Step n={3} title="Archivos listos para subir">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="text-ink-500">Incluir:</span>
           <Tabs value={scope} onChange={setScope} items={[{ id: "approved", label: `Solo aprobadas (${summary.approved})` }, { id: "all", label: `Aprobadas y por revisar (${summary.approved + summary.proposed})` }]} />
@@ -270,7 +275,7 @@ function Publish({ summary, onChange }: { summary: Summary; onChange: () => void
         )}
       </Step>
 
-      <Step n={3} title="Comprueba el resultado">
+      <Step n={4} title="Comprueba el resultado">
         <p className="text-ink-600 dark:text-ink-300">Cuando el sitio ya trae un cambio en su propio HTML, la corrección pasa sola a «Ya en el sitio» en el siguiente análisis. <Link className="text-acc hover:underline" href={`/p/${id}/audit`}>Volver a analizar el sitio</Link></p>
       </Step>
     </div>
@@ -290,6 +295,13 @@ export default function Fixes() {
   const status = tab === "publish" ? "proposed" : tab;
   const key = `/api/p/${id}/fixes?status=${status}&kind=${kind}&q=${encodeURIComponent(q)}&take=${PAGE}&skip=${page * PAGE}`;
   const { data, mutate: reload, isLoading } = useApi<List>(key, { keepPreviousData: true });
+  // entrada desde una tarea: /fixes?status=approved&q=/ruta
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const st = sp.get("status");
+    if (st && ["proposed", "approved", "verified", "discarded", "publish"].includes(st)) setTab(st as Tab);
+    if (sp.get("q")) setQ(sp.get("q")!);
+  }, []);
   useEffect(() => { setPage(0); setSel(new Set()); }, [tab, kind, q]);
   const refresh = async () => {
     setSel(new Set());

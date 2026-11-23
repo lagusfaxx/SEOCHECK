@@ -30,6 +30,11 @@ type Data = { projectId: string; jobRunId?: string; [k: string]: any };
 async function handle(boss: PgBoss, name: QueueName, d: Data) {
   switch (name) {
     case QUEUES.advice: return (await import("../lib/advice/service")).generateAdvice(d.projectId);
+    case QUEUES.article:
+      return (await import("../lib/articles/write")).writeArticle(d.articleId, d.jobRunId).catch(async (e) => {
+        await db.article.updateMany({ where: { id: d.articleId }, data: { status: "error", error: e instanceof Error ? e.message : String(e) } });
+        throw e;
+      });
     case QUEUES.keywords:
       // si falla, la investigación queda «falló» con el motivo (antes se quedaba en el último paso, p. ej. «embeddings»)
       return runKeywordPipeline(d.runId, d.jobRunId).catch(async (e) => {

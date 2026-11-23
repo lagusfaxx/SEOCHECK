@@ -12,6 +12,22 @@ export const STATUS_LABEL: Record<string, string> = {
   ignored: "Ignorado",
 };
 const PAGE_SIZE = 12;
+/** Códigos de problema cuya corrección es por sitio (no por página): basta el código para enlazarla. */
+const SITE_CODES = new Set(["broken_link", "redirect_chain", "http_4xx"]);
+const FIX_LABEL: Record<string, string> = { proposed: "Corrección lista", approved: "Corrección aprobada", verified: "Corregida en el sitio" };
+type FixIndex = Record<string, { n: number; status: string }>;
+/** La corrección escrita que resuelve una tarea (o su grupo), si existe. */
+function fixFor(t: any, idx: FixIndex | undefined) {
+  if (!idx || !t?.code) return null;
+  const urls: string[] = [t.url, ...(t.members ?? []).map((m: any) => m.url)].filter(Boolean);
+  let best: { n: number; status: string } | null = null;
+  for (const u of urls) {
+    const e = idx[`${t.code}|${u}`];
+    if (e && (!best || e.n > best.n)) best = e;
+  }
+  return best ?? (SITE_CODES.has(t.code) ? idx[`${t.code}|*`] ?? null : null);
+}
+const pathOnly = (u?: string | null) => (u ? u.replace(/^https?:\/\/[^/]+/, "") || "/" : "");
 const priorityLabel = (task: any) =>
   task.priorityLabel ??
   (task.severity === "critical"
@@ -51,6 +67,7 @@ export function NextActions({ all = false }: { all?: boolean }) {
     }
   };
   const { data: members } = useApi<{ email: string; name: string | null }[]>(all ? `/api/p/${id}/members` : null);
+  const { data: fixIdx } = useApi<FixIndex>(`/api/p/${id}/fixes/for-tasks`);
   const assign = async (taskId: string, assignee: string | null, dueAt: string | null) => {
     try {
       await api(`/api/p/${id}/tasks`, "PATCH", { taskId, assignee, dueAt, group: !raw });
@@ -226,6 +243,14 @@ export function NextActions({ all = false }: { all?: boolean }) {
                     )}
                     <td className="px-4 py-3 text-xs text-ink-500">
                       {priorityLabel(t)}
+                      {(() => {
+                        const f = fixFor(t, fixIdx);
+                        return f ? (
+                          <Link href={`/p/${id}/fixes?status=${f.status}&q=${encodeURIComponent(t.code === "broken_link" ? "" : pathOnly(t.url))}`} className="ml-2 inline-block rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700 hover:underline dark:bg-emerald-950/40 dark:text-emerald-400" title="Ver el cambio ya escrito">
+                            {FIX_LABEL[f.status] ?? "Corrección"}
+                          </Link>
+                        ) : null;
+                      })()}
                     </td>
                     {all && (
                       <td className="px-4 py-3 text-xs text-ink-500">
@@ -294,6 +319,15 @@ export function NextActions({ all = false }: { all?: boolean }) {
               <p className="break-all text-sm text-ink-500">{selected.url}</p>
             )}
             <p className="text-sm leading-relaxed">{selected.reason}</p>
+            {(() => {
+              const f = fixFor(selected, fixIdx);
+              return f ? (
+                <div className="flex flex-wrap items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm dark:border-emerald-900 dark:bg-emerald-950/40">
+                  <span className="min-w-0 flex-1">{f.status === "verified" ? "El sitio ya trae la corrección en su HTML." : `${plural(f.n, "cambio ya escrito", "cambios ya escritos")} para esta tarea: revísalo y publícalo sin tocar código.`}</span>
+                  <Link className="btn-p" href={`/p/${id}/fixes?status=${f.status}&q=${encodeURIComponent(selected.code === "broken_link" ? "" : pathOnly(selected.url))}`}>Ver corrección</Link>
+                </div>
+              ) : null;
+            })()}
             <div className="flex flex-wrap gap-2">
               {selected.source === "crawl" && (
                 <button className="btn" disabled={running} onClick={verify}>

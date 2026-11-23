@@ -8,6 +8,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { PRO_GETS, PRO_POSTS, PRO_PATCHS, PRO_DELETES } from "./pro";
 import { FIX_GETS, FIX_POSTS, FIX_PATCHS } from "./fixes/api";
+import { CMS_GETS, CMS_POSTS, CMS_PATCHS, CMS_DELETES } from "./cms/api";
 
 const ROOT = path.join(__dirname, "..");
 const files = (dir: string): string[] => readdirSync(dir).flatMap((f) => { const p = path.join(dir, f); return statSync(p).isDirectory() ? files(p) : /\.tsx?$/.test(f) ? [p] : []; });
@@ -28,7 +29,7 @@ function tables() {
     scan(api, new RegExp(`export const PRODUCT_${t}: Record<string, Handler> = \\{`), m);
     scan(route, new RegExp(`const ${t}: Record<string, H> = \\{`), m);
   }
-  for (const [method, routes] of Object.entries({GET: {...PRO_GETS, ...FIX_GETS}, POST: {...PRO_POSTS, ...FIX_POSTS}, PATCH: {...PRO_PATCHS, ...FIX_PATCHS}, DELETE: PRO_DELETES})) {
+  for (const [method, routes] of Object.entries({GET: {...PRO_GETS, ...FIX_GETS, ...CMS_GETS}, POST: {...PRO_POSTS, ...FIX_POSTS, ...CMS_POSTS}, PATCH: {...PRO_PATCHS, ...FIX_PATCHS, ...CMS_PATCHS}, DELETE: {...PRO_DELETES, ...CMS_DELETES}})) {
     for (const key of Object.keys(routes)) out[method].add(key);
   }
   return out;

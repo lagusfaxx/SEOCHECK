@@ -1,6 +1,8 @@
 import { BriefValidationError } from "@/lib/content/claims";
 import { FIX_GETS, FIX_POSTS, FIX_PATCHS } from "@/lib/fixes/api";
 import { FixError } from "@/lib/fixes/service";
+import { CMS_DELETES, CMS_GETS, CMS_PATCHS, CMS_POSTS } from "@/lib/cms/api";
+import { CmsError } from "@/lib/cms/client";
 import { runInlineJob } from "@/lib/inline-job";
 import { BillingError } from "@/lib/billing";
 import { PRODUCT_GETS, PRODUCT_POSTS, PRODUCT_PATCHS, PRODUCT_DELETES, ProductError } from "@/lib/product-api";
@@ -110,6 +112,7 @@ async function gscSeries(projectId: string, since: Date) {
 const GETS: Record<string, H> = {
   ...PRODUCT_GETS,
   ...(FIX_GETS as Record<string, H>),
+  ...(CMS_GETS as Record<string, H>),
   "": async ({ id, admin }) => {
     const p = await db.project.findUniqueOrThrow({ where: { id } });
     const chain = await volumeChainStatus();
@@ -367,6 +370,7 @@ const GETS: Record<string, H> = {
 const POSTS: Record<string, H> = {
   ...PRODUCT_POSTS,
   ...(FIX_POSTS as Record<string, H>),
+  ...(CMS_POSTS as Record<string, H>),
   "keywords/run": async ({ id, body }) => {
     // «a, b, c» en una sola entrada son tres semillas
     const seeds: string[] = [...new Set<string>((Array.isArray(body.seeds) ? body.seeds : []).flatMap((s: string) => String(s).split(/[,;\n]/)).map((s: string) => normTerm(s)).filter(Boolean))].slice(0, 20);
@@ -559,6 +563,7 @@ const POSTS: Record<string, H> = {
 const PATCHS: Record<string, H> = {
   ...PRODUCT_PATCHS,
   ...(FIX_PATCHS as Record<string, H>),
+  ...(CMS_PATCHS as Record<string, H>),
   "": async ({ id, body }) => {
     const data: Prisma.ProjectUpdateInput = {};
     for (const k of ["name", "domain", "country", "language", "gscProperty"] as const) if (k in body) (data as any)[k] = body[k] || (k === "gscProperty" ? null : body[k]);
@@ -665,6 +670,7 @@ const PATCHS: Record<string, H> = {
 
 const DELETES: Record<string, H> = {
   ...PRODUCT_DELETES,
+  ...(CMS_DELETES as Record<string, H>),
   "gsc/connect": async ({ id }) => {
     await disconnect(id);
     return { ok: true };
@@ -679,7 +685,7 @@ const DELETES: Record<string, H> = {
   content: async ({ id, body }) => db.contentAnalysis.deleteMany({ where: { projectId: id, id: body.cid } }),
 };
 
-const ADMIN_ONLY = new Set(["POST fixes/live", "DELETE ", "POST gsc/connect", "DELETE gsc/connect", "POST social/connect", "DELETE social/connection", "POST volumes/csv"]);
+const ADMIN_ONLY = new Set(["POST fixes/live", "POST cms/wordpress", "POST cms/shopify", "DELETE cms", "GET cms/plugin", "DELETE ", "POST gsc/connect", "DELETE gsc/connect", "POST social/connect", "DELETE social/connection", "POST volumes/csv"]);
 /** PATCH del proyecto: nombre, país e idioma los puede cambiar cualquiera; dominio, propiedad de GSC y ajustes, solo admin. */
 function needsWorkspaceAdmin(method: string, key: string, body: unknown) {
   if (ADMIN_ONLY.has(`${method} ${key}`)) return true;
@@ -724,7 +730,7 @@ function make(table: Record<string, H>) {
       return r instanceof Response ? r : ok(r);
     } catch (e) {
       if (e instanceof BriefValidationError || e instanceof BillingError || e instanceof ProductError || e instanceof PlanLimitError) return bad(e.message,e.status);
-      if (e instanceof AuthError || e instanceof FixError) return bad(e.message,e.status);
+      if (e instanceof AuthError || e instanceof FixError || e instanceof CmsError) return bad(e.message,e.status);
       if (e instanceof HttpError) return bad(e.message, e.status);
       if (e instanceof GscNotConnected) return bad(e.message, 400);
       console.error(`[api] ${req.method} ${key}`, e);

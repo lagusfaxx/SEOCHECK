@@ -10,7 +10,8 @@
 export type LiveFix = { url: string; kind: string; target: string; after: string };
 /** Operaciones por página: [tipo, objetivo, valor]. */
 export type Op = [string, string, string];
-export type LivePayload = { v: 1; pages: Record<string, Op[]>; site: Op[] };
+/** redirects: ruta antigua (pageKey) → destino. Solo los aplica el servidor del sitio (plugin o SSR), nunca el script. */
+export type LivePayload = { v: 1; pages: Record<string, Op[]>; site: Op[]; redirects?: Record<string, string> };
 
 /** Clave de página: ruta sin barra final + parámetros ordenados sin los de seguimiento. Igual en servidor y navegador. */
 export function pageKey(input: string): string {
@@ -32,7 +33,12 @@ export function pageKey(input: string): string {
 export function buildPayload(fixes: LiveFix[]): LivePayload {
   const pages: Record<string, Op[]> = {};
   const site: Op[] = [];
+  const redirects: Record<string, string> = {};
   for (const f of fixes) {
+    if (f.kind === "redirect") {
+      if (f.target) redirects[pageKey(f.target)] = f.after;
+      continue;
+    }
     if (f.kind === "link") {
       site.push(["link", f.target, f.after]);
       continue;
@@ -45,7 +51,7 @@ export function buildPayload(fixes: LiveFix[]): LivePayload {
       } catch {}
     } else (pages[k] ??= []).push([f.kind, f.target, f.after]);
   }
-  return { v: 1, pages, site };
+  return { v: 1, pages, site, redirects };
 }
 
 /** Lo que le toca a una página: sus operaciones más las del sitio. */
@@ -54,6 +60,9 @@ export function opsFor(payload: LivePayload, url: string): Op[] {
 }
 
 /** El mismo contenido listo para el <head> desde el servidor del sitio. */
+/** Destino 301 de una ruta antigua, o null. */
+export const redirectFor = (payload: LivePayload, url: string) => payload.redirects?.[pageKey(url)] ?? null;
+
 export function headFor(payload: LivePayload, url: string) {
   const ops = payload.pages[pageKey(url)] ?? [];
   const get = (k: string) => ops.find((o) => o[0] === k)?.[2] ?? null;
@@ -200,7 +209,7 @@ export const INLINE_LIMIT = 120_000;
 const safeJson = (o: unknown) => JSON.stringify(o).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
 
 export function liveScript(base: string, payload: LivePayload | null): string {
-  const data = payload ? safeJson(payload) : "{}";
+  const data = payload ? safeJson({ v: payload.v, pages: payload.pages, site: payload.site }) : "{}";
   const body = data.length <= INLINE_LIMIT ? data : "{}";
   return `/* FSV Search: correcciones SEO aprobadas */\n(${CLIENT_JS})(${safeJson(base)},${body});`;
 }

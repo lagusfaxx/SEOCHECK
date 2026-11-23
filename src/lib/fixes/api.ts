@@ -9,6 +9,13 @@ import { fixHtml, implementationMd, metaCsv, REDIRECT_FORMATS, redirectFile, red
 import { snippetFor } from "./live";
 import { bulkFixes, ensureLive, fileContext, FixError, fixSummary, listFixes, setLive, syncFixes, updateFix } from "./service";
 import { improveFixes } from "./ai";
+import { notifyCms } from "../cms/service";
+
+/** El plugin de WordPress guarda en caché: se le avisa sin esperar ni fallar si no responde. */
+const touch = <T>(projectId: string, r: T) => {
+  void notifyCms(projectId).catch(() => {});
+  return r;
+};
 
 type Ctx = { id: string; url: URL; body: any; user: { id: string; email: string } };
 type H = (c: Ctx) => Promise<unknown>;
@@ -29,6 +36,25 @@ export const FIX_GETS: Record<string, H> = {
     return { ...list, rows: list.rows.map((f) => ({ ...f, html: fixHtml(f), live: LIVE_KINDS.has(f.kind) })), summary, ai: llmStatus().available };
   },
   "fixes/summary": async ({ id }) => fixSummary(id),
+  /** Qué tareas tienen una corrección escrita: por código de problema y URL (la página o la URL con error). */
+  "fixes/for-tasks": async ({ id }) => {
+    const rows = await db.fix.findMany({ where: { projectId: id, status: { not: "discarded" }, code: { not: null } }, select: { code: true, url: true, target: true, status: true }, take: 20_000 });
+    const out: Record<string, { n: number; status: string }> = {};
+    const rank: Record<string, number> = { proposed: 3, approved: 2, verified: 1 };
+    const add = (k: string, status: string) => {
+      const e = out[k] ?? { n: 0, status };
+      e.n++;
+      // el estado que se muestra es el que más trabajo pide: propuesta > aprobada > en el sitio
+      if ((rank[status] ?? 0) > (rank[e.status] ?? 0)) e.status = status;
+      out[k] = e;
+    };
+    for (const f of rows) {
+      if (f.url) add(`${f.code}|${f.url}`, f.status);
+      if (f.target && /^https?:/.test(f.target)) add(`${f.code}|${f.target}`, f.status);
+      add(`${f.code}|*`, f.status);
+    }
+    return out;
+  },
   "fixes/live": async ({ id, url }) => {
     const live = await ensureLive(id);
     const base = appBaseUrl(url.origin);
@@ -75,15 +101,15 @@ export const FIX_POSTS: Record<string, H> = {
   "fixes/sync": async ({ id }) => syncFixes(id),
   "fixes/bulk": async ({ id, body, user }) => {
     if (body.status === "approved") await assertPlanActive(id);
-    return bulkFixes(id, { ids: Array.isArray(body.ids) ? body.ids.map(String) : undefined, kind: body.kind ? String(body.kind) : undefined, from: body.from ? String(body.from) : undefined, status: String(body.status) }, user.email);
+    return touch(id, await bulkFixes(id, { ids: Array.isArray(body.ids) ? body.ids.map(String) : undefined, kind: body.kind ? String(body.kind) : undefined, from: body.from ? String(body.from) : undefined, status: String(body.status) }, user.email));
   },
   "fixes/improve": async ({ id, body }) => withQuota(id, "ai", () => runInlineJob(id, "fixes.improve", () => improveFixes(id, Array.isArray(body.ids) ? body.ids.map(String).slice(0, 30) : undefined))),
-  "fixes/live": async ({ id, body }) => setLive(id, { enabled: typeof body.enabled === "boolean" ? body.enabled : undefined, rotate: body.rotate === true }),
+  "fixes/live": async ({ id, body }) => touch(id, await setLive(id, { enabled: typeof body.enabled === "boolean" ? body.enabled : undefined, rotate: body.rotate === true })),
 };
 
 export const FIX_PATCHS: Record<string, H> = {
   fixes: async ({ id, body, user }) => {
     if (body.status === "approved") await assertPlanActive(id);
-    return updateFix(id, String(body.id ?? ""), { after: body.after, status: body.status }, user.email);
+    return touch(id, await updateFix(id, String(body.id ?? ""), { after: body.after, status: body.status }, user.email));
   },
 };

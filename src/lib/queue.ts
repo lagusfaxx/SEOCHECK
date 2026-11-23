@@ -14,6 +14,7 @@ export const QUEUES = {
   gscDaily: "gsc.daily",
   alerts: "alerts.compute",
   content: "content.analyze",
+  article: "content.article",
   dfsFlush: "volume.dfs.flush",
   dfsCollect: "volume.dfs.collect",
   full: "report.full",

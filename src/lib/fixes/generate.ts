@@ -14,6 +14,8 @@ export const FIX_KINDS = ["title", "meta", "h1", "canonical", "og", "jsonld", "a
 export type FixKind = (typeof FIX_KINDS)[number];
 /** Lo que el script en vivo puede aplicar en el navegador; el resto se entrega como archivo o instrucción. */
 export const LIVE_KINDS: ReadonlySet<string> = new Set(["title", "meta", "canonical", "og", "jsonld", "alt", "hreflang", "link"]);
+/** Lo que aplica el servidor del sitio (plugin de WordPress o integración SSR): lo del script más las redirecciones 301. */
+export const SERVER_KINDS: ReadonlySet<string> = new Set([...LIVE_KINDS, "redirect"]);
 
 export type FixPage = {
   url: string;
