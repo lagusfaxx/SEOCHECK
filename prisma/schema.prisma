@@ -166,6 +166,8 @@ model Project {
   deliveries       WebhookDelivery[]
   overrides        IssueOverride[]
   access           ProjectAccess[]
+  fixes            Fix[]
+  liveSite         LiveSite?
 }
 
 /// Conexión OAuth de Google Search Console del proyecto (la cuenta de Google del cliente). Token cifrado.
@@ -1191,4 +1193,51 @@ model WebhookDelivery {
 
   @@unique([webhookId, eventKey])
   @@index([status, nextAt])
+}
+
+/// Corrección concreta lista para publicar: el valor actual y el valor nuevo de un elemento de una página.
+model Fix {
+  id         String    @id @default(cuid())
+  projectId  String
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// URL de la página ("" = todo el sitio)
+  url        String
+  /// title | meta | h1 | canonical | og | jsonld | alt | hreflang | link | redirect
+  kind       String
+  /// qué elemento dentro de la página (src de la imagen, href roto, propiedad og); "" si es único
+  target     String    @default("")
+  before     String?
+  after      String
+  /// por qué se propone, en una frase
+  reason     String
+  /// código del problema de la auditoría que la origina
+  code       String?
+  /// rules | ai | manual
+  source     String    @default("rules")
+  /// proposed | approved | discarded | verified (el sitio ya trae el valor nuevo en su HTML)
+  status     String    @default("proposed")
+  /// el usuario cambió el texto: la regeneración no lo pisa
+  edited     Boolean   @default(false)
+  impact     Float     @default(0)
+  approvedAt DateTime?
+  approvedBy String?
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([projectId, url, kind, target])
+  @@index([projectId, status])
+}
+
+/// Publicación en vivo: el script o la API que aplican en el sitio las correcciones aprobadas.
+model LiveSite {
+  projectId   String    @id
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// identificador público que va en el script (no es un secreto: solo entrega correcciones aprobadas)
+  key         String    @unique
+  enabled     Boolean   @default(true)
+  lastSeenAt  DateTime?
+  lastSeenUrl String?
+  hits        Int       @default(0)
+  createdAt   DateTime  @default(now())
 }
