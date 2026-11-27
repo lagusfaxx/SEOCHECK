@@ -33,6 +33,33 @@ export const EXTRA_ISSUE_VERIFY: Record<string, string> = {
   main_duplicate:
     "Comprobar que las páginas distintas conservan intención y canonical correctos.",
 };
+/** Identificador de grupo del producto en sus datos estructurados (modelo, grupo de variantes o MPN). */
+function productGroup(p: Page): string | null {
+  const s = (p.structured ?? {}) as { jsonld?: { type: string; props: Record<string, any> }[] };
+  for (const e of s.jsonld ?? []) {
+    if (!/^(Product|ProductGroup)$/i.test(e.type)) continue;
+    const g = e.props?.inProductGroupWithID ?? e.props?.productGroupID ?? e.props?.isVariantOf?.productGroupID ?? e.props?.mpn ?? e.props?.model;
+    if (g != null && String(g).trim()) return String(g).trim().toLowerCase();
+  }
+  return null;
+}
+/** Dos fichas son variantes del mismo producto: mismo grupo en sus datos, o misma ruta salvo el último tramo (color/talla). */
+export function sameProductGroup(a: Page, b: Page): boolean {
+  if (a.template !== "product" && b.template !== "product") return false;
+  const ga = productGroup(a), gb = productGroup(b);
+  if (ga && gb) return ga === gb;
+  const stem = (u: string) => {
+    try {
+      return new URL(u).pathname.replace(/\/+$/, "").split("-").slice(0, -1).join("-");
+    } catch {
+      return u;
+    }
+  };
+  // "/producto/jammer-ts703-rojo" y "/producto/jammer-ts703-azul": mismo tronco con al menos dos palabras
+  const sa = stem(a.url), sb = stem(b.url);
+  return sa.length > 12 && sa === sb;
+}
+
 export function computeExtraIssues(
   pages: Page[],
   _ctx: { site: string },
@@ -50,6 +77,9 @@ export function computeExtraIssues(
       });
     if (p.mainHash && !p.noindex && p.canonicalType !== "other") {
       const first = hashes.get(p.mainHash);
+      // variantes del mismo producto (colores, tallas) comparten descripción: es normal en una tienda
+      const firstPage = first ? pages.find((x) => x.url === first) : undefined;
+      if (first && firstPage && sameProductGroup(p, firstPage)) continue;
       if (first)
         out.push({
           url: p.url,

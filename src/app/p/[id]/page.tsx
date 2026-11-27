@@ -1,6 +1,6 @@
 "use client";
 import { GuidanceCard } from "@/components/GuidanceCard";
-import { FixesBanner } from "@/components/FixesBanner";
+import { PlainSummary } from "@/components/PlainSummary";
 import Link from "next/link";
 import { type ReactNode } from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
@@ -80,7 +80,15 @@ export default function Overview() {
   const gscOn = Boolean(project?.gscProperty && project?.providers?.gsc);
   const [layout, setLayout] = useLocal<W[]>(`dash:${id}`, DEFAULT);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
-  const items = [...layout, ...DEFAULT.filter((d) => !layout.some((l) => l.id === d.id))].filter((w) => w.id !== "spend");
+  // bloques sin datos no se muestran: "Tu sitio en simple" ya dice qué falta y cómo activarlo
+  const empty = (wid: string) =>
+    !data ? false
+    : wid === "gsc" ? !(data.gsc ?? []).length
+    : wid === "movers" ? !(data.movers ?? []).length
+    : wid === "alerts" ? !(data.alerts ?? []).length
+    : wid === "content" ? !(data.content ?? []).length
+    : false;
+  const items = [...layout, ...DEFAULT.filter((d) => !layout.some((l) => l.id === d.id))].filter((w) => w.id !== "spend" && !empty(w.id));
 
   const onDragEnd = (e: DragEndEvent) => {
     if (!e.over || e.active.id === e.over.id) return;
@@ -104,13 +112,14 @@ export default function Overview() {
           "Estado",
           <div key="k" className="space-y-4">
           <Coverage projectId={id} />
+          {!(data?.keywords || data?.clusters || data?.tracked || sum("clicks") || sum("impressions")) && <p className="text-sm text-ink-500">Cuando conectes Google o sigas palabras clave, aquí verás visitas, posiciones y búsquedas.</p>}
           <div className="stagger grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-6">
-            <Stat icon="key" label="Keywords" value={fmt(data?.keywords)} sub={`${fmt(data?.volume)} búsquedas/mes`} hint="Keywords de la última investigación y la suma de su volumen mensual de búsquedas." />
-            <Stat icon="layers" label="Clusters" value={fmt(data?.clusters)} hint="Grupos de keywords que se atacan con una misma página." />
-            <Stat icon="target" label="Monitoreadas" value={fmt(data?.tracked)} sub={`${fmt(data?.top3)} top 3 · ${fmt(data?.top10)} top 10`} hint="Keywords a las que se les sigue la posición en Google, y cuántas están en el top 3 y top 10." />
-            <Stat icon="rank" label="Posición" value={fmt(data?.avgPos, 1)} hint="Posición promedio de las keywords monitoreadas que aparecen en el top 100. Más bajo es mejor." />
-            <Stat icon="trend" label="Clics" value={fmt(sum("clicks"))} hint="Clics desde Google en los últimos 90 días (Search Console)." />
-            <Stat icon="eye" label="Impresiones" value={fmt(sum("impressions"))} hint="Veces que tu sitio apareció en resultados de Google en 90 días (Search Console)." />
+            {(data?.keywords ?? 0) > 0 && <Stat icon="key" label="Keywords" value={fmt(data?.keywords)} sub={`${fmt(data?.volume)} búsquedas/mes`} hint="Keywords de la última investigación y la suma de su volumen mensual de búsquedas." />}
+            {(data?.clusters ?? 0) > 0 && <Stat icon="layers" label="Clusters" value={fmt(data?.clusters)} hint="Grupos de keywords que se atacan con una misma página." />}
+            {(data?.tracked ?? 0) > 0 && <Stat icon="target" label="Monitoreadas" value={fmt(data?.tracked)} sub={`${fmt(data?.top3)} top 3 · ${fmt(data?.top10)} top 10`} hint="Keywords a las que se les sigue la posición en Google, y cuántas están en el top 3 y top 10." />}
+            {data?.avgPos != null && <Stat icon="rank" label="Posición" value={fmt(data?.avgPos, 1)} hint="Posición promedio de las keywords monitoreadas que aparecen en el top 100. Más bajo es mejor." />}
+            {sum("clicks") > 0 && <Stat icon="trend" label="Clics" value={fmt(sum("clicks"))} hint="Clics desde Google en los últimos 90 días (Search Console)." />}
+            {sum("impressions") > 0 && <Stat icon="eye" label="Impresiones" value={fmt(sum("impressions"))} hint="Veces que tu sitio apareció en resultados de Google en 90 días (Search Console)." />}
           </div>
           </div>,
         ];
@@ -223,10 +232,17 @@ export default function Overview() {
 
   return (
     <div className="space-y-4 p-4 md:p-6">
-      <FixesBanner />
-      <GuidanceCard />
+      <PlainSummary />
       <SetupBanner id={id} />
-      <GscConnect compact returnTo={`/p/${id}`} hideWhenConnected />
+      <details className="group card">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm [&::-webkit-details-marker]:hidden">
+          <Icon name="layers" className="h-4 w-4 text-ink-400" />
+          <span className="font-medium">Plan detallado</span>
+          <span className="text-ink-500">· prioridades, evidencia y ajustes por tipo de negocio</span>
+          <Icon name="down" className="ml-auto h-4 w-4 text-ink-400 transition group-open:rotate-180" />
+        </summary>
+        <div className="border-t border-ink-100 p-4 dark:border-ink-800"><GuidanceCard /></div>
+      </details>
       <DndContext id="dashboard" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
           <div className="stagger-fade grid grid-cols-1 gap-4 md:grid-cols-3">

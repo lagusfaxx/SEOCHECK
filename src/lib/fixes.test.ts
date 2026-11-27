@@ -216,3 +216,21 @@ test("IA: se rechazan textos fuera de largo, con enlaces, promesas o cifras que 
   assert.equal(acceptRewrite("meta", `"Cafetera espresso de 15 bares que calienta en 40 segundos, lista para preparar café en casa."`, src), "Cafetera espresso de 15 bares que calienta en 40 segundos, lista para preparar café en casa.");
   assert.equal(acceptRewrite("meta", 42, src), null);
 });
+
+test("títulos que se cortan: si al acortarlos quedan iguales, se conserva lo que los distingue", () => {
+  const t = (c: string) => `GORRO DE NATACIÓN DE COMPETICIÓN TAUPOC UNISEX BLANCO - DOME-CAPS-W ${c} · TAUPOC Chile`;
+  const pages = ["blanco", "Negro"].map((c) => page(`/producto/gorro-${c.toLowerCase()}`, { title: t(c), h1: [`Gorro ${c}`], metaDesc: "d".repeat(90) }));
+  const cat = page("/catalogo", { title: "Catálogo de competición · TAUPOC Chile", h1: ["Catálogo"], metaDesc: "c".repeat(90) });
+  const ps = run([...pages, cat], pages.map((p) => ({ url: p.url, code: "title_long" })));
+  const titles = ps.filter((p) => p.kind === "title").map((p) => p.after);
+  assert.equal(titles.length, 2, titles.join(" | "));
+  assert.equal(new Set(titles.map((x) => x.toLowerCase())).size, 2, titles.join(" | "));
+  assert.ok(titles.some((x) => /negro$/i.test(x)) && titles.some((x) => /blanco$/i.test(x)), titles.join(" | "));
+  assert.ok(titles.every((x) => x.length <= 60));
+});
+
+test("nunca propone un título que ya usa otra página", () => {
+  const a = page("/a", { title: "Cafeteras espresso | Tienda", h1: ["Cafeteras espresso"], metaDesc: "d".repeat(90) });
+  const b = page("/b", { title: "Cafe", h1: ["Cafeteras espresso"], metaDesc: "e".repeat(90) });
+  assert.equal(find(run([a, b], [{ url: b.url, code: "title_short" }]), "title", "/b"), undefined);
+});

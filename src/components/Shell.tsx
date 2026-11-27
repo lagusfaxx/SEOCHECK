@@ -17,7 +17,7 @@ export const useProject = () => useContext(Ctx);
 
 type NavItem = { href: string; icon: string; label: string; desc: string; jobs?: string[]; intro: string };
 
-const NAV: { group: string; items: NavItem[] }[] = [
+const NAV: { group: string; fold?: boolean; items: NavItem[] }[] = [
   {
     group: "",
     items: [
@@ -25,6 +25,14 @@ const NAV: { group: string; items: NavItem[] }[] = [
       {
         href: "/fixes", icon: "wand", label: "Correcciones", desc: "Cambios listos para publicar", jobs: ["fixes.improve"],
         intro: "Los cambios concretos de cada página, ya escritos: revisa, aprueba y publícalos en el sitio con una línea de código o como archivos.",
+      },
+      {
+        href: "/check", icon: "search", label: "Revisar una página", desc: "Cómo ve Google una página",
+        intro: "Pega la dirección de una página y en segundos ves qué está bien, qué falta y el cambio ya escrito.",
+      },
+      {
+        href: "/articles", icon: "doc", label: "Artículos", desc: "Artículos completos listos para publicar", jobs: ["content.article"],
+        intro: "Escribe artículos completos para las búsquedas que analizaste: con la estructura de lo que Google muestra arriba, links a tus páginas y sin datos inventados. Envíalos como borrador a WordPress o Shopify.",
       },
       {
         href: "/tasks", icon: "check", label: "Tareas", desc: "Qué arreglar primero",
@@ -37,12 +45,8 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
   {
-    group: "Diagnóstico",
+    group: "Tus datos de Google",
     items: [
-      {
-        href: "/audit", icon: "audit", label: "Auditoría", desc: "Salud técnica del sitio", jobs: ["audit.crawl", "audit.psi", "audit.inspect"],
-        intro: "Recorre el sitio como Google y lista los problemas técnicos. Abre un problema para ver qué URLs lo tienen y cómo se arregla.",
-      },
       {
         href: "/gsc", icon: "gsc", label: "Search Console", desc: "Clics e impresiones reales de Google", jobs: ["gsc.sync"],
         intro: "Clics, impresiones, CTR y posición reales de Google por consulta y página. Requiere conectar tu cuenta de Google.",
@@ -58,15 +62,15 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
   {
-    group: "Herramientas",
+    group: "Más herramientas", fold: true,
     items: [
+      {
+        href: "/audit", icon: "audit", label: "Auditoría", desc: "Salud técnica del sitio", jobs: ["audit.crawl", "audit.psi", "audit.inspect"],
+        intro: "Recorre el sitio como Google y lista los problemas técnicos. Abre un problema para ver qué URLs lo tienen y cómo se arregla.",
+      },
       {
         href: "/keywords", icon: "key", label: "Keywords", desc: "Qué busca la gente", jobs: ["keywords.run"],
         intro: "Escribe 3 a 5 semillas y descubre qué busca la gente, agrupado en las páginas que conviene crear u optimizar.",
-      },
-      {
-        href: "/articles", icon: "doc", label: "Artículos", desc: "Artículos completos listos para publicar", jobs: ["content.article"],
-        intro: "Escribe artículos completos para las búsquedas que analizaste: con la estructura de lo que Google muestra arriba, links a tus páginas y sin datos inventados. Envíalos como borrador a WordPress o Shopify.",
       },
       {
         href: "/content", icon: "content", label: "Contenido", desc: "Optimizar una página", jobs: ["content.analyze"],
@@ -202,6 +206,7 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
   const { data: projects, mutate: refreshProjects } = useApi<Project[]>("/api/projects");
   const { data: jobs = [], mutate: refreshJobs } = useApi<Job[]>(`/api/p/${id}/jobs`, { refreshInterval: (d?: Job[]) => (d?.some((j: Job) => j.status === "queued" || j.status === "running") ? 1500 : 8000) });
   const [newOpen, setNewOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useLocal("nav:more", false);
   const [switcher, setSwitcher] = useState(false);
   const prev = useRef<Record<string, string>>({});
 
@@ -272,14 +277,21 @@ export default function Shell({ id, children }: { id: string; children: ReactNod
           )}
         >
           <div className="flex-1 space-y-5 overflow-y-auto px-2 py-3">
-            {NAV.map((g) => (
-              <div key={g.group || "inicio"}>
-                {g.group && <div className={cx("lbl mb-1 px-3", slim && "md:hidden")}>{g.group}</div>}
-                <div className="space-y-0.5">
-                  {g.items.filter(visible).map(navLink)}
+            {NAV.map((g) => {
+              // herramientas avanzadas: plegadas, salvo que se esté en una de ellas
+              const inside = g.items.some((it) => it.href && path.startsWith(`/p/${id}${it.href}`));
+              const open = !g.fold || moreOpen || inside || slim;
+              return (
+                <div key={g.group || "inicio"}>
+                  {g.group && (g.fold ? (
+                    <button className={cx("lbl mb-1 flex w-full items-center gap-1 px-3 hover:text-ink-600", slim && "md:hidden")} onClick={() => setMoreOpen(!moreOpen)} aria-expanded={open}>
+                      {g.group}<Icon name={open ? "up" : "down"} className="ml-auto h-3 w-3" />
+                    </button>
+                  ) : <div className={cx("lbl mb-1 px-3", slim && "md:hidden")}>{g.group}</div>)}
+                  {open && <div className="space-y-0.5">{g.items.filter(visible).map(navLink)}</div>}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div className="space-y-0.5 border-t border-ink-100 px-2 py-2 dark:border-ink-800">
             {navLink(SETTINGS)}

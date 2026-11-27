@@ -3,6 +3,7 @@ import { FIX_GETS, FIX_POSTS, FIX_PATCHS } from "@/lib/fixes/api";
 import { FixError } from "@/lib/fixes/service";
 import { CMS_DELETES, CMS_GETS, CMS_PATCHS, CMS_POSTS } from "@/lib/cms/api";
 import { CmsError } from "@/lib/cms/client";
+import { checkPage, plainSummary } from "@/lib/plain";
 import { runInlineJob } from "@/lib/inline-job";
 import { BillingError } from "@/lib/billing";
 import { PRODUCT_GETS, PRODUCT_POSTS, PRODUCT_PATCHS, PRODUCT_DELETES, ProductError } from "@/lib/product-api";
@@ -113,6 +114,8 @@ const GETS: Record<string, H> = {
   ...PRODUCT_GETS,
   ...(FIX_GETS as Record<string, H>),
   ...(CMS_GETS as Record<string, H>),
+  /** El estado del sitio en lenguaje simple. */
+  plain: async ({ id }) => plainSummary(id),
   "": async ({ id, admin }) => {
     const p = await db.project.findUniqueOrThrow({ where: { id } });
     const chain = await volumeChainStatus();
@@ -371,6 +374,17 @@ const POSTS: Record<string, H> = {
   ...PRODUCT_POSTS,
   ...(FIX_POSTS as Record<string, H>),
   ...(CMS_POSTS as Record<string, H>),
+  /** Revisión instantánea de una página del sitio, explicada. */
+  check: async ({ id, body }) => {
+    const raw = String(body.url ?? "").trim();
+    const p = await db.project.findUniqueOrThrow({ where: { id }, select: { domain: true } });
+    // "/contacto" o "contacto" → URL del sitio
+    const full = /^https?:\/\//i.test(raw) ? raw : raw.startsWith("/") ? `https://${p.domain}${raw}` : /\.[a-z]{2,}(\/|$)/i.test(raw) ? `https://${raw}` : `https://${p.domain}/${raw}`;
+    const [url] = await ownUrls(id, [full]);
+    if (!url) throw new HttpError(400, "Escribe la dirección de una página de tu sitio");
+    if (!(await rateLimit(`check:${id}`, 60, 3600_000)).ok) throw new HttpError(429, "Revisaste muchas páginas en la última hora: espera unos minutos");
+    return checkPage(id, url);
+  },
   "keywords/run": async ({ id, body }) => {
     // «a, b, c» en una sola entrada son tres semillas
     const seeds: string[] = [...new Set<string>((Array.isArray(body.seeds) ? body.seeds : []).flatMap((s: string) => String(s).split(/[,;\n]/)).map((s: string) => normTerm(s)).filter(Boolean))].slice(0, 20);

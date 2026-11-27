@@ -272,3 +272,37 @@ test("auditoría gratis: normaliza la dirección y rechaza lo que no es un sitio
   assert.equal(normalizeAuditUrl(" http://tusitio.cl/a#x "), "http://tusitio.cl/a");
   for (const bad of ["", "localhost", "ftp://x.cl", "https://user:pw@x.cl", 42]) assert.throws(() => normalizeAuditUrl(bad), FreeAuditError, String(bad));
 });
+
+// ---------- falsos positivos reales de taupoc.cl (noviembre 2026) ----------
+
+test("hreflang: la misma URL con o sin barra final cuenta como autorreferencia", () => {
+  const home = page({ url: `${S}/`, hreflang: [{ href: S, lang: "es-CL" }, { href: "https://tienda.lat", lang: "es-419" }] as any });
+  assert.ok(!has([home], "hreflang_no_self"));
+  const other = page({ url: `${S}/`, hreflang: [{ href: "https://tienda.lat", lang: "es-419" }] as any });
+  assert.ok(has([other], "hreflang_no_self"));
+});
+
+test("poco texto: contacto, legales y carrito son cortas por naturaleza", () => {
+  for (const path of ["/contacto", "/terminos-y-condiciones", "/carrito", "/politica-de-privacidad"]) assert.ok(!has([page({ url: `${S}${path}`, wordCount: 40 })], "thin_content"), path);
+  assert.ok(has([page({ url: `${S}/categoria/cafeteras`, wordCount: 40 })], "thin_content"));
+});
+
+test("duplicado: las variantes de color o talla del mismo producto comparten descripción", () => {
+  const ld = (g: string) => ({ jsonld: [{ type: "Product", format: "jsonld", props: { inProductGroupWithID: g } }] }) as any;
+  const a = page({ url: `${S}/producto/jammer-ts703-rojo`, template: "product", mainHash: "m1", structured: ld("TS703") });
+  const b = page({ url: `${S}/producto/jammer-ts703-azul-marino`, template: "product", mainHash: "m1", structured: ld("TS703") });
+  assert.ok(!has([a, b], "main_duplicate"));
+  // productos distintos con el mismo texto: sí es un duplicado a revisar
+  const c = page({ url: `${S}/producto/gorro-silicona`, template: "product", mainHash: "m2", structured: ld("G1") });
+  const d = page({ url: `${S}/producto/lentes-natacion`, template: "product", mainHash: "m2", structured: ld("L9") });
+  assert.ok(has([c, d], "main_duplicate"));
+});
+
+test("stock: con variantes (AggregateOffer) que una talla esté agotada no contradice el InStock", async () => {
+  const { checkStructuredData } = await import("./audit/structured");
+  const product = (offers: object) => [{ "@type": "Product", name: "Jammer", offers }];
+  const visible = "Jammer Talla 20 agotada, avísame cuando vuelva. Talla 26 última unidad. $139.990";
+  assert.ok(!checkStructuredData(product({ "@type": "AggregateOffer", lowPrice: 139990, highPrice: 139990, offerCount: 3, availability: "https://schema.org/InStock", priceCurrency: "CLP" }), visible).some((s) => /InStock/.test(s)));
+  // un solo producto sin variantes que dice InStock y la página dice agotado: sí es una contradicción
+  assert.ok(checkStructuredData(product({ "@type": "Offer", price: 139990, availability: "https://schema.org/InStock", priceCurrency: "CLP" }), "Jammer agotado $139.990").some((s) => /InStock/.test(s)));
+});

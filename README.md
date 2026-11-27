@@ -56,6 +56,13 @@ En **Correcciones → Publicar → Conecta tu WordPress o Shopify**. Requiere la
 
 Las **Tareas** muestran si ya hay una corrección escrita para ellas y llevan directo a revisarla.
 
+## Sencilla y sin falsos positivos
+
+- **Tu sitio en simple** (arriba del Resumen, `GET /api/p/{id}/plain`): veredicto en una frase, qué importa, qué está bien y un solo siguiente paso. Solo afirma lo medido; lo intencional (noindex en filtros, carrito bloqueado, variantes) no se cuenta como problema.
+- **Revisar una página** (`/p/{id}/check`, `POST /api/p/{id}/check`): 12 puntos explicados (carga, Google puede mostrarla, título, descripción, H1, contenido, imágenes, datos estructurados, al compartir, celulares, HTTPS, velocidad del servidor), cómo aparece en Google y la corrección ya escrita. Solo páginas del dominio del proyecto; 60 por hora.
+- Menú: lo esencial arriba; Auditoría, Keywords, Contenido, Explorar, Experto y Social bajo «Más herramientas». El Resumen oculta los bloques sin datos.
+- Falsos positivos eliminados (reglas `2026.11.27`, con prueba cada uno): hreflang con o sin barra final, «poco texto» en contacto/legales/carrito, «contenido duplicado» entre variantes de un mismo producto y «InStock pero agotado» cuando solo se agotó una talla (`AggregateOffer`). Las correcciones nunca proponen un título que ya use otra página.
+
 ## Informe completo
 
 `Informe` → **Correr todo** encola un solo job (`report.full`) que corre en orden: crawl → Search Console (90 días) → inspección de las 20 URLs más enlazadas → PageSpeed mobile de 5 URLs → keywords (si se dan semillas) → rankings de las trackeadas → alertas. Cada paso sin credenciales o sin presupuesto se salta y el resto sigue; el resultado por paso queda en el log del job.

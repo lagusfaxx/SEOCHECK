@@ -1,4 +1,5 @@
 import type { Page } from "@prisma/client";
+import { urlKey } from "../util";
 import { computeExtraIssues, EXTRA_ISSUE_LABELS } from "./issues-extra";
 import { isParamCanonical, serpWidthPx, TITLE_MAX_PX, META_MAX_PX } from "../report-rules";
 
@@ -57,6 +58,9 @@ export const ISSUE_LABELS: Record<string, string> = {
 
 /** Por debajo de esto la página casi no tiene texto propio; no es un objetivo de largo. */
 export const THIN_WORDS = 100;
+/** Páginas que es normal que tengan poco texto propio. */
+export const UTILITY_PAGE = /\/(contact[oa]?|contactanos|contactenos|contact-us|ubicaci[oó]n|sucursales|tiendas|horarios|faq|preguntas-frecuentes|privacidad|privacy|terminos|t[eé]rminos-y-condiciones|terms|legal|aviso-legal|cookies|politica[-\w]*|devoluciones|envios|despachos?|gracias|thank-you|login|ingresar|registro|cuenta|mi-cuenta|account|carrito|cart|checkout|pago|buscar|search|404)(\/|$|\?)/i;
+const sameUrl = (a: string, b: string) => urlKey(a) === urlKey(b);
 /** Respuesta del servidor (HTML) sobre esto se anota como lenta; sobre el doble, advertencia. */
 export const SLOW_MS = 1500;
 
@@ -220,14 +224,16 @@ export function computeIssues(pages: Page[], ctx: { robotsTxt: string | null; si
     const jsWords = p.rawWordCount != null && p.wordCount >= 100 && p.rawWordCount < p.wordCount * 0.5;
     if (p.jsLinks > 0 || jsWords) add(p.url, "js_dependent", "info", [p.jsLinks ? `${p.jsLinks} links solo aparecen al ejecutar JavaScript` : "", jsWords ? `${p.rawWordCount} de ${p.wordCount} palabras en el HTML inicial` : ""].filter(Boolean).join(" · "));
     // poco texto no es baja calidad por sí solo (fichas, listados): solo se anota casi sin texto, como hipótesis
-    if (p.wordCount < THIN_WORDS && !p.noindex) add(p.url, "thin_content", "info", `${p.wordCount} palabras visibles`);
+    // contacto, legales, cuenta y carrito son cortas por naturaleza: no es un problema
+    if (p.wordCount < THIN_WORDS && !p.noindex && !UTILITY_PAGE.test(p.url)) add(p.url, "thin_content", "info", `${p.wordCount} palabras visibles`);
     if (p.imgNoAlt) add(p.url, "img_no_alt", "info", `${p.imgNoAlt} imagen${p.imgNoAlt === 1 ? "" : "es"} sin atributo alt`);
     if (p.depth > 3) add(p.url, "deep_page", "warning", `a ${p.depth} clics de la home`);
     if (p.responseMs > SLOW_MS) add(p.url, "slow", p.responseMs > SLOW_MS * 2 ? "warning" : "info", `${p.responseMs} ms`);
     if (!p.inlinks && p.depth !== 0 && !p.orphan) add(p.url, "no_inlinks", "warning");
     const hl = p.hreflang as { lang: string; href: string }[];
     // el hreflang se evalúa en la versión canónica: una página con canonical a otra URL no necesita auto-referencia
-    if (hl.length && p.canonicalType !== "other" && !hl.some((h) => h.href === p.url)) add(p.url, "hreflang_no_self", "warning");
+    // misma URL con o sin barra final, www o mayúsculas en el host: cuenta como autorreferencia
+    if (hl.length && p.canonicalType !== "other" && !hl.some((h) => sameUrl(h.href, p.url) || (p.finalUrl != null && sameUrl(h.href, p.finalUrl)))) add(p.url, "hreflang_no_self", "warning");
     for (const l of p.links) {
       const s = statusOf.get(l);
       // roto = el destino no existe (404/410…). 401/403 (privado), 429 (límite de ritmo) y fallas de conexión no son links rotos

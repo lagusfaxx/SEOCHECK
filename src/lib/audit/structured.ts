@@ -118,7 +118,10 @@ export function checkStructuredData(
     issues.push(
       `precio del JSON-LD (${[...prices].slice(0, 3).join(", ")}) no aparece en la página`,
     );
+  // con variantes (tallas, colores) que alguna esté agotada es normal: un AggregateOffer «InStock» sigue siendo correcto
+  const variants = products.some((p) => arr(p.offers).some((o: any) => /AggregateOffer/i.test(String(o?.["@type"] ?? "")) || Number(o?.offerCount) > 1) || arr(p.hasVariant).length > 1 || arr(p.offers).length > 1);
   if (
+    !variants &&
     availability.length &&
     availability.every((a) => /InStock/i.test(a)) &&
     OUT_OF_STOCK.test(visibleText) &&

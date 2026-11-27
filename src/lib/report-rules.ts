@@ -3,7 +3,7 @@ import { fieldCls } from "./web-vitals";
 import { strip } from "./text";
 
 /** Versión de las reglas del informe: queda escrita en cada informe para saber con qué criterio se generó. */
-export const RULES_VERSION = "2026.10.18";
+export const RULES_VERSION = "2026.11.27";
 
 /** Distancia de edición (con transposición), cortando apenas supera `max`. */
 export function editDistance(a: string, b: string, max = 2): number {

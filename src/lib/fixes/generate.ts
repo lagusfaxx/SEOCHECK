@@ -310,6 +310,32 @@ export function generateFixes(pages: FixPage[], ctx: FixCtx): Proposal[] {
   const titleGroups = new Map<string, FixPage[]>();
   for (const p of live) if (p.title) titleGroups.set(clean(p.title).toLowerCase(), [...(titleGroups.get(clean(p.title).toLowerCase()) ?? []), p]);
   const usedTitles = new Set(live.map((p) => clean(p.title).toLowerCase()).filter(Boolean));
+  // títulos que se cortan: si al acortarlos dos páginas quedan iguales, hay que conservar lo que las distingue
+  const shortened = new Map<string, string[]>();
+  for (const p of live) {
+    if (!has(p.url, "title_long") || !p.title) continue;
+    const c = titleCore(p.title, brand);
+    const k = buildTitle(c, brand).toLowerCase();
+    shortened.set(k, [...(shortened.get(k) ?? []), c]);
+  }
+  const distinctTitle = (core: string): string => {
+    const k = buildTitle(core, brand).toLowerCase();
+    const others = (shortened.get(k) ?? []).filter((c) => c !== core);
+    if (!others.length) return buildTitle(core, brand);
+    // lo que sigue al tramo común con las otras páginas ("… DOME-CAPS-W Negro" → "Negro")
+    const words = core.split(/\s+/);
+    let common = 0;
+    for (const o of others) {
+      const ow = o.split(/\s+/);
+      let i = 0;
+      while (i < words.length && i < ow.length && words[i].toLowerCase() === ow[i].toLowerCase()) i++;
+      common = Math.max(common, i);
+    }
+    const tail = words.slice(common).join(" ");
+    if (!tail || tail.length > 30) return "";
+    const head = cutAt(words.slice(0, common).join(" "), TITLE_MAX - tail.length - 3);
+    return buildTitle(`${head} – ${tail}`, brand);
+  };
 
   for (const p of live) {
     const html = p.responseHtml ? load(p.responseHtml) : null;
@@ -337,7 +363,7 @@ export function generateFixes(pages: FixPage[], ctx: FixCtx): Proposal[] {
     } else if (has(p.url, "title_short") && h1 && h1.length > core.length + 5) {
       [newTitle, titleCode, titleReason] = [buildTitle(h1, brand), "title_short", "El título es muy corto: no dice qué ofrece la página."];
     } else if (has(p.url, "title_long")) {
-      [newTitle, titleCode, titleReason] = [buildTitle(core, brand), "title_long", "El título se corta en los resultados de Google: esta versión cabe completa."];
+      [newTitle, titleCode, titleReason] = [distinctTitle(core), "title_long", "El título se corta en los resultados de Google: esta versión cabe completa."];
     }
     // Search Console: la consulta con más impresiones no aparece en el título y la página está a tiro de la primera página
     if (!newTitle && ctx.queries) {
@@ -352,7 +378,8 @@ export function generateFixes(pages: FixPage[], ctx: FixCtx): Proposal[] {
       }
     }
     let finalTitle = clean(p.title);
-    if (newTitle && newTitle.toLowerCase() !== clean(p.title).toLowerCase() && !(usedTitles.has(newTitle.toLowerCase()) && titleCode !== "title_long")) {
+    // nunca se propone un título que ya usa otra página: crearía el problema que se quiere evitar
+    if (newTitle && newTitle.toLowerCase() !== clean(p.title).toLowerCase() && !usedTitles.has(newTitle.toLowerCase())) {
       usedTitles.add(newTitle.toLowerCase());
       add(p.url, "title", "", p.title, newTitle, titleReason, titleCode);
       finalTitle = newTitle;
